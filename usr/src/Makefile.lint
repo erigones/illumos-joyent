@@ -52,6 +52,7 @@ COMMON_SUBDIRS = \
 	cmd/bart \
 	cmd/basename \
 	cmd/bdiff \
+	cmd/beadm \
 	cmd/busstat \
 	cmd/boot \
 	cmd/cal \
