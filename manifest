@@ -1832,6 +1832,7 @@ d proc 0755 root root
 d sbin 0755 root sys
 f sbin/autopush 0555 root bin
 f sbin/biosdev 0555 root bin
+f sbin/beadm 0555 root bin
 f sbin/bootadm 0555 root bin
 f sbin/cryptoadm 0555 root bin
 f sbin/devprop 0555 root bin
@@ -10302,7 +10303,7 @@ f usr/sbin/auditstat 0555 root bin
 h usr/sbin/audlinks=usr/sbin/devfsadm
 s usr/sbin/automount=../lib/fs/autofs/automount
 s usr/sbin/autopush=../../sbin/autopush
-f usr/sbin/beadm 0555 root bin
+s usr/sbin/beadm=../../sbin/beadm
 f usr/sbin/cfgadm 0555 root bin
 f usr/sbin/check-hostname 0555 root mail
 f usr/sbin/check-permissions 0555 root mail
