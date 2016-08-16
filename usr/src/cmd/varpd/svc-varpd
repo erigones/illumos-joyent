@@ -22,6 +22,7 @@
 # overlay driver is loaded. We probably shouldn't do that in the long
 # run, but it helps for bootstrapping
 #
+rem_drv overlay 2>/dev/null
 add_drv overlay 2>/dev/null
 
 /usr/lib/varpd/varpd
