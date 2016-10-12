@@ -1622,9 +1622,12 @@ d lib/svc/manifest/system/device 0755 root sys
 f lib/svc/manifest/system/device/allocate.xml 0444 root sys
 f lib/svc/manifest/system/device/devices-local.xml 0444 root sys
 f lib/svc/manifest/system/device/mpxio-upgrade.xml 0444 root sys
+f lib/svc/manifest/system/device/devices-fc-fabric.xml 0444 root sys
 f lib/svc/manifest/system/dumpadm.xml 0444 root sys
 f lib/svc/manifest/system/early-manifest-import.xml 0444 root sys
 f lib/svc/manifest/system/extended-accounting.xml 0444 root sys
+f lib/svc/manifest/system/fcoe_target.xml 0444 root sys
+f lib/svc/manifest/system/fcoe_initiator.xml 0444 root sys
 d lib/svc/manifest/system/filesystem 0755 root sys
 f lib/svc/manifest/system/filesystem/autofs.xml 0444 root sys
 f lib/svc/manifest/system/filesystem/local-fs.xml 0444 root sys
