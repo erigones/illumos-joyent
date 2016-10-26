@@ -11,6 +11,7 @@
 
 #
 # Copyright (c) 2012 by Delphix. All rights reserved.
+# Copyright 2016 Joyent, Inc.
 #
 
 [DEFAULT]
@@ -23,6 +24,7 @@ outputdir = /var/tmp/test_results
 
 [/opt/os-tests/tests/poll_test]
 user = root
+tests = ['poll_test', 'epoll_test']
 
 [/opt/os-tests/tests/secflags]
 user = root
@@ -41,6 +43,10 @@ tests = ['secflags_aslr',
 
 [/opt/os-tests/tests/sigqueue]
 tests = ['sigqueue_queue_size']
+
+[/opt/os-tests/tests/sdevfs]
+user = root
+tests = ['sdevfs_eisdir']
 
 [/opt/os-tests/tests/tmpfs]
 user = root

@@ -11,8 +11,9 @@
 
 #
 # Copyright (c) 2012 by Delphix. All rights reserved.
+# Copyright 2016 Joyent, Inc.
 #
 
-SUBDIRS = poll secflags sigqueue spoof-ras tmpfs file-locking
+SUBDIRS = poll secflags sigqueue spoof-ras sdevfs tmpfs file-locking
 
 include $(SRC)/test/Makefile.com
