@@ -1,6 +1,7 @@
 \ Copyright (c) 2003 Scott Long <scottl@FreeBSD.org>
 \ Copyright (c) 2003 Aleksander Fafula <alex@fafula.com>
 \ Copyright (c) 2006-2015 Devin Teske <dteske@FreeBSD.org>
+\ Copyright (c) 2016 Erigones, s. r. o.
 \ All rights reserved.
 \ 
 \ Redistribution and use in source and binary forms, with or without
