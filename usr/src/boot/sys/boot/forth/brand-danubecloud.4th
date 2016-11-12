@@ -1,4 +1,4 @@
-\ Copyright (c) 2008-2011 Devin Teske <dteske@FreeBSD.org>
+\ Copyright (c) 2006-2015 Devin Teske <dteske@FreeBSD.org>
 \ All rights reserved.
 \ 
 \ Redistribution and use in source and binary forms, with or without
@@ -24,27 +24,19 @@
 \ 
 \ $FreeBSD$
 
-\ FICL words intended to be used as shortcuts for carrying out common tasks or
-\ producing common results. Generally, words defined here are simply groupings
-\ of other custom words that pull from multiple libraries (for example, if you
-\ want to define a custom word that uses words defined in three different
-\ libraries, this is a good place to define such a word).
-\ 
-\ This script should be included after you have included any/all other
-\ libraries. This will prevent calling a word defined here before any required
-\ words have been defined.
+2 brandX ! 1 brandY ! \ Initialize brand placement defaults
 
-marker task-shortcuts.4th
+: brand+ ( x y c-addr/u -- x y' )
+	2swap 2dup at-xy 2swap \ position the cursor
+	type \ print to the screen
+	1+ \ increase y for next time we're called
+;
 
-\ This "shortcut" word will not be used directly, but is defined here to
-\ offer the user a quick way to get back into the interactive PXE menu
-\ after they have escaped to the shell (perhaps by accident).
-\ 
-: menu ( -- )
-	clear           \ Clear the screen (in screen.4th)
-	print_version   \ print version string (bottom-right; see version.4th)
-	\ draw-beastie    \ Draw FreeBSD logo at right (in beastie.4th)
-	draw-brand      \ Draw FIS logo at top (in brand.4th)
-	menu-init       \ Initialize menu and draw bounding box (in menu.4th)
-	menu-display    \ Launch interactive menu (in menu.4th)
+: brand ( x y -- ) \ "danubecloud" [wide] logo in B/W (5 rows x 39 columns)
+
+    s"___  ____ _  _ _  _ ___  ____    ____ _    ____ _  _ ___ " brand+
+    s"|  \ |__| |\ | |  | |__] |___    |    |    |  | |  | |  \" brand+
+    s"|__/ |  | | \| |__| |__] |___    |___ |___ |__| |__| |__/" brand+
+
+	2drop
 ;

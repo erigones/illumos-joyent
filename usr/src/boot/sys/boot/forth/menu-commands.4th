@@ -327,7 +327,7 @@ also menu-namespace also menu-command-helpers
 
 	cr
 	." To get back to the menu, type `menu' and press ENTER" cr
-	." or type `boot' and press ENTER to start illumos." cr
+	." or type `boot' and press ENTER to start Danube Cloud." cr
 	cr
 
 	FALSE \ exit the menu
@@ -546,7 +546,7 @@ also menu-namespace also menu-command-helpers
 : be_draw_screen
 	clear		\ Clear the screen (in screen.4th)
 	print_version	\ print version string (bottom-right; see version.4th)
-	draw-beastie	\ Draw FreeBSD logo at right (in beastie.4th)
+	\ draw-beastie	\ Draw FreeBSD logo at right (in beastie.4th)
 	draw-brand	\ Draw brand.4th logo at top (in brand.4th)
 	menu-init	\ Initialize menu and draw bounding box (in menu.4th)
 ;

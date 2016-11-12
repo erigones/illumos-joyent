@@ -3,6 +3,7 @@
 FORTH =	beastie.4th
 FORTH +=	beadm.4th
 FORTH +=	brand.4th
+FORTH +=    brand-danubecloud.4th
 FORTH +=	brand-illumos.4th
 FORTH +=	check-password.4th
 FORTH +=	color.4th
