@@ -271,6 +271,10 @@ is_correct_event(const char *fmri, const scf_propertygroup_t *pg,
 	}
 
 	if ((state = smf_get_state(fmri)) == NULL) {
+        scf_error_t se = scf_error();
+        if (se == SCF_ERROR_NOT_FOUND) {
+            return (0);
+        }
 		syslog(LOG_ERR | LOG_DAEMON, "smf_get_state failed for %s: "
 		    "%s\n", fmri, scf_strerror(scf_error()));
 		return (-1);
@@ -304,9 +308,7 @@ is_correct_event(const char *fmri, const scf_propertygroup_t *pg,
 	}
 
 out:
-	if (state)
-		free(state);
-
+    free(state);
 	return (ret);
 }
 
