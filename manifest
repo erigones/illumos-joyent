@@ -96,6 +96,7 @@ f boot/forth/beadm.4th 0444 root bin
 f boot/forth/menusets.4th 0444 root bin
 f boot/forth/version.4th 0444 root bin
 f boot/forth/logo-beastie.4th 0444 root bin
+f boot/forth/brand-danubecloud.4th 0444 root bin
 f boot/forth/brand-illumos.4th 0444 root bin
 f boot/forth/check-password.4th 0444 root bin
 f boot/forth/logo-illumos.4th 0444 root bin
