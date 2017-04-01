@@ -22,7 +22,7 @@
 /*
  * Copyright 2006 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
- * Copyright 2016 Joyent, Inc.
+ * Copyright 2017 Joyent, Inc.
  */
 
 #ifndef _SYS_LINUX_SYSCALLS_H
@@ -60,6 +60,8 @@ extern long lx_epoll_create1();
 extern long lx_epoll_ctl();
 extern long lx_epoll_pwait();
 extern long lx_epoll_wait();
+extern long lx_eventfd();
+extern long lx_eventfd2();
 extern long lx_faccessat();
 extern long lx_fadvise64();
 extern long lx_fadvise64_32();
@@ -117,7 +119,11 @@ extern long lx_gettimeofday();
 extern long lx_getuid();
 extern long lx_getuid16();
 extern long lx_getxattr();
+extern long lx_io_cancel();
+extern long lx_io_destroy();
+extern long lx_io_getevents();
 extern long lx_io_setup();
+extern long lx_io_submit();
 extern long lx_ioctl();
 extern long lx_ioprio_get();
 extern long lx_ioprio_set();
@@ -137,11 +143,18 @@ extern long lx_lsetxattr();
 extern long lx_lstat32();
 extern long lx_lstat64();
 extern long lx_listxattr();
+extern long lx_madvise();
 extern long lx_mincore();
 extern long lx_mkdir();
 extern long lx_mkdirat();
+extern long lx_mlock();
+extern long lx_mlockall();
+extern long lx_mprotect();
 extern long lx_modify_ldt();
 extern long lx_mount();
+extern long lx_msync();
+extern long lx_munlock();
+extern long lx_munlockall();
 extern long lx_munmap();
 extern long lx_nanosleep();
 extern long lx_nice();

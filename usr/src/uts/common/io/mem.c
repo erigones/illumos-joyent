@@ -21,10 +21,12 @@
 /*
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ * Copyright (c) 2016 by Delphix. All rights reserved.
  */
 
 /*
- * Copyright 2016, Joyent, Inc.
+ * Copyright 2017 Joyent, Inc.
+ * Copyright 2017 James S Blachly, MD <james.blachly@gmail.com>
  */
 
 /*
@@ -160,6 +162,7 @@ mm_attach(dev_info_t *devi, ddi_attach_cmd_t cmd)
 		{ "allkmem",	M_ALLKMEM,	0,	"all",	"all",	0600 },
 		{ "null",	M_NULL,	PRIVONLY_DEV,	NULL,	NULL,	0666 },
 		{ "zero",	M_ZERO, PRIVONLY_DEV,	NULL,	NULL,	0666 },
+		{ "full",	M_FULL, PRIVONLY_DEV,	NULL,	NULL,	0666 },
 	};
 	kstat_t *ksp;
 
@@ -221,6 +224,7 @@ mmopen(dev_t *devp, int flag, int typ, struct cred *cred)
 	switch (getminor(*devp)) {
 	case M_NULL:
 	case M_ZERO:
+	case M_FULL:
 		/* standard devices */
 		break;
 
@@ -256,6 +260,7 @@ mmchpoll(dev_t dev, short events, int anyyet, short *reventsp,
 	switch (getminor(dev)) {
 	case M_NULL:
 	case M_ZERO:
+	case M_FULL:
 	case M_MEM:
 	case M_KMEM:
 	case M_ALLKMEM:
@@ -263,10 +268,11 @@ mmchpoll(dev_t dev, short events, int anyyet, short *reventsp,
 		    POLLWRNORM | POLLRDBAND | POLLWRBAND);
 		/*
 		 * A non NULL pollhead pointer should be returned in case
-		 * user polls for 0 events.
+		 * user polls for 0 events or is doing an edge-triggerd poll.
 		 */
-		*phpp = !anyyet && !*reventsp ?
-		    &mm_pollhd : (struct pollhead *)NULL;
+		if ((!*reventsp && !anyyet) || (events & POLLET)) {
+			*phpp = &mm_pollhd;
+		}
 		return (0);
 	default:
 		/* no other devices currently support polling */
@@ -446,6 +452,14 @@ mmrw(dev_t dev, struct uio *uio, enum uio_rw rw, cred_t *cred)
 			}
 
 			break;
+
+		case M_FULL:
+			if (rw == UIO_WRITE) {
+				error = ENOSPC;
+				break;
+			}
+			/* else it's a read, fall through to zero case */
+			/*FALLTHROUGH*/
 
 		case M_ZERO:
 			if (rw == UIO_READ) {
@@ -836,6 +850,7 @@ mmmmap(dev_t dev, off_t off, int prot)
 		/* no longer supported with KPR */
 		return (-1);
 
+	case M_FULL:
 	case M_ZERO:
 		/*
 		 * We shouldn't be mmap'ing to /dev/zero here as
@@ -912,7 +927,7 @@ mmsegmap(dev_t dev, off_t off, struct as *as, caddr_t *addrp, off_t len,
 		 * Make /dev/mem mappings non-consistent since we can't
 		 * alias pages that don't have page structs behind them,
 		 * such as kernel stack pages. If someone mmap()s a kernel
-		 * stack page and if we give him a tte with cv, a line from
+		 * stack page and if we give them a tte with cv, a line from
 		 * that page can get into both pages of the spitfire d$.
 		 * But snoop from another processor will only invalidate
 		 * the first page. This later caused kernel (xc_attention)

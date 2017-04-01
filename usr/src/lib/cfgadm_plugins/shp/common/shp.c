@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2016 by Delphix. All rights reserved.
  */
 
 /*
@@ -381,7 +382,7 @@ typedef struct error_sum_cb_arg {
 
 /*
  * Callback function for hp_traverse(), to add the error
- * message to he table.
+ * message to the table.
  */
 static int
 error_sumup_cb(hp_node_t node, void *arg)
@@ -1377,6 +1378,7 @@ cfga_list_ext(const char *ap_id, cfga_list_data_t **cs,
 {
 	char			*boardtype;
 	char			*cardtype;
+	char			*tmpb = NULL, *tmpc = NULL;
 	struct	searcharg	slotname_arg;
 	int			fd;
 	int			rv = CFGA_OK;
@@ -1497,16 +1499,16 @@ cfga_list_ext(const char *ap_id, cfga_list_data_t **cs,
 	(*cs)->ap_status_time = hp_last_change(node);
 
 	/* board type */
-	if (hp_get_private(node, PCIEHPC_PROP_BOARD_TYPE, &boardtype) != 0)
+	if (hp_get_private(node, PCIEHPC_PROP_BOARD_TYPE, &tmpb) != 0)
 		boardtype = PCIEHPC_PROP_VALUE_UNKNOWN;
 	else
-		boardtype = get_val_from_result(boardtype);
+		boardtype = get_val_from_result(tmpb);
 
 	/* card type */
-	if (hp_get_private(node, PCIEHPC_PROP_CARD_TYPE, &cardtype) != 0)
+	if (hp_get_private(node, PCIEHPC_PROP_CARD_TYPE, &tmpc) != 0)
 		cardtype = PCIEHPC_PROP_VALUE_UNKNOWN;
 	else
-		cardtype = get_val_from_result(cardtype);
+		cardtype = get_val_from_result(tmpc);
 
 	/* logical ap_id */
 	rv = fix_ap_name((*cs)->ap_log_id, ap_id,
@@ -1540,6 +1542,8 @@ cfga_list_ext(const char *ap_id, cfga_list_data_t **cs,
 	DBG(1, ("cfga_list_ext return success\n"));
 	rv = CFGA_OK;
 
+	free(tmpb);
+	free(tmpc);
 	hp_fini(node);
 	return (rv);
 }

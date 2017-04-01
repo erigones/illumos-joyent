@@ -501,6 +501,7 @@ DRV_KMODS	+= usbskel
 DRV_KMODS	+= usbvc
 DRV_KMODS	+= usbftdi
 DRV_KMODS	+= usbecm
+DRV_KMODS	+= xhci
 
 #
 #	USBGEM modules
@@ -524,13 +525,6 @@ DRV_KMODS	+= dcam1394
 #
 DRV_KMODS	+= ib ibp eibnx eoib rdsib sdp iser daplt hermon tavor sol_ucma sol_uverbs
 DRV_KMODS	+= sol_umad 
-
-#
-#	LVM modules
-#
-DRV_KMODS	+= md
-MISC_KMODS	+= md_stripe md_hotspares md_mirror md_raid md_trans md_notify
-MISC_KMODS	+= md_sp
 
 #
 #	Brand modules

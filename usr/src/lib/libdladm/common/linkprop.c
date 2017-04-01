@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2006, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2014, Joyent, Inc. All rights reserved.
+ * Copyright 2017 Joyent, Inc.
  * Copyright 2015 Garrett D'Amore <garrett@damore.org>
  */
 
@@ -271,9 +271,17 @@ static link_attr_t link_attr[] = {
 
 	{ MAC_PROP_EN_100GFDX_CAP, sizeof (uint8_t),	"en_100gfdx_cap"},
 
+	{ MAC_PROP_ADV_50GFDX_CAP, sizeof (uint8_t),	"adv_50gfdx_cap"},
+
+	{ MAC_PROP_EN_50GFDX_CAP, sizeof (uint8_t),	"en_50gfdx_cap"},
+
 	{ MAC_PROP_ADV_40GFDX_CAP, sizeof (uint8_t),	"adv_40gfdx_cap"},
 
 	{ MAC_PROP_EN_40GFDX_CAP, sizeof (uint8_t),	"en_40gfdx_cap"},
+
+	{ MAC_PROP_ADV_25GFDX_CAP, sizeof (uint8_t),	"adv_25gfdx_cap"},
+
+	{ MAC_PROP_EN_25GFDX_CAP, sizeof (uint8_t),	"en_25gfdx_cap"},
 
 	{ MAC_PROP_ADV_10GFDX_CAP, sizeof (uint8_t),	"adv_10gfdx_cap"},
 
@@ -558,12 +566,32 @@ static prop_desc_t	prop_table[] = {
 	    set_public_prop, NULL, get_binary, NULL,
 	    0, DATALINK_CLASS_PHYS, DL_ETHER },
 
+	{ "adv_50gfdx_cap", { "", 0 },
+	    link_01_vals, VALCNT(link_01_vals),
+	    NULL, NULL, get_binary, NULL,
+	    0, DATALINK_CLASS_PHYS, DL_ETHER },
+
+	{ "en_50gfdx_cap", { "", 0 },
+	    link_01_vals, VALCNT(link_01_vals),
+	    set_public_prop, NULL, get_binary, NULL,
+	    0, DATALINK_CLASS_PHYS, DL_ETHER },
+
 	{ "adv_40gfdx_cap", { "", 0 },
 	    link_01_vals, VALCNT(link_01_vals),
 	    NULL, NULL, get_binary, NULL,
 	    0, DATALINK_CLASS_PHYS, DL_ETHER },
 
 	{ "en_40gfdx_cap", { "", 0 },
+	    link_01_vals, VALCNT(link_01_vals),
+	    set_public_prop, NULL, get_binary, NULL,
+	    0, DATALINK_CLASS_PHYS, DL_ETHER },
+
+	{ "adv_25gfdx_cap", { "", 0 },
+	    link_01_vals, VALCNT(link_01_vals),
+	    NULL, NULL, get_binary, NULL,
+	    0, DATALINK_CLASS_PHYS, DL_ETHER },
+
+	{ "en_25gfdx_cap", { "", 0 },
 	    link_01_vals, VALCNT(link_01_vals),
 	    set_public_prop, NULL, get_binary, NULL,
 	    0, DATALINK_CLASS_PHYS, DL_ETHER },
@@ -853,7 +881,8 @@ static dladm_status_t	i_dladm_set_single_prop(dladm_handle_t, datalink_id_t,
 			    datalink_class_t, uint32_t, prop_desc_t *, char **,
 			    uint_t, uint_t);
 static dladm_status_t	i_dladm_set_linkprop(dladm_handle_t, datalink_id_t,
-			    const char *, char **, uint_t, uint_t);
+			    const char *, char **, uint_t, uint_t,
+			    datalink_class_t, uint32_t);
 static dladm_status_t	i_dladm_getset_defval(dladm_handle_t, prop_desc_t *,
 			    datalink_id_t, datalink_media_t, uint_t);
 
@@ -940,30 +969,32 @@ i_dladm_set_single_prop(dladm_handle_t handle, datalink_id_t linkid,
 
 		cnt = val_cnt;
 	} else {
-		boolean_t	defval = B_FALSE;
+		boolean_t	defval;
 
 		if (pdp->pd_defval.vd_name == NULL)
 			return (DLADM_STATUS_NOTSUP);
 
 		cnt = 1;
 		defval = (strlen(pdp->pd_defval.vd_name) > 0);
-		if ((pdp->pd_flags & PD_CHECK_ALLOC) != 0 || defval) {
-			if ((vdp = calloc(1, sizeof (val_desc_t))) == NULL)
-				return (DLADM_STATUS_NOMEM);
-
-			if (defval) {
-				(void) memcpy(vdp, &pdp->pd_defval,
-				    sizeof (val_desc_t));
-			} else if (pdp->pd_check != NULL) {
-				status = pdp->pd_check(handle, pdp, linkid,
-				    prop_val, &cnt, flags, &vdp, media);
-				if (status != DLADM_STATUS_OK)
-					goto done;
-			}
-		} else {
+		if ((pdp->pd_flags & PD_CHECK_ALLOC) == 0 && !defval) {
 			status = i_dladm_getset_defval(handle, pdp, linkid,
 			    media, flags);
 			return (status);
+		}
+
+		vdp = calloc(1, sizeof (val_desc_t));
+		if (vdp == NULL)
+			return (DLADM_STATUS_NOMEM);
+
+		if (defval) {
+			(void) memcpy(vdp, &pdp->pd_defval,
+			    sizeof (val_desc_t));
+		} else if (pdp->pd_check != NULL) {
+			needfree = ((pdp->pd_flags & PD_CHECK_ALLOC) != 0);
+			status = pdp->pd_check(handle, pdp, linkid, prop_val,
+			    &cnt, flags, &vdp, media);
+			if (status != DLADM_STATUS_OK)
+				goto done;
 		}
 	}
 	if (pdp->pd_flags & PD_AFTER_PERM)
@@ -983,18 +1014,12 @@ done:
 
 static dladm_status_t
 i_dladm_set_linkprop(dladm_handle_t handle, datalink_id_t linkid,
-    const char *prop_name, char **prop_val, uint_t val_cnt, uint_t flags)
+    const char *prop_name, char **prop_val, uint_t val_cnt, uint_t flags,
+    datalink_class_t class, uint32_t media)
 {
 	int			i;
 	boolean_t		found = B_FALSE;
-	datalink_class_t	class;
-	uint32_t		media;
 	dladm_status_t		status = DLADM_STATUS_OK;
-
-	status = dladm_datalink_id2info(handle, linkid, NULL, &class, &media,
-	    NULL, 0);
-	if (status != DLADM_STATUS_OK)
-		return (status);
 
 	for (i = 0; i < DLADM_MAX_PROPS; i++) {
 		prop_desc_t	*pdp = &prop_table[i];
@@ -1011,6 +1036,19 @@ i_dladm_set_linkprop(dladm_handle_t handle, datalink_id_t linkid,
 			status = s;
 			break;
 		} else {
+			/*
+			 * Some consumers of this function pass a
+			 * prop_name of NULL to indicate that all
+			 * properties should reset to their default
+			 * value. Some properties don't support a
+			 * default value and will return NOTSUP -- for
+			 * the purpose of resetting property values we
+			 * treat it the same as success. We need the
+			 * separate status variable 's' so that we can
+			 * record any failed calls in 'status' and
+			 * continue resetting the rest of the
+			 * properties.
+			 */
 			if (s != DLADM_STATUS_OK &&
 			    s != DLADM_STATUS_NOTSUP)
 				status = s;
@@ -1036,6 +1074,9 @@ dladm_set_linkprop(dladm_handle_t handle, datalink_id_t linkid,
     const char *prop_name, char **prop_val, uint_t val_cnt, uint_t flags)
 {
 	dladm_status_t	status = DLADM_STATUS_OK;
+	datalink_class_t	class;
+	uint32_t		media;
+	uint32_t		link_flags;
 
 	if ((linkid == DATALINK_INVALID_LINKID) || (flags == 0) ||
 	    (prop_val == NULL && val_cnt > 0) ||
@@ -1048,12 +1089,21 @@ dladm_set_linkprop(dladm_handle_t handle, datalink_id_t linkid,
 	 * Check for valid link property against the flags passed
 	 * and set the link property when active flag is passed.
 	 */
+	status = dladm_datalink_id2info(handle, linkid, &link_flags, &class,
+	    &media, NULL, 0);
+	if (status != DLADM_STATUS_OK)
+		return (status);
 	status = i_dladm_set_linkprop(handle, linkid, prop_name, prop_val,
-	    val_cnt, flags);
+	    val_cnt, flags, class, media);
 	if (status != DLADM_STATUS_OK)
 		return (status);
 
-	if (flags & DLADM_OPT_PERSIST) {
+	/*
+	 * Write an entry to the persistent configuration database if
+	 * and only if the user has requested the property to be
+	 * persistent and the link is a persistent link.
+	 */
+	if ((flags & DLADM_OPT_PERSIST) && (link_flags & DLMGMT_PERSIST)) {
 		status = i_dladm_set_linkprop_db(handle, linkid, prop_name,
 		    prop_val, val_cnt);
 
@@ -4116,7 +4166,6 @@ get_flowctl(dladm_handle_t handle, prop_desc_t *pdp,
 static dladm_status_t
 i_dladm_set_private_prop(dladm_handle_t handle, datalink_id_t linkid,
     const char *prop_name, char **prop_val, uint_t val_cnt, uint_t flags)
-
 {
 	int		i, slen;
 	int 		bufsize = 0;

@@ -25,7 +25,7 @@
  */
 
 /*
- * Copyright 2016 Joyent, Inc.
+ * Copyright 2017 Joyent, Inc.
  */
 
 #include <sys/types.h>
@@ -72,7 +72,6 @@
 #include <sys/lx_signal.h>
 #include <sys/lx_syscall.h>
 #include <sys/lx_thread.h>
-#include <sys/lx_aio.h>
 #include <lx_auxv.h>
 
 /*
@@ -1014,14 +1013,14 @@ static lx_syscall_handler_t lx_handlers[] = {
 	NULL,				/*   0: read */
 	NULL,				/*   1: write */
 	NULL,				/*   2: open */
-	lx_close,			/*   3: close */
+	NULL,				/*   3: close */
 	NULL,				/*   4: stat */
 	NULL,				/*   5: fstat */
 	NULL,				/*   6: lstat */
 	NULL,				/*   7: poll */
 	NULL,				/*   8: lseek */
 	lx_mmap,			/*   9: mmap */
-	lx_mprotect,			/*  10: mprotect */
+	NULL,				/*  10: mprotect */
 	NULL,				/*  11: munmap */
 	NULL,				/*  12: brk */
 	lx_rt_sigaction,		/*  13: rt_sigaction */
@@ -1037,9 +1036,9 @@ static lx_syscall_handler_t lx_handlers[] = {
 	NULL,				/*  23: select */
 	NULL,				/*  24: sched_yield */
 	lx_remap,			/*  25: mremap */
-	lx_msync,			/*  26: msync */
+	NULL,				/*  26: msync */
 	NULL,				/*  27: mincore */
-	lx_madvise,			/*  28: madvise */
+	NULL,				/*  28: madvise */
 	lx_shmget,			/*  29: shmget */
 	lx_shmat,			/*  30: shmat */
 	lx_shmctl,			/*  31: shmctl */
@@ -1160,10 +1159,10 @@ static lx_syscall_handler_t lx_handlers[] = {
 	NULL,				/* 146: sched_get_priority_max */
 	NULL,				/* 147: sched_get_priority_min */
 	NULL,				/* 148: sched_rr_get_interval */
-	lx_mlock,			/* 149: mlock */
-	lx_munlock,			/* 150: munlock */
-	lx_mlockall,			/* 151: mlockall */
-	lx_munlockall,			/* 152: munlockall */
+	NULL,				/* 149: mlock */
+	NULL,				/* 150: munlock */
+	NULL,				/* 151: mlockall */
+	NULL,				/* 152: munlockall */
 	NULL,				/* 153: vhangup */
 	NULL,				/* 154: modify_ldt */
 	NULL,				/* 155: pivot_root */
@@ -1217,11 +1216,11 @@ static lx_syscall_handler_t lx_handlers[] = {
 	NULL,				/* 203: sched_setaffinity */
 	NULL,				/* 204: sched_getaffinity */
 	NULL,				/* 205: set_thread_area */
-	lx_io_setup,			/* 206: io_setup */
-	lx_io_destroy,			/* 207: io_destroy */
-	lx_io_getevents,		/* 208: io_getevents */
-	lx_io_submit,			/* 209: io_submit */
-	lx_io_cancel,			/* 210: io_cancel */
+	NULL,				/* 206: io_setup */
+	NULL,				/* 207: io_destroy */
+	NULL,				/* 208: io_getevents */
+	NULL,				/* 209: io_submit */
+	NULL,				/* 210: io_cancel */
 	NULL,				/* 211: get_thread_area */
 	NULL,				/* 212: lookup_dcookie */
 	NULL,				/* 213: epoll_create */
@@ -1295,13 +1294,13 @@ static lx_syscall_handler_t lx_handlers[] = {
 	NULL,				/* 281: epoll_pwait */
 	lx_signalfd,			/* 282: signalfd */
 	lx_timerfd_create,		/* 283: timerfd_create */
-	lx_eventfd,			/* 284: eventfd */
+	NULL,				/* 284: eventfd */
 	NULL,				/* 285: fallocate */
 	lx_timerfd_settime,		/* 286: timerfd_settime */
 	lx_timerfd_gettime,		/* 287: timerfd_gettime */
 	NULL,				/* 288: accept4 */
 	lx_signalfd4,			/* 289: signalfd4 */
-	lx_eventfd2,			/* 290: eventfd2 */
+	NULL,				/* 290: eventfd2 */
 	NULL,				/* 291: epoll_create1 */
 	NULL,				/* 292: dup3 */
 	NULL,				/* 293: pipe2 */
@@ -1348,7 +1347,7 @@ static lx_syscall_handler_t lx_handlers[] = {
 	NULL,				/*   3: read */
 	NULL,				/*   4: write */
 	NULL,				/*   5: open */
-	lx_close,			/*   6: close */
+	NULL,				/*   6: close */
 	NULL,				/*   7: waitpid */
 	NULL,				/*   8: creat */
 	NULL,				/*   9: link */
@@ -1467,7 +1466,7 @@ static lx_syscall_handler_t lx_handlers[] = {
 	NULL,				/* 122: uname */
 	NULL,				/* 123: modify_ldt */
 	lx_adjtimex,			/* 124: adjtimex */
-	lx_mprotect,			/* 125: mprotect */
+	NULL,				/* 125: mprotect */
 	lx_sigprocmask,			/* 126: sigprocmask */
 	NULL,				/* 127: create_module */
 	NULL,				/* 128: init_module */
@@ -1486,16 +1485,16 @@ static lx_syscall_handler_t lx_handlers[] = {
 	NULL,				/* 141: getdents */
 	NULL,				/* 142: select */
 	lx_flock,			/* 143: flock */
-	lx_msync,			/* 144: msync */
+	NULL,				/* 144: msync */
 	NULL,				/* 145: readv */
 	NULL,				/* 146: writev */
 	NULL,				/* 147: getsid */
 	lx_fdatasync,			/* 148: fdatasync */
 	lx_sysctl,			/* 149: sysctl */
-	lx_mlock,			/* 150: mlock */
-	lx_munlock,			/* 151: munlock */
-	lx_mlockall,			/* 152: mlockall */
-	lx_munlockall,			/* 153: munlockall */
+	NULL,				/* 150: mlock */
+	NULL,				/* 151: munlock */
+	NULL,				/* 152: mlockall */
+	NULL,				/* 153: munlockall */
 	NULL,				/* 154: sched_setparam */
 	NULL,				/* 155: sched_getparam */
 	NULL,				/* 156: sched_setscheduler */
@@ -1561,7 +1560,7 @@ static lx_syscall_handler_t lx_handlers[] = {
 	NULL,				/* 216: setfsgid */
 	NULL,				/* 217: pivot_root */
 	NULL,				/* 218: mincore */
-	lx_madvise,			/* 219: madvise */
+	NULL,				/* 219: madvise */
 	NULL,				/* 220: getdents64 */
 	NULL,				/* 221: fcntl64 */
 	NULL,				/* 222: tux */
@@ -1587,11 +1586,11 @@ static lx_syscall_handler_t lx_handlers[] = {
 	NULL,				/* 242: sched_getaffinity */
 	NULL,				/* 243: set_thread_area */
 	NULL,				/* 244: get_thread_area */
-	lx_io_setup,			/* 245: io_setup */
-	lx_io_destroy,			/* 246: io_destroy */
-	lx_io_getevents,		/* 247: io_getevents */
-	lx_io_submit,			/* 248: io_submit */
-	lx_io_cancel,			/* 249: io_cancel */
+	NULL,				/* 245: io_setup */
+	NULL,				/* 246: io_destroy */
+	NULL,				/* 247: io_getevents */
+	NULL,				/* 248: io_submit */
+	NULL,				/* 249: io_cancel */
 	NULL,				/* 250: fadvise64 */
 	NULL,				/* 251: nosys */
 	lx_group_exit,			/* 252: group_exit */
@@ -1665,12 +1664,12 @@ static lx_syscall_handler_t lx_handlers[] = {
 	lx_utimensat,			/* 320: utimensat */
 	lx_signalfd,			/* 321: signalfd */
 	lx_timerfd_create,		/* 322: timerfd_create */
-	lx_eventfd,			/* 323: eventfd */
+	NULL,				/* 323: eventfd */
 	NULL,				/* 324: fallocate */
 	lx_timerfd_settime,		/* 325: timerfd_settime */
 	lx_timerfd_gettime,		/* 326: timerfd_gettime */
 	lx_signalfd4,			/* 327: signalfd4 */
-	lx_eventfd2,			/* 328: eventfd2 */
+	NULL,				/* 328: eventfd2 */
 	NULL,				/* 329: epoll_create1 */
 	NULL,				/* 330: dup3 */
 	NULL,				/* 331: pipe2 */

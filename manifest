@@ -19,7 +19,7 @@
 # CDDL HEADER END
 #
 #
-# Copyright 2016 Joyent, Inc.
+# Copyright 2017 Joyent, Inc.
 #
 # This lists all the files that illumos-joyent delivers as part of a build.
 # Keep this sorted as by LC_ALL=C sort -u -k2.
@@ -131,6 +131,7 @@ s dev/dump=../devices/pseudo/dump@0:dump
 d dev/fd 0555 root root
 s dev/fm=../devices/pseudo/fm@0:fm
 s dev/fssnapctl=../devices/pseudo/fssnap@0:ctl
+s dev/full=../devices/pseudo/mm@0:full
 s dev/icmp6=../devices/pseudo/icmp6@0:icmp6
 s dev/icmp=../devices/pseudo/icmp@0:icmp
 s dev/igb=../devices/pseudo/clone@0:igb
@@ -626,6 +627,7 @@ f kernel/drv/amd64/arp 0755 root sys
 f kernel/drv/amd64/asy 0755 root sys
 f kernel/drv/amd64/ata 0755 root sys
 f kernel/drv/amd64/atge 0755 root sys
+f kernel/drv/amd64/audio 0755 root sys
 f kernel/drv/amd64/axf 0755 root sys
 f kernel/drv/amd64/bcm_sata 0755 root sys
 f kernel/drv/amd64/bfe 0755 root sys
@@ -777,6 +779,9 @@ f kernel/drv/amd64/udp 0755 root sys
 f kernel/drv/amd64/udp6 0755 root sys
 f kernel/drv/amd64/ugen 0755 root sys
 f kernel/drv/amd64/uhci 0755 root sys
+f kernel/drv/amd64/usb_ac 0755 root sys
+f kernel/drv/amd64/usb_as 0755 root sys
+f kernel/drv/amd64/usb_ia 0755 root sys
 f kernel/drv/amd64/usb_mid 0755 root sys
 f kernel/drv/amd64/usbecm 0755 root sys
 f kernel/drv/amd64/usbftdi 0755 root sys
@@ -799,6 +804,7 @@ f kernel/drv/amd64/vr 0755 root sys
 f kernel/drv/amd64/vscan 0755 root sys
 f kernel/drv/amd64/wc 0755 root sys
 f kernel/drv/amd64/xge 0755 root sys
+f kernel/drv/amd64/xhci 0755 root sys
 f kernel/drv/amd64/yge 0755 root sys
 f kernel/drv/amd64/zfs 0755 root sys
 f kernel/drv/amr.conf 0644 root sys
@@ -806,6 +812,7 @@ f kernel/drv/arcmsr.conf 0644 root sys
 f kernel/drv/arp.conf 0644 root sys
 f kernel/drv/asy.conf 0644 root sys
 f kernel/drv/ata.conf 0644 root sys
+f kernel/drv/audio.conf 0644 root sys
 f kernel/drv/bge.conf 0644 root sys
 f kernel/drv/bl.conf 0644 root sys
 f kernel/drv/bnx.conf 0644 root sys
@@ -932,6 +939,7 @@ f kernel/drv/vnd.conf 0644 root sys
 f kernel/drv/vnic.conf 0644 root sys
 f kernel/drv/vscan.conf 0644 root sys
 f kernel/drv/wc.conf 0644 root sys
+f kernel/drv/xhci.conf 0644 root sys
 f kernel/drv/zfs.conf 0644 root sys
 d kernel/dtrace 0755 root sys
 d kernel/dtrace/amd64 0755 root sys
@@ -1050,6 +1058,7 @@ f kernel/kmdb/amd64/sv 0555 root sys
 f kernel/kmdb/amd64/ufs 0555 root sys
 f kernel/kmdb/amd64/uhci 0555 root sys
 f kernel/kmdb/amd64/usba 0555 root sys
+f kernel/kmdb/amd64/xhci 0555 root sys
 f kernel/kmdb/amd64/zfs 0555 root sys
 d kernel/mac 0755 root sys
 d kernel/mac/amd64 0755 root sys
@@ -2149,6 +2158,7 @@ h usr/bin/digest=usr/lib/isaexec
 f usr/bin/dircmp 0555 root bin
 f usr/bin/dirname 0555 root bin
 f usr/bin/dis 0555 root bin
+f usr/bin/diskinfo 0555 root bin
 f usr/bin/diskscan 0555 root bin
 h usr/bin/dispgid=usr/bin/ckgid
 h usr/bin/dispuid=usr/bin/ckuid
@@ -2311,7 +2321,6 @@ f usr/bin/nm 0555 root bin
 h usr/bin/nohup=usr/lib/isaexec
 f usr/bin/nroff 0555 root bin
 f usr/bin/od 0555 root bin
-f usr/bin/on 0555 root bin
 f usr/bin/optisa 0555 root bin
 f usr/bin/pack 0555 root bin
 h usr/bin/page=usr/bin/more
@@ -3051,11 +3060,8 @@ f usr/include/malloc.h 0644 root bin
 f usr/include/math.h 0644 root bin
 f usr/include/md4.h 0644 root bin
 f usr/include/md5.h 0644 root bin
-f usr/include/mdiox.h 0644 root bin
-f usr/include/mdmn_changelog.h 0644 root bin
 f usr/include/memory.h 0644 root bin
 f usr/include/menu.h 0644 root bin
-f usr/include/mhdx.h 0644 root bin
 f usr/include/mon.h 0644 root bin
 f usr/include/monetary.h 0644 root bin
 f usr/include/mp.h 0644 root bin
@@ -3283,8 +3289,6 @@ f usr/include/rpcsvc/nlm_prot.h 0644 root bin
 f usr/include/rpcsvc/nlm_prot.x 0644 root bin
 f usr/include/rpcsvc/nsm_addr.h 0644 root bin
 f usr/include/rpcsvc/nsm_addr.x 0644 root bin
-f usr/include/rpcsvc/rex.h 0644 root bin
-f usr/include/rpcsvc/rex.x 0644 root bin
 f usr/include/rpcsvc/rpc_sztypes.h 0644 root bin
 f usr/include/rpcsvc/rpc_sztypes.x 0644 root bin
 f usr/include/rpcsvc/rquota.h 0644 root bin
@@ -3338,7 +3342,6 @@ d usr/include/scsi/plugins/smp 0755 root bin
 d usr/include/scsi/plugins/smp/engine 0755 root bin
 d usr/include/scsi/plugins/smp/framework 0755 root bin
 f usr/include/sdp.h 0644 root bin
-f usr/include/sdssc.h 0644 root bin
 f usr/include/search.h 0644 root bin
 f usr/include/secdb.h 0644 root bin
 d usr/include/security 0755 root bin
@@ -4004,27 +4007,6 @@ f usr/include/sys/log.h 0644 root bin
 f usr/include/sys/logindmux.h 0644 root bin
 f usr/include/sys/logindmux_impl.h 0644 root bin
 f usr/include/sys/lpif.h 0644 root bin
-d usr/include/sys/lvm 0755 root bin
-f usr/include/sys/lvm/md_basic.h 0644 root bin
-f usr/include/sys/lvm/md_convert.h 0644 root bin
-f usr/include/sys/lvm/md_crc.h 0644 root bin
-f usr/include/sys/lvm/md_hotspares.h 0644 root bin
-f usr/include/sys/lvm/md_mddb.h 0644 root bin
-f usr/include/sys/lvm/md_mdiox.h 0644 root bin
-f usr/include/sys/lvm/md_mhdx.h 0644 root bin
-f usr/include/sys/lvm/md_mirror.h 0644 root bin
-f usr/include/sys/lvm/md_mirror_shared.h 0644 root bin
-f usr/include/sys/lvm/md_names.h 0644 root bin
-f usr/include/sys/lvm/md_notify.h 0644 root bin
-f usr/include/sys/lvm/md_raid.h 0644 root bin
-f usr/include/sys/lvm/md_rename.h 0644 root bin
-f usr/include/sys/lvm/md_sp.h 0644 root bin
-f usr/include/sys/lvm/md_stripe.h 0644 root bin
-f usr/include/sys/lvm/md_trans.h 0644 root bin
-f usr/include/sys/lvm/mdio.h 0644 root bin
-f usr/include/sys/lvm/mdmed.h 0644 root bin
-f usr/include/sys/lvm/mdmn_commd.h 0644 root bin
-f usr/include/sys/lvm/mdvar.h 0644 root bin
 f usr/include/sys/lwp.h 0644 root bin
 f usr/include/sys/lwp_timer_impl.h 0644 root bin
 f usr/include/sys/lwp_upimutex_impl.h 0644 root bin
@@ -4404,7 +4386,6 @@ f usr/include/sys/sysevent/env.h 0644 root bin
 f usr/include/sys/sysevent/eventdefs.h 0644 root bin
 f usr/include/sys/sysevent/ipmp.h 0644 root bin
 f usr/include/sys/sysevent/pwrctl.h 0644 root bin
-f usr/include/sys/sysevent/svm.h 0644 root bin
 f usr/include/sys/sysevent/vrrp.h 0644 root bin
 f usr/include/sys/sysevent_impl.h 0644 root bin
 f usr/include/sys/sysi86.h 0644 root bin
@@ -5202,6 +5183,7 @@ f usr/lib/brand/lx/lx_boot_zone_busybox 0755 root root
 f usr/lib/brand/lx/lx_boot_zone_ubuntu 0755 root root
 f usr/lib/brand/lx/lxinit 0755 root root
 f usr/lib/brand/lx/lx_librtld_db.so.1 0755 root root
+f usr/lib/brand/lx/lx_lockd 0755 root root
 f usr/lib/brand/lx/lx_support 0755 root root
 f usr/lib/brand/lx/lx_vdso.so.1 0755 root root
 f usr/lib/brand/lx/platform.xml 0444 root root
@@ -6309,6 +6291,7 @@ f usr/lib/libfcoe.so.1 0755 root bin
 s usr/lib/libfcoe.so=libfcoe.so.1
 s usr/lib/libfdisk.so.1=../../lib/libfdisk.so.1
 s usr/lib/libfdisk.so=../../lib/libfdisk.so.1
+f usr/lib/libficl-sys.so.4.1.0 0755 root bin
 f usr/lib/libform.so.1 0755 root bin
 s usr/lib/libform.so=libform.so.1
 f usr/lib/libfru.so.1 0755 root bin
@@ -9649,7 +9632,6 @@ f usr/lib/mdb/kvm/amd64/krtld.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/lofs.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/logindmux.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/mac.so 0555 root sys
-f usr/lib/mdb/kvm/amd64/md.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/mdb_kb.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/mdb_ks.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/mm.so 0555 root sys
@@ -9684,6 +9666,7 @@ f usr/lib/mdb/kvm/amd64/sv.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/ufs.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/uhci.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/usba.so 0555 root sys
+f usr/lib/mdb/kvm/amd64/xhci.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/zfs.so 0555 root sys
 f usr/lib/mdb/kvm/arp.so 0555 root sys
 f usr/lib/mdb/kvm/cpc.so 0555 root sys
@@ -9707,7 +9690,6 @@ f usr/lib/mdb/kvm/krtld.so 0555 root sys
 f usr/lib/mdb/kvm/lofs.so 0555 root sys
 f usr/lib/mdb/kvm/logindmux.so 0555 root sys
 f usr/lib/mdb/kvm/mac.so 0555 root sys
-f usr/lib/mdb/kvm/md.so 0555 root sys
 f usr/lib/mdb/kvm/mdb_kb.so 0555 root sys
 f usr/lib/mdb/kvm/mdb_ks.so 0555 root sys
 f usr/lib/mdb/kvm/mm.so 0555 root sys
@@ -9742,6 +9724,7 @@ f usr/lib/mdb/kvm/sv.so 0555 root sys
 f usr/lib/mdb/kvm/ufs.so 0555 root sys
 f usr/lib/mdb/kvm/uhci.so 0555 root sys
 f usr/lib/mdb/kvm/usba.so 0555 root sys
+f usr/lib/mdb/kvm/xhci.so 0555 root sys
 f usr/lib/mdb/kvm/zfs.so 0555 root sys
 d usr/lib/mdb/proc 0755 root sys
 d usr/lib/mdb/proc/amd64 0755 root sys
@@ -9759,7 +9742,6 @@ f usr/lib/mdb/proc/amd64/libuutil.so 0555 root sys
 f usr/lib/mdb/proc/amd64/libzpool.so 0555 root sys
 f usr/lib/mdb/proc/amd64/mdb_ds.so 0555 root sys
 f usr/lib/mdb/proc/amd64/mdb_test.so 0555 root sys
-f usr/lib/mdb/proc/amd64/v8.so 0555 root sys
 f usr/lib/mdb/proc/eft.so 0555 root sys
 f usr/lib/mdb/proc/fmd.so 0555 root sys
 f usr/lib/mdb/proc/ld.so 0555 root sys
@@ -9778,7 +9760,6 @@ f usr/lib/mdb/proc/mdb_ds.so 0555 root sys
 f usr/lib/mdb/proc/mdb_test.so 0555 root sys
 f usr/lib/mdb/proc/svc.configd.so 0555 root sys
 f usr/lib/mdb/proc/svc.startd.so 0555 root sys
-f usr/lib/mdb/proc/v8.so 0555 root sys
 d usr/lib/mdb/raw 0755 root sys
 d usr/lib/mdb/raw/amd64 0755 root sys
 f usr/lib/mdb/raw/amd64/dof.so 0555 root sys
@@ -10236,6 +10217,8 @@ f usr/lib/vtdaemon 0555 root bin
 f usr/lib/vtinfo 0555 root bin
 f usr/lib/vtxlock 0555 root bin
 f usr/lib/watchmalloc.so.1 0755 root bin
+d usr/lib/xhci 0755 root bin
+f usr/lib/xhci/xhci_portsc 0555 root bin
 d usr/lib/zfs 0755 root bin
 f usr/lib/zfs/availdevs 0555 root bin
 d usr/lib/zones 0755 root bin
@@ -10617,7 +10600,6 @@ f usr/sbin/roledel 0555 root sys
 f usr/sbin/rolemod 0555 root sys
 s usr/sbin/route=../../sbin/route
 s usr/sbin/routeadm=../../sbin/routeadm
-f usr/sbin/rpc.rexd 0555 root bin
 f usr/sbin/rpcbind 0555 root bin
 f usr/sbin/rtc 0555 root bin
 f usr/sbin/rtquery 0555 root bin
@@ -10653,7 +10635,6 @@ f usr/sbin/syncloop 0555 root bin
 f usr/sbin/syncstat 0555 root bin
 h usr/sbin/sysdef=usr/lib/isaexec
 f usr/sbin/syseventadm 0555 root sys
-f usr/sbin/sysidpm 0755 root sys
 f usr/sbin/syslogd 0555 root sys
 h usr/sbin/tapes=usr/sbin/devfsadm
 f usr/sbin/tar 0555 root bin
@@ -11806,7 +11787,6 @@ f usr/share/man/man1/nm.1 0444 root bin
 f usr/share/man/man1/nohup.1 0444 root bin
 f usr/share/man/man1/nroff.1 0444 root bin
 f usr/share/man/man1/od.1 0444 root bin
-f usr/share/man/man1/on.1 0444 root bin
 f usr/share/man/man1/optisa.1 0444 root bin
 f usr/share/man/man1/pack.1 0444 root bin
 s usr/share/man/man1/page.1=more.1
@@ -12046,6 +12026,7 @@ f usr/share/man/man1m/dfmounts_nfs.1m 0444 root bin
 f usr/share/man/man1m/dfshares.1m 0444 root bin
 f usr/share/man/man1m/dfshares_nfs.1m 0444 root bin
 f usr/share/man/man1m/dhcpagent.1m 0444 root bin
+f usr/share/man/man1m/diskinfo.1m 0444 root bin
 f usr/share/man/man1m/disks.1m 0444 root bin
 f usr/share/man/man1m/diskscan.1m 0444 root bin
 f usr/share/man/man1m/dispadmin.1m 0444 root bin
@@ -12276,7 +12257,6 @@ f usr/share/man/man1m/rolemod.1m 0444 root bin
 f usr/share/man/man1m/route.1m 0444 root bin
 f usr/share/man/man1m/routeadm.1m 0444 root bin
 s usr/share/man/man1m/routed.1m=in.routed.1m
-f usr/share/man/man1m/rpc.rexd.1m 0444 root bin
 f usr/share/man/man1m/rpcbind.1m 0444 root bin
 f usr/share/man/man1m/rpcinfo.1m 0444 root bin
 f usr/share/man/man1m/rquotad.1m 0444 root bin
@@ -12671,16 +12651,8 @@ s usr/share/man/man3bsm/au_to_subject_ex.3bsm=au_to.3bsm
 s usr/share/man/man3bsm/au_to_text.3bsm=au_to.3bsm
 f usr/share/man/man3bsm/au_user_mask.3bsm 0444 root bin
 s usr/share/man/man3bsm/au_write.3bsm=au_open.3bsm
-s usr/share/man/man3bsm/endac.3bsm=getacinfo.3bsm
 s usr/share/man/man3bsm/endauclass.3bsm=getauclassent.3bsm
 s usr/share/man/man3bsm/endauevent.3bsm=getauevent.3bsm
-s usr/share/man/man3bsm/endauuser.3bsm=getauusernam.3bsm
-s usr/share/man/man3bsm/endddent.3bsm=getddent.3bsm
-s usr/share/man/man3bsm/getacdir.3bsm=getacinfo.3bsm
-s usr/share/man/man3bsm/getacflg.3bsm=getacinfo.3bsm
-f usr/share/man/man3bsm/getacinfo.3bsm 0444 root bin
-s usr/share/man/man3bsm/getacmin.3bsm=getacinfo.3bsm
-s usr/share/man/man3bsm/getacna.3bsm=getacinfo.3bsm
 f usr/share/man/man3bsm/getauclassent.3bsm 0444 root bin
 s usr/share/man/man3bsm/getauclassent_r.3bsm=getauclassent.3bsm
 s usr/share/man/man3bsm/getauclassnam.3bsm=getauclassent.3bsm
@@ -12695,19 +12667,9 @@ s usr/share/man/man3bsm/getauevnam_r.3bsm=getauevent.3bsm
 s usr/share/man/man3bsm/getauevnonam.3bsm=getauevent.3bsm
 s usr/share/man/man3bsm/getauevnum.3bsm=getauevent.3bsm
 s usr/share/man/man3bsm/getauevnum_r.3bsm=getauevent.3bsm
-s usr/share/man/man3bsm/getauuserent.3bsm=getauusernam.3bsm
-s usr/share/man/man3bsm/getauuserent_r.3bsm=getauusernam.3bsm
-f usr/share/man/man3bsm/getauusernam.3bsm 0444 root bin
-s usr/share/man/man3bsm/getauusernam_r.3bsm=getauusernam.3bsm
-f usr/share/man/man3bsm/getddent.3bsm 0444 root bin
-s usr/share/man/man3bsm/getddnam.3bsm=getddent.3bsm
 f usr/share/man/man3bsm/getfauditflags.3bsm 0444 root bin
-s usr/share/man/man3bsm/setac.3bsm=getacinfo.3bsm
 s usr/share/man/man3bsm/setauclass.3bsm=getauclassent.3bsm
 s usr/share/man/man3bsm/setauevent.3bsm=getauevent.3bsm
-s usr/share/man/man3bsm/setauuser.3bsm=getauusernam.3bsm
-s usr/share/man/man3bsm/setddent.3bsm=getddent.3bsm
-s usr/share/man/man3bsm/setddfile.3bsm=getddent.3bsm
 d usr/share/man/man3c 0755 root bin
 s usr/share/man/man3c/FD_CLR.3c=select.3c
 s usr/share/man/man3c/FD_ISSET.3c=select.3c
@@ -18460,9 +18422,7 @@ f usr/share/man/man4/aliases.4 0444 root bin
 f usr/share/man/man4/au.4 0444 root bin
 f usr/share/man/man4/audit.log.4 0444 root bin
 f usr/share/man/man4/audit_class.4 0444 root bin
-f usr/share/man/man4/audit_control.4 0444 root bin
 f usr/share/man/man4/audit_event.4 0444 root bin
-f usr/share/man/man4/audit_user.4 0444 root bin
 f usr/share/man/man4/auth_attr.4 0444 root bin
 f usr/share/man/man4/autofs.4 0444 root bin
 f usr/share/man/man4/bart_manifest.4 0444 root bin
@@ -18555,14 +18515,10 @@ f usr/share/man/man4/logindevperm.4 0444 root bin
 f usr/share/man/man4/loginlog.4 0444 root bin
 f usr/share/man/man4/magic.4 0444 root bin
 f usr/share/man/man4/mailer.conf.4 0444 root bin
-f usr/share/man/man4/md.tab.4 0444 root bin
-f usr/share/man/man4/mddb.cf.4 0444 root bin
 s usr/share/man/man4/mdi_ib_cache.4=devices.4
 s usr/share/man/man4/mdi_scsi_vhci_cache.4=devices.4
 f usr/share/man/man4/mech.4 0444 root bin
-f usr/share/man/man4/meddb.4 0444 root bin
 f usr/share/man/man4/mnttab.4 0444 root bin
-f usr/share/man/man4/mod_ipp.4 0444 root bin
 f usr/share/man/man4/mpapi.conf.4 0444 root bin
 f usr/share/man/man4/nca.if.4 0444 root bin
 f usr/share/man/man4/ncad_addr.4 0444 root bin
@@ -18662,8 +18618,6 @@ f usr/share/man/man4/user_attr.4 0444 root bin
 f usr/share/man/man4/utmp.4 0444 root bin
 f usr/share/man/man4/utmpx.4 0444 root bin
 f usr/share/man/man4/vfstab.4 0444 root bin
-f usr/share/man/man4/volume-config.4 0444 root bin
-f usr/share/man/man4/volume-request.4 0444 root bin
 f usr/share/man/man4/warn.conf.4 0444 root bin
 s usr/share/man/man4/wtmp.4=utmp.4
 s usr/share/man/man4/wtmpx.4=utmpx.4
@@ -18850,6 +18804,7 @@ f usr/share/man/man7d/fctl.7d 0444 root bin
 f usr/share/man/man7d/fd.7d 0444 root bin
 s usr/share/man/man7d/fdc.7d=fd.7d
 s usr/share/man/man7d/firewire.7d=ieee1394.7d
+f usr/share/man/man7d/full.7d 0444 root bin
 f usr/share/man/man7d/gld.7d 0444 root bin
 f usr/share/man/man7d/hci1394.7d 0444 root bin
 f usr/share/man/man7d/heci.7d 0444 root bin
@@ -18946,6 +18901,7 @@ f usr/share/man/man7d/vni.7d 0444 root bin
 f usr/share/man/man7d/vr.7d 0444 root bin
 f usr/share/man/man7d/vnd.7d 0444 root bin
 f usr/share/man/man7d/wscons.7d 0444 root bin
+f usr/share/man/man7d/xhci.7d 0444 root bin
 f usr/share/man/man7d/xge.7d 0444 root bin
 f usr/share/man/man7d/yge.7d 0444 root bin
 f usr/share/man/man7d/zcons.7d 0444 root bin
@@ -19059,8 +19015,9 @@ f usr/share/man/man7p/tcp.7p 0444 root bin
 f usr/share/man/man7p/udp.7p 0444 root bin
 f usr/share/man/man7p/vxlan.7p 0444 root bin
 d usr/share/man/man9 0755 root bin
-s usr/share/man/man9/Intro.9=../man9e/Intro.9e
-s usr/share/man/man9/intro.9=../man9e/Intro.9e
+f usr/share/man/man9/Intro.9 0444 root bin
+f usr/share/man/man9/vmem.9 0444 root bin
+s usr/share/man/man9/intro.9=Intro.9
 d usr/share/man/man9e 0755 root bin
 f usr/share/man/man9e/Intro.9e 0444 root bin
 f usr/share/man/man9e/_fini.9e 0444 root bin
@@ -19148,6 +19105,24 @@ f usr/share/man/man9e/tran_tgt_init.9e 0444 root bin
 f usr/share/man/man9e/tran_tgt_probe.9e 0444 root bin
 s usr/share/man/man9e/tran_unquiesce.9e=tran_quiesce.9e
 f usr/share/man/man9e/write.9e 0444 root bin
+f usr/share/man/man9e/usba_hcdi.9e 0444 root bin
+s usr/share/man/man9e/usba_hcdi_cb_close.9e=usba_hcdi_cb_ops.9e
+s usr/share/man/man9e/usba_hcdi_cb_ioctl.9e=usba_hcdi_cb_ops.9e
+s usr/share/man/man9e/usba_hcdi_cb_open.9e=usba_hcdi_cb_ops.9e
+f usr/share/man/man9e/usba_hcdi_cb_ops.9e 0444 root bin
+f usr/share/man/man9e/usba_hcdi_device_address.9e 0444 root bin
+s usr/share/man/man9e/usba_hcdi_device_fini.9e=usba_hcdi_device_init.9e
+f usr/share/man/man9e/usba_hcdi_device_init.9e 0444 root bin
+f usr/share/man/man9e/usba_hcdi_hub_update.9e 0444 root bin
+f usr/share/man/man9e/usba_hcdi_pipe_bulk_xfer.9e 0444 root bin
+s usr/share/man/man9e/usba_hcdi_pipe_close.9e=usba_hcdi_pipe_open.9e
+f usr/share/man/man9e/usba_hcdi_pipe_ctrl_xfer.9e 0444 root bin
+f usr/share/man/man9e/usba_hcdi_pipe_intr_xfer.9e 0444 root bin
+f usr/share/man/man9e/usba_hcdi_pipe_isoc_xfer.9e 0444 root bin
+f usr/share/man/man9e/usba_hcdi_pipe_open.9e 0444 root bin
+f usr/share/man/man9e/usba_hcdi_pipe_reset.9e 0444 root bin
+f usr/share/man/man9e/usba_hcdi_pipe_stop_intr_polling.9e 0444 root bin
+s usr/share/man/man9e/usba_hcdi_pipe_stop_isoc_polling.9e=usba_hcdi_pipe_stop_intr_polling.9e
 d usr/share/man/man9f 0755 root bin
 f usr/share/man/man9f/ASSERT.9f 0444 root bin
 s usr/share/man/man9f/AVL_NEXT.9f=avl.9f
@@ -20252,6 +20227,8 @@ s usr/share/man/man9f/sema_p_sig.9f=semaphore.9f
 s usr/share/man/man9f/sema_tryp.9f=semaphore.9f
 s usr/share/man/man9f/sema_v.9f=semaphore.9f
 f usr/share/man/man9f/semaphore.9f 0444 root bin
+s usr/share/man/man9f/snprintf.9f=sprintf.9f
+f usr/share/man/man9f/sprintf.9f 0444 root bin
 f usr/share/man/man9f/stoi.9f 0444 root bin
 s usr/share/man/man9f/strcasecmp.9f=string.9f
 s usr/share/man/man9f/strcat.9f=string.9f
@@ -20303,6 +20280,7 @@ f usr/share/man/man9f/usb_client_attach.9f 0444 root bin
 s usr/share/man/man9f/usb_client_detach.9f=usb_client_attach.9f
 f usr/share/man/man9f/usb_clr_feature.9f 0444 root bin
 f usr/share/man/man9f/usb_create_pm_components.9f 0444 root bin
+f usr/share/man/man9f/usb_ep_xdescr_fill.9f 0444 root bin
 s usr/share/man/man9f/usb_free_bulk_req.9f=usb_alloc_request.9f
 s usr/share/man/man9f/usb_free_ctrl_req.9f=usb_alloc_request.9f
 s usr/share/man/man9f/usb_free_descr_tree.9f=usb_get_dev_data.9f
@@ -20332,7 +20310,8 @@ s usr/share/man/man9f/usb_pipe_get_private.9f=usb_pipe_set_private.9f
 f usr/share/man/man9f/usb_pipe_get_state.9f 0444 root bin
 f usr/share/man/man9f/usb_pipe_intr_xfer.9f 0444 root bin
 f usr/share/man/man9f/usb_pipe_isoc_xfer.9f 0444 root bin
-f usr/share/man/man9f/usb_pipe_open.9f 0444 root bin
+s usr/share/man/man9f/usb_pipe_open.9f=usb_pipe_xopen.9f
+f usr/share/man/man9f/usb_pipe_xopen.9f 0444 root bin
 f usr/share/man/man9f/usb_pipe_reset.9f 0444 root bin
 f usr/share/man/man9f/usb_pipe_set_private.9f 0444 root bin
 s usr/share/man/man9f/usb_pipe_stop_intr_polling.9f=usb_pipe_intr_xfer.9f
@@ -20343,14 +20322,42 @@ f usr/share/man/man9f/usb_reset_device.9f 0444 root bin
 s usr/share/man/man9f/usb_set_alt_if.9f=usb_get_alt_if.9f
 s usr/share/man/man9f/usb_set_cfg.9f=usb_get_cfg.9f
 s usr/share/man/man9f/usb_unregister_hotplug_cbs.9f=usb_register_hotplug_cbs.9f
+f usr/share/man/man9f/usba_alloc_hcdi_ops.9f 0444 root bin
+s usr/share/man/man9f/usba_free_hcdi_ops.9f=usba_alloc_hcdi_ops.9f
+f usr/share/man/man9f/usba_hcdi_cb.9f 0444 root bin
+f usr/share/man/man9f/usba_hcdi_dup_intr_req.9f 0444 root bin
+f usr/share/man/man9f/usba_hcdi_dup_isoc_req.9f 0444 root bin
+f usr/share/man/man9f/usba_hcdi_get_device_private.9f 0444 root bin
+f usr/share/man/man9f/usba_hcdi_register.9f 0444 root bin
+s usr/share/man/man9f/usba_hcdi_unregister.9f=usba_hcdi_register.9f
+f usr/share/man/man9f/usba_hubdi_bind_root_hub.9f 0444 root bin
+f usr/share/man/man9f/usba_hubdi_cb_ops.9f 0444 root bin
+s usr/share/man/man9f/usba_hubdi_close.9f=usba_hubdi_cb_ops.9f
+f usr/share/man/man9f/usba_hubdi_dev_ops.9f 0444 root bin
+s usr/share/man/man9f/usba_hubdi_ioctl.9f=usba_hubdi_cb_ops.9f
+s usr/share/man/man9f/usba_hubdi_open.9f=usba_hubdi_cb_ops.9f
+s usr/share/man/man9f/usba_hubdi_root_hub_power.9f=usba_hubdi_dev_ops.9f
+s usr/share/man/man9f/usba_hubdi_unbind_root_hub.9f=usba_hubdi_bind_root_hub.9f
 f usr/share/man/man9f/uwritec.9f 0444 root bin
 f usr/share/man/man9f/va_arg.9f 0444 root bin
 s usr/share/man/man9f/va_copy.9f=va_arg.9f
 s usr/share/man/man9f/va_end.9f=va_arg.9f
 s usr/share/man/man9f/va_start.9f=va_arg.9f
 s usr/share/man/man9f/vcmn_err.9f=cmn_err.9f
+f usr/share/man/man9f/vmem_add.9f 0444 root bin
+f usr/share/man/man9f/vmem_alloc.9f 0444 root bin
+f usr/share/man/man9f/vmem_contains.9f 0444 root bin
+f usr/share/man/man9f/vmem_create.9f 0444 root bin
+s usr/share/man/man9f/vmem_destroy.9f=vmem_create.9f
+s usr/share/man/man9f/vmem_free.9f=vmem_alloc.9f
+s usr/share/man/man9f/vmem_size.9f=vmem_walk.9f
+f usr/share/man/man9f/vmem_walk.9f 0444 root bin
+s usr/share/man/man9f/vmem_xalloc.9f=vmem_alloc.9f
+s usr/share/man/man9f/vmem_xcreate.9f=vmem_create.9f
+s usr/share/man/man9f/vmem_xfree.9f=vmem_alloc.9f
 s usr/share/man/man9f/vzcmn_err.9f=cmn_err.9f
-f usr/share/man/man9f/vsprintf.9f 0444 root bin
+s usr/share/man/man9f/vsnprintf.9f=sprintf.9f
+s usr/share/man/man9f/vsprintf.9f=sprintf.9f
 s usr/share/man/man9f/wr.9f=WR.9f
 s usr/share/man/man9f/zcmn_err.9f=cmn_err.9f
 d usr/share/man/man9p 0755 root bin
@@ -20432,21 +20439,40 @@ f usr/share/man/man9s/streamtab.9s 0444 root bin
 f usr/share/man/man9s/stroptions.9s 0444 root bin
 f usr/share/man/man9s/tuple.9s 0444 root bin
 f usr/share/man/man9s/uio.9s 0444 root bin
-f usr/share/man/man9s/usb_bulk_request.9s 0444 root bin
+s usr/share/man/man9s/usb_bulk_req_t.9s=usb_bulk_req.9s
+f usr/share/man/man9s/usb_bulk_req.9s 0444 root bin
+s usr/share/man/man9s/usb_bulk_request.9s=usb_bulk_req.9s
 f usr/share/man/man9s/usb_callback_flags.9s 0444 root bin
 f usr/share/man/man9s/usb_cfg_descr.9s 0444 root bin
 f usr/share/man/man9s/usb_client_dev_data.9s 0444 root bin
 f usr/share/man/man9s/usb_completion_reason.9s 0444 root bin
-f usr/share/man/man9s/usb_ctrl_request.9s 0444 root bin
+s usr/share/man/man9s/usb_ctrl_req_t.9s=usb_ctrl_req.9s
+f usr/share/man/man9s/usb_ctrl_req.9s 0444 root bin
+s usr/share/man/man9s/usb_ctrl_request.9s=usb_ctrl_req.9s
 f usr/share/man/man9s/usb_dev_descr.9s 0444 root bin
 f usr/share/man/man9s/usb_dev_qlf_descr.9s 0444 root bin
 f usr/share/man/man9s/usb_ep_descr.9s 0444 root bin
+f usr/share/man/man9s/usb_ep_xdescr.9s 0444 root bin
+f usr/share/man/man9s/usb_ep_ss_comp_descr.9s 0444 root bin
+s usr/share/man/man9s/usb_ep_ss_comp_descr_t.9s=usb_ep_ss_comp_descr
 f usr/share/man/man9s/usb_if_descr.9s 0444 root bin
-f usr/share/man/man9s/usb_intr_request.9s 0444 root bin
-f usr/share/man/man9s/usb_isoc_request.9s 0444 root bin
+s usr/share/man/man9s/usb_intr_req_t.9s=usb_intr_req.9s
+f usr/share/man/man9s/usb_intr_req.9s 0444 root bin
+s usr/share/man/man9s/usb_intr_request.9s=usb_intr_req.9s
+s usr/share/man/man9s/usb_isoc_req_t.9s=usb_isoc_req.9s
+f usr/share/man/man9s/usb_isoc_req.9s 0444 root bin
+s usr/share/man/man9s/usb_isoc_request.9s=usb_isoc_req.9s
 f usr/share/man/man9s/usb_other_speed_cfg_descr.9s 0444 root bin
 f usr/share/man/man9s/usb_request_attributes.9s 0444 root bin
 f usr/share/man/man9s/usb_string_descr.9s 0444 root bin
+f usr/share/man/man9s/usba_device.9s 0444 root bin
+s usr/share/man/man9s/usba_device_t.9s=usba_device.9s
+f usr/share/man/man9s/usba_hcdi_ops.9s 0444 root bin
+s usr/share/man/man9s/usba_hcdi_ops_t.9s=usba_hcdi_ops.9s
+f usr/share/man/man9s/usba_hcdi_register_args.9s 0444 root bin
+s usr/share/man/man9s/usba_hcdi_register_args_t.9s=usba_hcdi_register_args.9s
+f usr/share/man/man9s/usba_pipe_handle_data.9s 0444 root bin
+s usr/share/man/man9s/usba_pipe_handle_data_t.9s=usba_pipe_handle_data.9s
 d usr/share/src 0755 root sys
 s usr/spool=../var/spool
 s usr/src=share/src

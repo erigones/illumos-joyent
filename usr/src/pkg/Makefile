@@ -167,6 +167,10 @@ PM_TRANSFORMS= common_actions publish restart_fmri facets defaults \
 	extract_metadata
 PM_INC= transforms manifests
 
+JAVA_8_ONLY=$(BLD_JAVA_8)
+JAVA_7_ONLY=
+$(BLD_JAVA_8)JAVA_7_ONLY=$(POUND_SIGN)
+
 PKGMOG_DEFINES= \
 	i386_ONLY=$(POUND_SIGN) \
 	sparc_ONLY=$(POUND_SIGN) \
@@ -182,7 +186,9 @@ PKGMOG_DEFINES= \
 	PERL_VERSION=$(PERL_VERSION) \
 	PERL_PKGVERS=$(PERL_PKGVERS) \
 	PYTHON_VERSION=$(PYTHON_VERSION) \
-	PYTHON_PKGVERS=$(PYTHON_PKGVERS)
+	PYTHON_PKGVERS=$(PYTHON_PKGVERS) \
+	JAVA_8_ONLY=$(JAVA_8_ONLY) \
+	JAVA_7_ONLY=$(JAVA_7_ONLY)
 
 PKGDEP_TOKENS_i386= \
 	'PLATFORM=i86hvm' \
@@ -219,25 +225,9 @@ CLOBBERFILES= $(PDIR) proto_list_$(PKGMACH) install-$(PKGMACH).out \
 # By default, PKGS will list all manifests.  To build and/or publish a
 # subset of packages, override this on the command line or in the
 # build environment and then reference (implicitly or explicitly) the all
-# or install targets.  Using ls -1 (that's a one) or print or echo to
-# get the list of manifests is a little hackish, but avoids having a
-# 900+ line file to explicitly list them all.
+# or install targets.
 #
-# We want some manifests to optionally built based on environment
-# options, so those are excluded and optionally added back in.
-# We also want a relatively easy way to add files to the list of
-# manifests given special treatment.  Add any other special ones
-# to the SPECIAL_MANIFESTS vaiable.  It can contain wildcards in
-# regexp form, i.e. SUNW.* as one useful example.
-#
-SPECIAL_MANIFESTS = print-lp-ipp-ipp-listener.mf
-LIST_MANIFESTS_CMD = (cd manifests ; /usr/bin/ls -1 *.mf |\
-	$(SED) $(SPECIAL_MANIFESTS:%=-e '/^%$$/d') )
-MANIFESTS = $(LIST_MANIFESTS_CMD:sh)
-
-# Conditionally add back lp-ipp
-$(ENABLE_IPP_PRINTING) MANIFESTS += print-lp-ipp-ipp-listener.mf
-
+MANIFESTS :sh= (cd manifests; print *.mf)
 PKGS= $(MANIFESTS:%.mf=%)
 DEP_PKGS= $(PKGS:%=$(PDIR)/%.dep)
 PROC_PKGS= $(PKGS:%=$(PDIR)/%.mog)

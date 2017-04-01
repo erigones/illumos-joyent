@@ -26,7 +26,6 @@
  */
 
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD$");
 
 #include <sys/param.h>
 #include <sys/reboot.h>
@@ -48,10 +47,7 @@ __FBSDID("$FreeBSD$");
 
 #include "loader_efi.h"
 
-extern char bootprog_name[];
-extern char bootprog_rev[];
-extern char bootprog_date[];
-extern char bootprog_maker[];
+extern char bootprog_info[];
 
 struct arch_switch archsw;	/* MI/MD interface boundary */
 
@@ -71,7 +67,7 @@ EFI_GUID fdtdtb = FDT_TABLE_GUID;
 EFI_GUID inputid = SIMPLE_TEXT_INPUT_PROTOCOL;
 EFI_GUID serial_io = SERIAL_IO_PROTOCOL;
 
-extern void acpi_detect(const caddr_t);
+extern void acpi_detect(void);
 void efi_serial_init(void);
 #ifdef EFI_ZFS_BOOT
 static void efi_zfs_probe(void);
@@ -79,8 +75,8 @@ static void efi_zfs_probe(void);
 
 /*
  * Need this because EFI uses UTF-16 unicode string constants, but we
- * use UTF-8. We can't use printf due to the possiblity of \0 and we
- * don't support support wide characters either.
+ * use UTF-8. We can't use printf due to the possibility of \0 and we
+ * don't support wide characters either.
  */
 static void
 print_str16(const CHAR16 *str)
@@ -182,6 +178,46 @@ out:
 	return retval;
 }
 
+static int
+find_currdev(EFI_LOADED_IMAGE *img, struct devsw **dev, int *unit,
+    uint64_t *extra)
+{
+	EFI_DEVICE_PATH *devpath, *copy;
+	EFI_HANDLE h;
+
+	/*
+	 * Try the device handle from our loaded image first.  If that
+	 * fails, use the device path from the loaded image and see if
+	 * any of the nodes in that path match one of the enumerated
+	 * handles.
+	 */
+	if (efi_handle_lookup(img->DeviceHandle, dev, unit, extra) == 0)
+		return (0);
+
+	copy = NULL;
+	devpath = efi_lookup_image_devpath(IH);
+	while (devpath != NULL) {
+		h = efi_devpath_handle(devpath);
+		if (h == NULL)
+			break;
+
+		free(copy);
+		copy = NULL;
+
+		if (efi_handle_lookup(h, dev, unit, extra) == 0)
+			return (0);
+
+		devpath = efi_lookup_devpath(h);
+		if (devpath != NULL) {
+			copy = efi_devpath_trim(devpath);
+			devpath = copy;
+		}
+	}
+	free(copy);
+
+	return (ENOENT);
+}
+
 EFI_STATUS
 main(int argc, CHAR16 *argv[])
 {
@@ -191,6 +227,7 @@ main(int argc, CHAR16 *argv[])
 	int i, j, vargood, unit, howto;
 	struct devsw *dev;
 	uint64_t pool_guid;
+	void *ptr;
 	UINTN k;
 	int has_kbd;
 
@@ -203,6 +240,9 @@ main(int argc, CHAR16 *argv[])
 	/* Note this needs to be set before ZFS init. */
 	archsw.arch_zfs_probe = efi_zfs_probe;
 #endif
+
+	/* Init the time source */
+	efi_time_init();
 
 	has_kbd = has_keyboard();
 
@@ -347,9 +387,7 @@ main(int argc, CHAR16 *argv[])
 	printf(" (rev %d.%02d)\n", ST->FirmwareRevision >> 16,
 	    ST->FirmwareRevision & 0xffff);
 
-	printf("\n");
-	printf("%s, Revision %s\n", bootprog_name, bootprog_rev);
-	printf("(%s, %s)\n", bootprog_maker, bootprog_date);
+	printf("\n%s", bootprog_info);
 
 	/*
 	 * Disable the watchdog timer. By default the boot manager sets
@@ -362,7 +400,7 @@ main(int argc, CHAR16 *argv[])
 	 */
 	BS->SetWatchdogTimer(0, 0, 0, NULL);
 
-	if (efi_handle_lookup(img->DeviceHandle, &dev, &unit, &pool_guid) != 0)
+	if (find_currdev(img, &dev, &unit, &pool_guid) != 0)
 		return (EFI_NOT_FOUND);
 
 	switch (dev->dv_type) {
@@ -404,18 +442,11 @@ main(int argc, CHAR16 *argv[])
 	setenv("LINES", "24", 1);	/* optional */
 	setenv("COLUMNS", "80", 1);	/* optional */
 	setenv("ISADIR", "amd64", 1);	/* we only build 64bit */
+	acpi_detect();
 
-	for (k = 0; k < ST->NumberOfTableEntries; k++) {
-		guid = &ST->ConfigurationTable[k].VendorGuid;
-		if (!memcmp(guid, &smbios, sizeof(EFI_GUID)) ||
-		    !memcmp(guid, &smbios3, sizeof(EFI_GUID))) {
-			smbios_detect(ST->ConfigurationTable[k].VendorTable);
-			continue;
-		}
-		if (!memcmp(guid, &acpi20, sizeof(EFI_GUID))) {
-			acpi_detect(ST->ConfigurationTable[k].VendorTable);
-		}
-	}
+	if ((ptr = efi_get_table(&smbios3)) == NULL)
+		ptr = efi_get_table(&smbios);
+	smbios_detect(ptr);
 
 	efi_serial_init();		/* detect and set up serial ports */
 	interact(NULL);			/* doesn't return */

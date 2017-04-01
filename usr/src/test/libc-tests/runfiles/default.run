@@ -28,11 +28,14 @@ outputdir = /var/tmp/test_results
 [/opt/libc-tests/tests/nl_langinfo_test]
 [/opt/libc-tests/tests/wcsrtombs_test]
 [/opt/libc-tests/tests/wctype_test]
+
+[/opt/libc-tests/tests/strcoll-strxfrm-6907.32]
+[/opt/libc-tests/tests/strcoll-strxfrm-6907.64]
 [/opt/libc-tests/tests/wcsncasecmp.32]
 [/opt/libc-tests/tests/wcsncasecmp.64]
-[/opt/libc-tests/tests/wcsncasecm-7344.32]
+[/opt/libc-tests/tests/wcsncasecmp-7344.32]
 [/opt/libc-tests/tests/wcsncasecmp-7344.64]
-[/opt/libc-tests/tests/wcsncasecm-7350.32]
+[/opt/libc-tests/tests/wcsncasecmp-7350.32]
 [/opt/libc-tests/tests/wcsncasecmp-7350.64]
 
 [/opt/libc-tests/tests/random/getrandom]
@@ -53,6 +56,9 @@ outputdir = /var/tmp/test_results
 [/opt/libc-tests/tests/random/arc4random_forksig]
 [/opt/libc-tests/tests/random/arc4random_preforksig]
 [/opt/libc-tests/tests/random/arc4key.ksh]
+
+[/opt/libc-tests/tests/select/select.sh]
+timeout = 600
 
 [/opt/libc-tests/tests/aligned_alloc.32]
 [/opt/libc-tests/tests/aligned_alloc.64]

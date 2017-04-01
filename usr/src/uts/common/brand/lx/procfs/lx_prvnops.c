@@ -21,7 +21,7 @@
 /*
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
- * Copyright 2016 Joyent, Inc.
+ * Copyright 2017 Joyent, Inc.
  */
 
 /*
@@ -89,7 +89,6 @@ extern int prreadbuf(proc_t *, uintptr_t, uint8_t *, size_t, size_t *);
 #include "lx_proc.h"
 
 extern pgcnt_t swapfs_minfree;
-extern time_t boot_time;
 
 /*
  * Pointer to the vnode ops vector for this fs.
@@ -119,8 +118,13 @@ static int lxpr_readdir(vnode_t *, uio_t *, cred_t *, int *,
 static int lxpr_readlink(vnode_t *, uio_t *, cred_t *, caller_context_t *);
 static int lxpr_cmp(vnode_t *, vnode_t *, caller_context_t *);
 static int lxpr_realvp(vnode_t *, vnode_t **, caller_context_t *);
+static int lxpr_poll(vnode_t *, short, int, short *, pollhead_t **,
+    caller_context_t *);
 static int lxpr_sync(void);
 static void lxpr_inactive(vnode_t *, cred_t *, caller_context_t *);
+
+static int lxpr_doaccess(lxpr_node_t *, boolean_t, int, int, cred_t *,
+    caller_context_t *);
 
 static vnode_t *lxpr_lookup_procdir(vnode_t *, char *);
 static vnode_t *lxpr_lookup_piddir(vnode_t *, char *);
@@ -215,6 +219,8 @@ static void lxpr_read_net_tcp6(lxpr_node_t *, lxpr_uiobuf_t *);
 static void lxpr_read_net_udp(lxpr_node_t *, lxpr_uiobuf_t *);
 static void lxpr_read_net_udp6(lxpr_node_t *, lxpr_uiobuf_t *);
 static void lxpr_read_net_unix(lxpr_node_t *, lxpr_uiobuf_t *);
+static void lxpr_read_sys_fs_aiomax(lxpr_node_t *, lxpr_uiobuf_t *);
+static void lxpr_read_sys_fs_aionr(lxpr_node_t *, lxpr_uiobuf_t *);
 static void lxpr_read_sys_fs_filemax(lxpr_node_t *, lxpr_uiobuf_t *);
 static void lxpr_read_sys_fs_inotify_max_queued_events(lxpr_node_t *,
     lxpr_uiobuf_t *);
@@ -321,6 +327,7 @@ const fs_operation_def_t lxpr_vnodeops_template[] = {
 	VOPNAME_INACTIVE,	{ .vop_inactive = lxpr_inactive },
 	VOPNAME_CMP,		{ .vop_cmp = lxpr_cmp },
 	VOPNAME_REALVP,		{ .vop_realvp = lxpr_realvp },
+	VOPNAME_POLL,		{ .vop_poll = lxpr_poll },
 	NULL,			NULL
 };
 
@@ -493,6 +500,8 @@ static lxpr_dirent_t sysdir[] = {
  * contents of /proc/sys/fs directory
  */
 static lxpr_dirent_t sys_fsdir[] = {
+	{ LXPR_SYS_FS_AIO_MAX_NR,	"aio-max-nr" },
+	{ LXPR_SYS_FS_AIO_NR,		"aio-nr" },
 	{ LXPR_SYS_FS_FILEMAX,		"file-max" },
 	{ LXPR_SYS_FS_INOTIFYDIR,	"inotify" },
 };
@@ -824,6 +833,8 @@ static void (*lxpr_read_function[LXPR_NFILES])() = {
 	lxpr_read_swaps,		/* /proc/swaps		*/
 	lxpr_read_invalid,		/* /proc/sys		*/
 	lxpr_read_invalid,		/* /proc/sys/fs		*/
+	lxpr_read_sys_fs_aiomax,	/* /proc/sys/fs/aio-max-nr */
+	lxpr_read_sys_fs_aionr,		/* /proc/sys/fs/aio-nr */
 	lxpr_read_sys_fs_filemax,	/* /proc/sys/fs/file-max */
 	lxpr_read_invalid,		/* /proc/sys/fs/inotify	*/
 	lxpr_read_sys_fs_inotify_max_queued_events, /* max_queued_events */
@@ -964,6 +975,8 @@ static vnode_t *(*lxpr_lookup_function[LXPR_NFILES])() = {
 	lxpr_lookup_not_a_dir,		/* /proc/swaps		*/
 	lxpr_lookup_sysdir,		/* /proc/sys		*/
 	lxpr_lookup_sys_fsdir,		/* /proc/sys/fs		*/
+	lxpr_lookup_not_a_dir,		/* /proc/sys/fs/aio-max-nr */
+	lxpr_lookup_not_a_dir,		/* /proc/sys/fs/aio-nr */
 	lxpr_lookup_not_a_dir,		/* /proc/sys/fs/file-max */
 	lxpr_lookup_sys_fs_inotifydir,	/* /proc/sys/fs/inotify	*/
 	lxpr_lookup_not_a_dir,		/* .../inotify/max_queued_events */
@@ -1104,6 +1117,8 @@ static int (*lxpr_readdir_function[LXPR_NFILES])() = {
 	lxpr_readdir_not_a_dir,		/* /proc/swaps		*/
 	lxpr_readdir_sysdir,		/* /proc/sys		*/
 	lxpr_readdir_sys_fsdir,		/* /proc/sys/fs		*/
+	lxpr_readdir_not_a_dir,		/* /proc/sys/fs/aio-max-nr */
+	lxpr_readdir_not_a_dir,		/* /proc/sys/fs/aio-nr */
 	lxpr_readdir_not_a_dir,		/* /proc/sys/fs/file-max */
 	lxpr_readdir_sys_fs_inotifydir,	/* /proc/sys/fs/inotify	*/
 	lxpr_readdir_not_a_dir,		/* .../inotify/max_queued_events */
@@ -2092,6 +2107,40 @@ lxpr_read_pid_statm(lxpr_node_t *lxpnp, lxpr_uiobuf_t *uiobuf)
 }
 
 /*
+ * Determine number of LWPs visible in the process. In particular we want to
+ * ignore aio in-kernel threads.
+ */
+static uint_t
+lxpr_count_tasks(proc_t *p)
+{
+	uint_t cnt = 0;
+	kthread_t *t;
+
+	if ((p->p_stat == SZOMB) || (p->p_flag & (SSYS | SEXITING)) ||
+	    (p->p_as == &kas)) {
+		return (0);
+	}
+
+	if (p->p_brand != &lx_brand || (t = p->p_tlist) == NULL) {
+		cnt = p->p_lwpcnt;
+	} else {
+		do {
+			lx_lwp_data_t *lwpd = ttolxlwp(t);
+			/* Don't count aio kernel worker threads */
+			if ((t->t_proc_flag & TP_KTHREAD) != 0 &&
+			    lwpd != NULL &&
+			    (lwpd->br_lwp_flags & BR_AIO_LWP) == 0) {
+				cnt++;
+			}
+
+			t = t->t_forw;
+		} while (t != p->p_tlist);
+	}
+
+	return (cnt);
+}
+
+/*
  * pid/tid common code to read status file
  */
 static void
@@ -2121,10 +2170,7 @@ lxpr_read_status_common(lxpr_node_t *lxpnp, lxpr_uiobuf_t *uiobuf,
 		return;
 	}
 
-	/*
-	 * Convert pid to the Linux default of 1 if we're the zone's init
-	 * process or if we're the zone's zsched the pid is 0.
-	 */
+	/* Translate the pid (e.g. initpid to 1) */
 	lxpr_fixpid(LXPTOZ(lxpnp), p, &pid, &ppid);
 
 	if (t != NULL) {
@@ -2171,7 +2217,7 @@ lxpr_read_status_common(lxpr_node_t *lxpnp, lxpr_uiobuf_t *uiobuf,
 
 	(void) strlcpy(buf_comm, up->u_comm, sizeof (buf_comm));
 	fdlim = p->p_fno_ctl;
-	lwpcnt = p->p_lwpcnt;
+	lwpcnt = lxpr_count_tasks(p);
 
 	/*
 	 * Gather memory information
@@ -2338,19 +2384,11 @@ lxpr_read_pid_tid_stat(lxpr_node_t *lxpnp, lxpr_uiobuf_t *uiobuf)
 		return;
 	}
 
-	/*
-	 * Set Linux defaults if we're the zone's init process
-	 */
+	/* Set Linux defaults if we're the zone's init process */
 	pid = p->p_pid;
 	lxpr_fixpid(zone, p, &pid, &ppid);
 	if (pid == 1) {
 		/* init process */
-		pgpid = 0;
-		psgid = (gid_t)-1;
-		spid = 0;
-		psdev = 0;
-	} else if (pid == 0) {
-		/* zsched process */
 		pgpid = 0;
 		psgid = (gid_t)-1;
 		spid = 0;
@@ -2472,7 +2510,7 @@ lxpr_read_pid_tid_stat(lxpr_node_t *lxpnp, lxpr_uiobuf_t *uiobuf)
 	}
 	cutime = p->p_cutime;
 	cstime = p->p_cstime;
-	lwpcnt = p->p_lwpcnt;
+	lwpcnt = lxpr_count_tasks(p);
 	vmem_ctl = p->p_vmem_ctl;
 	(void) strlcpy(buf_comm, p->p_user.u_comm, sizeof (buf_comm));
 	ticks = p->p_user.u_ticks;	/* lbolt at process start */
@@ -4189,7 +4227,7 @@ lxpr_read_stat(lxpr_node_t *lxpnp, lxpr_uiobuf_t *uiobuf)
 		    pgswapin_cum, pgswapout_cum,
 		    intr_cum,
 		    pswitch_cum,
-		    boot_time,
+		    zone->zone_boot_time,
 		    forks_cum,
 		    cpu_nrunnable_cum,
 		    w_io_cum);
@@ -4205,7 +4243,7 @@ lxpr_read_stat(lxpr_node_t *lxpnp, lxpr_uiobuf_t *uiobuf)
 		    pgswapin_cum, pgswapout_cum,
 		    intr_cum,
 		    pswitch_cum,
-		    boot_time,
+		    zone->zone_boot_time,
 		    forks_cum);
 	}
 }
@@ -4242,6 +4280,32 @@ lxpr_read_swaps(lxpr_node_t *lxpnp, lxpr_uiobuf_t *uiobuf)
 	    "Filename\t\t\t\tType\t\tSize\tUsed\tPriority\n");
 	lxpr_uiobuf_printf(uiobuf, "%-40s%s\t%llu\t%llu\t%d\n",
 	    "/dev/swap", "partition", totswap, usedswap, -1);
+}
+
+/* ARGSUSED */
+static void
+lxpr_read_sys_fs_aiomax(lxpr_node_t *lxpnp, lxpr_uiobuf_t *uiobuf)
+{
+	ASSERT(lxpnp->lxpr_type == LXPR_SYS_FS_AIO_MAX_NR);
+	lxpr_uiobuf_printf(uiobuf, "%llu\n", LX_AIO_MAX_NR);
+}
+
+/* ARGSUSED */
+static void
+lxpr_read_sys_fs_aionr(lxpr_node_t *lxpnp, lxpr_uiobuf_t *uiobuf)
+{
+	zone_t *zone = LXPTOZ(lxpnp);
+	lx_zone_data_t *lxzd = ztolxzd(zone);
+	uint64_t curr;
+
+	ASSERT(lxpnp->lxpr_type == LXPR_SYS_FS_AIO_NR);
+	ASSERT(zone->zone_brand == &lx_brand);
+	ASSERT(lxzd != NULL);
+
+	mutex_enter(&lxzd->lxzd_lock);
+	curr = (uint64_t)(lxzd->lxzd_aio_nr);
+	mutex_exit(&lxzd->lxzd_lock);
+	lxpr_uiobuf_printf(uiobuf, "%llu\n", curr);
 }
 
 /*
@@ -5405,6 +5469,31 @@ lxpr_read_filesystems(lxpr_node_t *lxpnp, lxpr_uiobuf_t *uiobuf)
 }
 
 /*
+ * Calculate the number of links in the task dir. Some code (e.g. chromium)
+ * depends on this value being accurate.
+ */
+static uint_t
+lxpr_count_taskdir(lxpr_node_t *lxpnp)
+{
+	proc_t *p;
+	uint_t cnt;
+
+	ASSERT(lxpnp->lxpr_type == LXPR_PID_TASKDIR);
+
+	p = lxpr_lock(lxpnp, ZOMB_OK);
+	if (p == NULL)
+		return (0);
+
+	cnt = lxpr_count_tasks(p);
+
+	lxpr_unlock(p);
+
+	/* Add the fixed entries ("." & "..") */
+	cnt += 2;
+	return (cnt);
+}
+
+/*
  * lxpr_getattr(): Vnode operation for VOP_GETATTR()
  */
 static int
@@ -5472,6 +5561,10 @@ lxpr_getattr(vnode_t *vp, vattr_t *vap, int flags, cred_t *cr,
 		vap->va_nlink = PIDDIRFILES;
 		vap->va_size = PIDDIRFILES * LXPR_SDSIZE;
 		break;
+	case LXPR_PID_TASKDIR:
+		vap->va_nlink = lxpr_count_taskdir(lxpnp);
+		vap->va_size = vap->va_nlink * LXPR_SDSIZE;
+		break;
 	case LXPR_PID_TASK_IDDIR:
 		vap->va_nlink = TIDDIRFILES;
 		vap->va_size = TIDDIRFILES * LXPR_SDSIZE;
@@ -5502,8 +5595,21 @@ lxpr_getattr(vnode_t *vp, vattr_t *vap, int flags, cred_t *cr,
 static int
 lxpr_access(vnode_t *vp, int mode, int flags, cred_t *cr, caller_context_t *ct)
 {
-	lxpr_node_t *lxpnp = VTOLXP(vp);
+	return (lxpr_doaccess(VTOLXP(vp), B_FALSE, mode, flags, cr, ct));
+}
+
+/*
+ * This makes up the bulk of the logic for lxpr_access.  An extra parameter
+ * ('shallow') is present to differentiate checks that must pass muster against
+ * an underlying resource (lxpr_realvp) and those that are only concerned with
+ * permission to the process.
+ */
+static int
+lxpr_doaccess(lxpr_node_t *lxpnp, boolean_t shallow, int mode, int flags,
+    cred_t *cr, caller_context_t *ct)
+{
 	lxpr_nodetype_t type = lxpnp->lxpr_type;
+	boolean_t allow_pid_access = B_FALSE;
 	int shift = 0;
 	proc_t *tp;
 
@@ -5512,45 +5618,74 @@ lxpr_access(vnode_t *vp, int mode, int flags, cred_t *cr, caller_context_t *ct)
 		return (EROFS);
 	}
 
-	/*
-	 * If this is a restricted file, check access permissions.
-	 */
-	switch (type) {
-	case LXPR_PIDDIR:
+	if (type == LXPR_PIDDIR) {
 		return (0);
-	case LXPR_PID_CURDIR:
-	case LXPR_PID_ENV:
-	case LXPR_PID_EXE:
-	case LXPR_PID_LIMITS:
-	case LXPR_PID_MAPS:
-	case LXPR_PID_MEM:
-	case LXPR_PID_ROOTDIR:
-	case LXPR_PID_FDDIR:
-	case LXPR_PID_FD_FD:
-	case LXPR_PID_TID_FDDIR:
-	case LXPR_PID_TID_FD_FD:
-		if ((tp = lxpr_lock(lxpnp, ZOMB_OK)) == NULL)
+	}
+	if (lxpnp->lxpr_pid != 0) {
+		if ((tp = lxpr_lock(lxpnp, ZOMB_OK)) == NULL) {
 			return (ENOENT);
-		if (tp != curproc && secpolicy_proc_access(cr) != 0 &&
-		    priv_proc_cred_perm(cr, tp, NULL, mode) != 0) {
-			lxpr_unlock(tp);
-			return (EACCES);
+		}
+		if (tp == curproc || secpolicy_proc_access(cr) == 0 ||
+		    priv_proc_cred_perm(cr, tp, NULL, mode) == 0) {
+			allow_pid_access = B_TRUE;
 		}
 		lxpr_unlock(tp);
-	default:
-		break;
+		switch (type) {
+		case LXPR_PID_CGROUP:
+		case LXPR_PID_CMDLINE:
+		case LXPR_PID_COMM:
+		case LXPR_PID_LIMITS:
+		case LXPR_PID_LOGINUID:
+		case LXPR_PID_MOUNTINFO:
+		case LXPR_PID_MOUNTS:
+		case LXPR_PID_OOM_SCR_ADJ:
+		case LXPR_PID_STAT:
+		case LXPR_PID_STATM:
+		case LXPR_PID_STATUS:
+		case LXPR_PID_TASKDIR:
+		case LXPR_PID_TASK_IDDIR:
+		case LXPR_PID_TID_CGROUP:
+		case LXPR_PID_TID_CMDLINE:
+		case LXPR_PID_TID_COMM:
+		case LXPR_PID_TID_LIMITS:
+		case LXPR_PID_TID_LOGINUID:
+		case LXPR_PID_TID_MOUNTINFO:
+		case LXPR_PID_TID_OOM_SCR_ADJ:
+		case LXPR_PID_TID_STAT:
+		case LXPR_PID_TID_STATM:
+		case LXPR_PID_TID_STATUS:
+			/*
+			 * These entries are accessible to any process on the
+			 * system which wishes to query them.
+			 */
+			break;
+		default:
+			/*
+			 * All other entries under the pid/tid hierarchy
+			 * require proper authorization to be accessed.
+			 */
+			if (!allow_pid_access) {
+				return (EACCES);
+			}
+			break;
+		}
 	}
 
-	if (lxpnp->lxpr_realvp != NULL) {
-		/*
-		 * For these we use the underlying vnode's accessibility.
-		 */
+	/*
+	 * If this entry has an underlying vnode, rely upon its access checks.
+	 * Skip this if a shallow check has been requested.
+	 */
+	if (lxpnp->lxpr_realvp != NULL && !shallow) {
 		return (VOP_ACCESS(lxpnp->lxpr_realvp, mode, flags, cr, ct));
 	}
 
-	/* If user is root allow access regardless of permission bits */
-	if (secpolicy_proc_access(cr) == 0)
+	/*
+	 * Allow access to those (root) possessing the correct privilege or
+	 * already authorized against a pid-specific resource.
+	 */
+	if (allow_pid_access || secpolicy_proc_access(cr) == 0) {
 		return (0);
+	}
 
 	/*
 	 * Access check is based on only one of owner, group, public.  If not
@@ -5725,7 +5860,24 @@ lxpr_lookup_taskdir(vnode_t *dp, char *comp)
 		if (tid != p->p_pid || t == NULL) {
 			t = NULL;
 		}
+	} else if (t != NULL) {
+		/*
+		 * Disallow any access to aio in-kernel worker threads.
+		 * To prevent a potential race while looking at the lwp data
+		 * for an exiting thread, we clear the TP_KTHREAD bit in
+		 * lx_cleanlwp() while the p_lock is held.
+		 */
+		if ((t->t_proc_flag & TP_KTHREAD) != 0) {
+			lx_lwp_data_t *lwpd;
+
+			VERIFY((lwpd = ttolxlwp(t)) != NULL);
+			if ((lwpd->br_lwp_flags & BR_AIO_LWP) != 0) {
+				lxpr_unlock(p);
+				return (NULL);
+			}
+		}
 	}
+
 	if (t == NULL) {
 		lxpr_unlock(p);
 		return (NULL);
@@ -6158,22 +6310,19 @@ lxpr_readdir_procdir(lxpr_node_t *lxpnp, uio_t *uiop, int *eofp)
 
 		/*
 		 * Skip indices for which there is no pid_entry, PIDs for
-		 * which there is no corresponding process, a PID of 0,
-		 * and anything the security policy doesn't allow
-		 * us to look at.
+		 * which there is no corresponding process, a PID of 0, the
+		 * zsched process for the zone, and anything the security
+		 * policy doesn't allow us to look at.
 		 */
 		if ((p = pid_entry(i)) == NULL || p->p_stat == SIDL ||
 		    p->p_pid == 0 || p->p_zone != zone ||
+		    p == zone->zone_zsched ||
 		    secpolicy_basic_procinfo(CRED(), p, curproc) != 0) {
 			mutex_exit(&pidlock);
 			goto next;
 		}
 
-		/*
-		 * Convert pid to the Linux default of 1 if we're the zone's
-		 * init process, or 0 if zsched, otherwise use the value from
-		 * the proc structure
-		 */
+		/* Translate the pid (e.g. initpid to 1) */
 		lxpr_fixpid(LXPTOZ(lxpnp), p, &pid, NULL);
 		raw_pid = p->p_pid;
 
@@ -6339,6 +6488,11 @@ lxpr_readdir_taskdir(lxpr_node_t *lxpnp, uio_t *uiop, int *eofp)
 			emul_tid = p->p_pid;
 		} else {
 			if ((lwpd = ttolxlwp(t)) == NULL) {
+				goto next;
+			}
+			/* Don't show aio kernel worker threads */
+			if ((t->t_proc_flag & TP_KTHREAD) != 0 &&
+			    (lwpd->br_lwp_flags & BR_AIO_LWP) != 0) {
 				goto next;
 			}
 			emul_tid = lwpd->br_pid;
@@ -7133,9 +7287,11 @@ lxpr_readlink(vnode_t *vp, uio_t *uiop, cred_t *cr, caller_context_t *ct)
 
 	/* Try to produce a symlink name for anything that has a realvp */
 	if (rvp != NULL) {
-		if ((error = lxpr_access(vp, VREAD, 0, CRED(), ct)) != 0)
+		error = lxpr_doaccess(lxpnp, B_TRUE, VREAD, 0, cr, ct);
+		if (error != 0)
 			return (error);
-		if ((error = vnodetopath(NULL, rvp, bp, buflen, CRED())) != 0) {
+
+		if ((error = vnodetopath(NULL, rvp, bp, buflen, cr)) != 0) {
 			/*
 			 * Special handling possible for /proc/<pid>/fd/<num>
 			 * Generate <type>:[<inode>] links, if allowed.
@@ -7148,10 +7304,7 @@ lxpr_readlink(vnode_t *vp, uio_t *uiop, cred_t *cr, caller_context_t *ct)
 	} else {
 		switch (lxpnp->lxpr_type) {
 		case LXPR_SELF:
-			/*
-			 * Convert pid to the Linux default of 1 if we're the
-			 * zone's init process or 0 if zsched.
-			 */
+			/* Translate the pid (e.g. initpid to 1) */
 			lxpr_fixpid(LXPTOZ(lxpnp), curproc, &pid, NULL);
 
 			/*
@@ -7240,6 +7393,45 @@ lxpr_realvp(vnode_t *vp, vnode_t **vpp, caller_context_t *ct)
 	}
 
 	*vpp = vp;
+	return (0);
+}
+
+/* Pollhead for fake POLLET support below */
+static struct pollhead lxpr_pollhead;
+
+/* ARGSUSED */
+static int
+lxpr_poll(vnode_t *vp, short ev, int anyyet, short *reventsp,
+    pollhead_t **phpp, caller_context_t *ct)
+{
+	*reventsp = 0;
+	if (ev & POLLIN)
+		*reventsp |= POLLIN;
+	if (ev & POLLRDNORM)
+		*reventsp |= POLLRDNORM;
+	if (ev & POLLRDBAND)
+		*reventsp |= POLLRDBAND;
+	if (ev & POLLOUT)
+		*reventsp |= POLLOUT;
+	if (ev & POLLWRBAND)
+		*reventsp |= POLLWRBAND;
+
+	/*
+	 * Newer versions of systemd will monitor /proc/self/mountinfo with
+	 * edge-triggered epoll (via libmount).  If adding said resource to an
+	 * epoll descriptor fails, as would be the expectation for a call to
+	 * fs_poll when POLLET is present, then systemd will abort and the zone
+	 * will fail to properly boot.  Until proper pollwakeup() support is
+	 * wired into lx_proc, valid POLLET support must be faked.
+	 *
+	 * While the only known (at this time) lx_proc resource where POLLET
+	 * support is mandatory is LXPR_PID_MOUNTINFO, we cast a wide net to
+	 * avoid other unexpected trouble.  Normal devpoll caching (emitting a
+	 * pollhead when (*reventsp == 0 && !anyyet)) is not enabled.
+	 */
+	if ((ev & POLLET) != 0) {
+		*phpp = &lxpr_pollhead;
+	}
 	return (0);
 }
 

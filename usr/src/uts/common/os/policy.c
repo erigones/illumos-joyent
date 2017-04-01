@@ -20,7 +20,8 @@
  */
 /*
  * Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2015 Joyent, Inc.
+ * Copyright 2016 Joyent, Inc.
+ * Copyright (c) 2016 by Delphix. All rights reserved.
  */
 
 #include <sys/types.h>
@@ -867,8 +868,8 @@ secpolicy_fs_unmount(cred_t *cr, struct vfs *vfsp)
 }
 
 /*
- * Quotas are a resource, but if one has the ability to mount a filesystem, he
- * should be able to modify quotas on it.
+ * Quotas are a resource, but if one has the ability to mount a filesystem,
+ * they should be able to modify quotas on it.
  */
 int
 secpolicy_fs_quota(const cred_t *cr, const vfs_t *vfsp)
@@ -2429,6 +2430,18 @@ secpolicy_gart_map(const cred_t *cr)
 		return (PRIV_POLICY(cr, PRIV_GRAPHICS_MAP, B_FALSE, EPERM,
 		    NULL));
 	}
+}
+
+/*
+ * secpolicy_xhci
+ *
+ * Determine if the subject can observe and manipulate the xhci driver with a
+ * dangerous blunt hammer.  Requires all privileges.
+ */
+int
+secpolicy_xhci(const cred_t *cr)
+{
+	return (secpolicy_require_set(cr, PRIV_FULLSET, NULL, KLPDARG_NONE));
 }
 
 /*

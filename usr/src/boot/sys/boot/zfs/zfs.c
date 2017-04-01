@@ -418,7 +418,7 @@ struct zfs_probe_args {
 };
 
 static int
-zfs_diskread(void *arg, void *buf, size_t blocks, off_t offset)
+zfs_diskread(void *arg, void *buf, size_t blocks, uint64_t offset)
 {
 	struct zfs_probe_args *ppa;
 
@@ -593,8 +593,8 @@ zfs_dev_close(struct open_file *f)
 }
 
 static int
-zfs_dev_strategy(void *devdata, int rw, daddr_t dblk, size_t offset,
-    size_t size, char *buf, size_t *rsize)
+zfs_dev_strategy(void *devdata, int rw, daddr_t dblk, size_t size,
+    char *buf, size_t *rsize)
 {
 
 	return (ENOSYS);
@@ -691,16 +691,18 @@ zfs_bootfs(void *zdev)
 		STAILQ_FOREACH(kid, &vdev->v_children, v_childlink) {
 			/* use this kid? */
 			if (kid->v_state == VDEV_STATE_HEALTHY &&
-			    kid->v_phys_path != NULL);
+			    kid->v_phys_path != NULL) {
 				break;
+			}
 		}
 		if (kid != NULL) {
 			vdev = kid;
 			break;
 		}
 		if (vdev->v_state == VDEV_STATE_HEALTHY &&
-		    vdev->v_phys_path != NULL);
+		    vdev->v_phys_path != NULL) {
 			break;
+		}
 	}
 
 	/*
@@ -708,15 +710,31 @@ zfs_bootfs(void *zdev)
 	 * there has to be at least one healthy vdev, therefore vdev
 	 * can not be NULL.
 	 */
-	sprintf(buf, "zfs-bootfs=%s/%llu", spa->spa_name,
+	/* Set the environment. */
+	snprintf(buf, sizeof (buf), "%s/%llu", spa->spa_name,
+	    (unsigned long long)objnum);
+	setenv("zfs-bootfs", buf, 1);
+	if (vdev->v_phys_path != NULL)
+		setenv("bootpath", vdev->v_phys_path, 1);
+	if (vdev->v_devid != NULL)
+		setenv("diskdevid", vdev->v_devid, 1);
+
+	/*
+	 * Build the command line string. Once our kernel will read
+	 * the environment and we can stop caring about old kernels,
+	 * we can remove this part.
+	 */
+	snprintf(buf, sizeof(buf), "zfs-bootfs=%s/%llu", spa->spa_name,
 	    (unsigned long long)objnum);
 	n = strlen(buf);
 	if (vdev->v_phys_path != NULL) {
-		sprintf(buf+n, ",bootpath=\"%s\"", vdev->v_phys_path);
+		snprintf(buf+n, sizeof (buf) - n, ",bootpath=\"%s\"",
+		    vdev->v_phys_path);
 		n = strlen(buf);
 	}
 	if (vdev->v_devid != NULL) {
-		sprintf(buf+n, ",diskdevid=\"%s\"", vdev->v_devid);
+		snprintf(buf+n, sizeof (buf) - n, ",diskdevid=\"%s\"",
+		    vdev->v_devid);
 	}
 	return (buf);
 }

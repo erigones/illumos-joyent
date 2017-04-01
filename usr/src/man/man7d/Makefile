@@ -11,11 +11,10 @@
 
 #
 # Copyright 2011, Richard Lowe
-# Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
-# Copyright 2016 Joyent, Inc.
 # Copyright 2016 Garrett D'Amore <garrett@damore.org>
-# Copyright 2016 Joyent, Inc.
+# Copyright (c) 2017, Joyent, Inc.
 # Copyright 2016 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
+# Copyright 2016 Nexenta Systems, Inc.
 #
 
 include		$(SRC)/Makefile.master
@@ -55,6 +54,7 @@ _MANFILES=	aac.7d		\
 		fctl.7d		\
 		fd.7d		\
 		fp.7d		\
+		full.7d		\
 		gld.7d		\
 		hci1394.7d	\
 		hermon.7d	\
@@ -82,8 +82,6 @@ _MANFILES=	aac.7d		\
 		lockstat.7d	\
 		lofi.7d		\
 		log.7d		\
-		md.7d		\
-		mediator.7d	\
 		mem.7d		\
 		mpt_sas.7d	\
 		mr_sas.7d	\
@@ -244,6 +242,7 @@ i386_MANFILES=	ahci.7d		\
 		ural.7d		\
 		urtw.7d		\
 		wpi.7d		\
+		xhci.7d		\
 		zyd.7d
 
 _MANLINKS=	1394.7d		\

@@ -22,7 +22,7 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
- * Copyright 2016 Joyent, Inc.
+ * Copyright 2017 Joyent, Inc.
  */
 
 #include <sys/errno.h>
@@ -78,8 +78,12 @@ typedef struct lx_socket_aux_data
 		LXSS_CONNECTING,
 		LXSS_CONNECTED
 	} lxsad_status;
-	boolean_t lxsad_stream_cred;
+	uint_t lxsad_flags;
 } lx_socket_aux_data_t;
+
+/* lxsad_flags */
+#define	LXSAD_FL_STRCRED	0x1
+#define	LXSAD_FL_EMULSEQPKT	0x2
 
 static lx_socket_aux_data_t *lx_sad_acquire(vnode_t *);
 
@@ -1159,7 +1163,7 @@ lx_cmsg_try_ucred(sonode_t *so, struct nmsghdr *msg, socklen_t origlen)
 		return (0);
 	}
 	sad = lx_sad_acquire(SOTOV(so));
-	if (!sad->lxsad_stream_cred) {
+	if ((sad->lxsad_flags & LXSAD_FL_STRCRED) == 0) {
 		mutex_exit(&sad->lxsad_lock);
 		return (0);
 	}
@@ -2475,6 +2479,9 @@ static const lx_sockopt_map_t ltos_ip_sockopts[LX_IP_UNICAST_IF + 1] = {
 	{ OPTNOTSUP, 0 }			/* IP_UNICAST_IF	*/
 };
 
+/* Shorten name so the columns can line up */
+#define	IP6_MREQ_SZ	sizeof (struct ipv6_mreq)
+
 static const lx_sockopt_map_t ltos_ipv6_sockopts[LX_IPV6_TCLASS + 1] = {
 	{ OPTNOTSUP, 0 },
 	{ OPTNOTSUP, 0 },			/* IPV6_ADDRFORM	*/
@@ -2496,8 +2503,8 @@ static const lx_sockopt_map_t ltos_ipv6_sockopts[LX_IPV6_TCLASS + 1] = {
 	{ IPV6_MULTICAST_IF, sizeof (int) },	/* IPV6_MULTICAST_IF	*/
 	{ IPV6_MULTICAST_HOPS, sizeof (int) },	/* IPV6_MULTICAST_HOPS	*/
 	{ IPV6_MULTICAST_LOOP, sizeof (int) },	/* IPV6_MULTICAST_LOOP	*/
-	{ OPTNOTSUP, 0 },			/* IPV6_JOIN_GROUP	*/
-	{ OPTNOTSUP, 0 },			/* IPV6_LEAVE_GROUP	*/
+	{ IPV6_ADD_MEMBERSHIP, IP6_MREQ_SZ },	/* IPV6_JOIN_GROUP	*/
+	{ IPV6_DROP_MEMBERSHIP, IP6_MREQ_SZ },	/* IPV6_LEAVE_GROUP	*/
 	{ OPTNOTSUP, 0 },			/* IPV6_ROUTER_ALERT	*/
 	{ OPTNOTSUP, 0 },			/* IPV6_MTU_DISCOVER	*/
 	{ OPTNOTSUP, 0 },			/* IPV6_MTU		*/
@@ -2518,13 +2525,13 @@ static const lx_sockopt_map_t ltos_ipv6_sockopts[LX_IPV6_TCLASS + 1] = {
 	{ OPTNOTSUP, 0 },
 	{ OPTNOTSUP, 0 },
 	{ OPTNOTSUP, 0 },
-	{ OPTNOTSUP, 0 },
-	{ OPTNOTSUP, 0 },
-	{ OPTNOTSUP, 0 },
-	{ OPTNOTSUP, 0 },
-	{ OPTNOTSUP, 0 },
-	{ OPTNOTSUP, 0 },
-	{ OPTNOTSUP, 0 },
+	{ OPTNOTSUP, 0 },			/* MCAST_JOIN_GROUP	*/
+	{ OPTNOTSUP, 0 },			/* MCAST_BLOCK_SOURCE	*/
+	{ OPTNOTSUP, 0 },			/* MCAST_UNBLOCK_SOURCE	*/
+	{ OPTNOTSUP, 0 },			/* MCAST_LEAVE_GROUP	*/
+	{ OPTNOTSUP, 0 },			/* MCAST_JOIN_SOURCE_GROUP */
+	{ OPTNOTSUP, 0 },			/* MCAST_LEAVE_SOURCE_GROUP */
+	{ OPTNOTSUP, 0 },			/* MCAST_MSFILTER	*/
 	{ IPV6_RECVPKTINFO, sizeof (int) },	/* IPV6_RECVPKTINFO	*/
 	{ IPV6_PKTINFO, 0 },			/* IPV6_PKTINFO		*/
 	{ IPV6_RECVHOPLIMIT, sizeof (int) },	/* IPV6_RECVHOPLIMIT	*/
@@ -2968,6 +2975,17 @@ lx_setsockopt_socket(sonode_t *so, int optname, void *optval, socklen_t optlen)
 		 * that option.  Instead, we track the setting internally and,
 		 * when there is appropriate cmsg space, emulate the credential
 		 * passing by querying the STREAMS ioctl.
+		 *
+		 * Note: this approach is broken for the case when a process
+		 * sets up a Unix-domain socket with SO_PASSCRED, then forks
+		 * one or more children, and expects to use the cmsg cred to
+		 * accurately know which child pid sent the message (currently
+		 * a pid is recorded when the socket is connected, not for each
+		 * msg sent). getpeerucred(3c) suffers from the same problem.
+		 * We have a workaround in lx_socketpair (use DGRAM if
+		 * SEQPACKET), but the general case requires enhancing our
+		 * streams support to allow passing credential cmsgs on a
+		 * connection-oriented Unix socket.
 		 */
 		if (so->so_family == AF_UNIX &&
 		    (so->so_mode & SM_CONNREQUIRED) != 0) {
@@ -2978,7 +2996,11 @@ lx_setsockopt_socket(sonode_t *so, int optname, void *optval, socklen_t optlen)
 			}
 			intval = (int *)optval;
 			sad = lx_sad_acquire(SOTOV(so));
-			sad->lxsad_stream_cred = !(*intval == 0);
+			if (*intval == 0) {
+				sad->lxsad_flags &= ~LXSAD_FL_STRCRED;
+			} else {
+				sad->lxsad_flags |= LXSAD_FL_STRCRED;
+			}
 			mutex_exit(&sad->lxsad_lock);
 			return (0);
 		}
@@ -3212,6 +3234,28 @@ lx_getsockopt_socket(sonode_t *so, int optname, void *optval,
 	lx_proto_opts_t sockopts_tbl = PROTO_SOCKOPTS(ltos_socket_sockopts);
 
 	switch (optname) {
+	case LX_SO_TYPE:
+		/*
+		 * Special handling for connectionless AF_UNIX sockets.
+		 * See lx_socketpair for more details.
+		 */
+		if (so->so_family == AF_UNIX &&
+		    (so->so_mode & SM_CONNREQUIRED) == 0) {
+			lx_socket_aux_data_t *sad;
+
+			if (*optlen < sizeof (int))
+				return (EINVAL);
+			sad = lx_sad_acquire(SOTOV(so));
+			if ((sad->lxsad_flags & LXSAD_FL_EMULSEQPKT) != 0) {
+				*intval = LX_SOCK_SEQPACKET;
+				*optlen = sizeof (int);
+				mutex_exit(&sad->lxsad_lock);
+				return (0);
+			}
+			mutex_exit(&sad->lxsad_lock);
+		}
+		break;
+
 	case LX_SO_PASSSEC:
 		/*
 		 * Communicate value of 0 since selinux-related functionality
@@ -3238,7 +3282,8 @@ lx_getsockopt_socket(sonode_t *so, int optname, void *optval,
 				return (EINVAL);
 			}
 			sad = lx_sad_acquire(SOTOV(so));
-			*intval = sad->lxsad_stream_cred;
+			*intval = ((sad->lxsad_flags & LXSAD_FL_STRCRED) == 0 ?
+			    0 : 1);
 			*optlen = sizeof (int);
 			mutex_exit(&sad->lxsad_lock);
 			return (0);
@@ -3849,6 +3894,22 @@ lx_socketpair(int domain, int type, int protocol, int *sv)
 {
 	int err, options, fds[2];
 	file_t *fps[2];
+	boolean_t emul_seqp = B_FALSE;
+
+	/*
+	 * For the special case of SOCK_SEQPACKET for AF_UNIX, we want to treat
+	 * this as a SOCK_DGRAM. The semantics are similar, but our native code
+	 * will not pass cmsg creds over a connection-oriented socket, unlike a
+	 * connectionless one. Some Linux code depends on this for Unix-domain
+	 * sockets. In particular, a sockopt of SO_PASSCRED, which we map into
+	 * our native SO_RECVUCRED, must work across fork so that the correct
+	 * pid of the sender is available in the cmsg. See the comment in
+	 * lx_setsockopt_socket().
+	 */
+	if (domain == LX_AF_UNIX && type == LX_SOCK_SEQPACKET) {
+		type = LX_SOCK_DGRAM;
+		emul_seqp = B_TRUE;
+	}
 
 	if ((err = lx_convert_sock_args(domain, type, protocol, &domain, &type,
 	    &options, &protocol)) != 0) {
@@ -3884,8 +3945,19 @@ lx_socketpair(int domain, int type, int protocol, int *sv)
 		return (set_errno(err));
 	}
 
+	if (emul_seqp) {
+		int i;
+		for (i = 0; i < 2; i++) {
+			sonode_t *so = VTOSO(fps[i]->f_vnode);
+			lx_socket_aux_data_t *sad = lx_sad_acquire(SOTOV(so));
+			sad->lxsad_flags |= LXSAD_FL_EMULSEQPKT;
+			mutex_exit(&sad->lxsad_lock);
+		}
+	}
+
 	setf(fds[0], fps[0]);
 	setf(fds[1], fps[1]);
+
 	if ((options & SOCK_CLOEXEC) != 0) {
 		f_setfd(fds[0], FD_CLOEXEC);
 		f_setfd(fds[1], FD_CLOEXEC);

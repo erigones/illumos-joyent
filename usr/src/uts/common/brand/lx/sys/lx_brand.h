@@ -24,7 +24,7 @@
  */
 
 /*
- * Copyright 2016 Joyent, Inc.
+ * Copyright 2017 Joyent, Inc.
  */
 
 #ifndef _LX_BRAND_H
@@ -93,7 +93,7 @@ extern "C" {
 #define	B_LPID_TO_SPAIR		128
 #define	B_GET_CURRENT_CONTEXT	129
 #define	B_EMULATION_DONE	130
-/* formerly B_PTRACE_KERNEL	131 */
+#define	B_START_NFS_LOCKD	131
 /* formerly B_SET_AFFINITY_MASK	132 */
 /* formerly B_GET_AFFINITY_MASK	133 */
 #define	B_PTRACE_CLONE_BEGIN	134
@@ -162,6 +162,7 @@ typedef enum lx_ptrace_options {
 
 #define	LX_ATTR_KERN_RELEASE	ZONE_ATTR_BRAND_ATTRS
 #define	LX_ATTR_KERN_VERSION	(ZONE_ATTR_BRAND_ATTRS + 1)
+#define	LX_ATTR_TTY_GID		(ZONE_ATTR_BRAND_ATTRS + 2)
 
 /*
  * Aux vector containing phdr of Linux executable and ehdr of interpreter
@@ -261,8 +262,7 @@ typedef enum lx_proc_flags {
 	LX_PROC_STRICT_MODE	= 0x02,
 	/* internal flags */
 	LX_PROC_CHILD_DEATHSIG	= 0x04,
-	LX_PROC_AIO_USED	= 0x08,
-	LX_PROC_NO_DUMP		= 0x10	/* for lx_prctl LX_PR_[GS]ET_DUMPABLE */
+	LX_PROC_NO_DUMP		= 0x08	/* for lx_prctl LX_PR_[GS]ET_DUMPABLE */
 } lx_proc_flags_t;
 
 #define	LX_PROC_ALL	(LX_PROC_INSTALL_MODE | LX_PROC_STRICT_MODE)
@@ -296,6 +296,21 @@ typedef struct {
 	uint64_t	rlim_max;
 } lx_rlimit64_t;
 
+typedef struct {
+	list_node_t	lx_clgrpm_link;
+	proc_t		*lx_clgrpm_pp;
+} lx_clone_grp_member_t;
+
+typedef struct {
+	kmutex_t	lx_clgrp_lock;	/* protects cnt & member list */
+	uint_t		lx_clgrp_cnt;
+	list_t		lx_clgrp_members;
+} lx_clone_grp_t;
+
+/* Entries in the l_clone_grps clone-group array */
+#define	LX_CLGRP_FS	0
+#define	LX_CLGRP_MAX	1
+
 typedef struct lx_proc_data {
 	uintptr_t l_handler;	/* address of user-space handler */
 	pid_t l_ppid;		/* pid of originating parent proc */
@@ -308,7 +323,16 @@ typedef struct lx_proc_data {
 	int l_parent_deathsig;
 	lx_proc_flags_t l_flags;
 
+	kmutex_t l_clone_grp_lock; /* protects the following member */
+	lx_clone_grp_t *l_clone_grps[LX_CLGRP_MAX];
+
 	lx_rlimit64_t l_fake_limits[LX_RLFAKE_NLIMITS];
+
+	kmutex_t l_io_ctx_lock; /* protects the following members */
+	uintptr_t l_io_ctxpage;
+	kcondvar_t l_io_destroy_cv;
+	uint_t l_io_ctx_cnt;
+	struct lx_io_ctx  **l_io_ctxs;
 
 	/* original start/end bounds of arg/env string data */
 	uintptr_t l_args_start;
@@ -346,6 +370,9 @@ typedef struct lx_proc_data {
 #define	LX_PER_LINUX	0x00
 #define	LX_PER_SUNOS	(0x06 | LX_PER_STICKY_TIMEOUTS)
 #define	LX_PER_MASK	0xff
+
+/* max. number of aio control blocks (see lx_io_setup) allowed across zone */
+#define	LX_AIO_MAX_NR	65536
 
 /*
  * A data type big enough to bitmap all Linux possible cpus.
@@ -566,6 +593,7 @@ struct lx_lwp_data {
 	uint64_t br_schd_period;	/* emulated DEADLINE */
 
 	fwaiter_t br_fwaiter;		/* futex upon which we're waiting */
+	uint_t	br_clone_grp_flags;	/* pending clone group */
 };
 
 /*
@@ -587,12 +615,17 @@ typedef struct lx_zone_data {
 	char lxzd_kernel_version[LX_KERN_VERSION_MAX];
 	ksocket_t lxzd_ioctl_sock;
 	char lxzd_bootid[LX_BOOTID_LEN];	/* procfs boot_id */
+	gid_t lxzd_ttygrp;			/* tty gid for pty chown */
 	vfs_t *lxzd_cgroup;			/* cgroup for this zone */
+	pid_t lxzd_lockd_pid;			/* pid of NFS lockd */
 	list_t *lxzd_vdisks;			/* virtual disks (zvols) */
 	dev_t lxzd_zfs_dev;			/* major num for zfs */
+	uint_t lxzd_aio_nr;			/* see lx_aio.c */
 } lx_zone_data_t;
 
+/* LWP br_lwp_flags values */
 #define	BR_CPU_BOUND	0x0001
+#define	BR_AIO_LWP	0x0002			/* aio kernel worker thread */
 
 #define	ttolxlwp(t)	((struct lx_lwp_data *)ttolwpbrand(t))
 #define	lwptolxlwp(l)	((struct lx_lwp_data *)lwptolwpbrand(l))
@@ -659,9 +692,12 @@ extern void lx_emulate_user32(klwp_t *, int, uintptr_t *);
 extern int lx_debug;
 #define	lx_print	if (lx_debug) printf
 
+/*
+ * Flags for lx_lpid_lock()
+ */
 typedef enum {
-	NO_PRLOCK,
-	PRLOCK
+	LXP_PRLOCK	= 0x1,	/* acquire PR_LOCK as part of locking */
+	LXP_ZOMBOK	= 0x2	/* allow locking of zombies */
 } lx_pid_flag_t;
 
 extern void lx_pid_assign(kthread_t *, struct lx_pid *);

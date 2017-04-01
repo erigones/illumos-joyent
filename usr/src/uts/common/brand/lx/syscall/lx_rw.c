@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2016 Joyent, Inc.
+ * Copyright 2017 Joyent, Inc.
  */
 
 #include <sys/errno.h>
@@ -113,6 +113,14 @@ lx_read_common(file_t *fp, uio_t *uiop, size_t *nread, boolean_t positioned)
 	struct cpu *cp;
 	boolean_t in_crit = B_FALSE;
 
+	if (fp->f_vnode->v_type == VDIR) {
+		return (EISDIR);
+	}
+	if (positioned &&
+	    (fp->f_vnode->v_type == VFIFO || fp->f_vnode->v_type == VSOCK)) {
+		return (ESPIPE);
+	}
+
 	/*
 	 * We have to enter the critical region before calling VOP_RWLOCK
 	 * to avoid a deadlock with ufs.
@@ -206,6 +214,11 @@ lx_write_common(file_t *fp, uio_t *uiop, size_t *nwrite, boolean_t positioned)
 	size_t wcount = 0;
 	struct cpu *cp;
 	boolean_t in_crit = B_FALSE;
+
+	if (positioned &&
+	    (fp->f_vnode->v_type == VFIFO || fp->f_vnode->v_type == VSOCK)) {
+		return (ESPIPE);
+	}
 
 	/*
 	 * We have to enter the critical region before calling VOP_RWLOCK
@@ -331,10 +344,6 @@ lx_read(int fdes, void *cbuf, size_t ccount)
 	if (fp->f_vnode->v_type == VREG && count == 0) {
 		goto out;
 	}
-	if (fp->f_vnode->v_type == VDIR) {
-		error = EISDIR;
-		goto out;
-	}
 
 	aiov.iov_base = cbuf;
 	aiov.iov_len = count;
@@ -454,10 +463,6 @@ lx_readv(int fdes, struct iovec *iovp, int iovcnt)
 	if (fp->f_vnode->v_type == VREG && count == 0) {
 		goto out;
 	}
-	if (fp->f_vnode->v_type == VDIR) {
-		error = EISDIR;
-		goto out;
-	}
 
 	auio.uio_iov = aiov;
 	auio.uio_iovcnt = iovcnt;
@@ -559,19 +564,16 @@ out:
 }
 
 ssize_t
-lx_pread(int fdes, void *cbuf, size_t ccount, off64_t offset)
+lx_pread_fp(file_t *fp, void *cbuf, size_t ccount, off64_t offset)
 {
 	struct uio auio;
 	struct iovec aiov;
-	file_t *fp;
 	ssize_t count = (ssize_t)ccount;
 	size_t nread = 0;
 	int fflag, error = 0;
 
 	if (count < 0)
 		return (set_errno(EINVAL));
-	if ((fp = getf(fdes)) == NULL)
-		return (set_errno(EBADF));
 	if (((fflag = fp->f_flag) & FREAD) == 0) {
 		error = EBADF;
 		goto out;
@@ -596,12 +598,6 @@ lx_pread(int fdes, void *cbuf, size_t ccount, off64_t offset)
 		 */
 		if (fileoff + count > MAXOFFSET_T)
 			count = (ssize_t)((offset_t)MAXOFFSET_T - fileoff);
-	} else if (fp->f_vnode->v_type == VFIFO) {
-		error = ESPIPE;
-		goto out;
-	} else if (fp->f_vnode->v_type == VDIR) {
-		error = EISDIR;
-		goto out;
 	}
 
 	aiov.iov_base = cbuf;
@@ -625,7 +621,6 @@ lx_pread(int fdes, void *cbuf, size_t ccount, off64_t offset)
 		}
 	}
 out:
-	releasef(fdes);
 	if (error) {
 		return (set_errno(error));
 	}
@@ -634,19 +629,30 @@ out:
 }
 
 ssize_t
-lx_pwrite(int fdes, void *cbuf, size_t ccount, off64_t offset)
+lx_pread(int fdes, void *cbuf, size_t ccount, off64_t offset)
+{
+	file_t *fp;
+	size_t nread;
+
+	if ((fp = getf(fdes)) == NULL)
+		return (set_errno(EBADF));
+
+	nread = lx_pread_fp(fp, cbuf, ccount, offset);
+	releasef(fdes);
+	return (nread);
+}
+
+ssize_t
+lx_pwrite_fp(file_t *fp, void *cbuf, size_t ccount, off64_t offset)
 {
 	struct uio auio;
 	struct iovec aiov;
-	file_t *fp;
 	ssize_t count = (ssize_t)ccount;
 	size_t nwrite = 0;
 	int fflag, error = 0;
 
 	if (count < 0)
 		return (set_errno(EINVAL));
-	if ((fp = getf(fdes)) == NULL)
-		return (set_errno(EBADF));
 	if (((fflag = fp->f_flag) & (FWRITE)) == 0) {
 		error = EBADF;
 		goto out;
@@ -686,9 +692,6 @@ lx_pwrite(int fdes, void *cbuf, size_t ccount, off64_t offset)
 		}
 		if (fileoff + count > MAXOFFSET_T)
 			count = (ssize_t)((u_offset_t)MAXOFFSET_T - fileoff);
-	} else if (fp->f_vnode->v_type == VFIFO) {
-		error = ESPIPE;
-		goto out;
 	}
 
 	aiov.iov_base = cbuf;
@@ -712,10 +715,23 @@ lx_pwrite(int fdes, void *cbuf, size_t ccount, off64_t offset)
 		}
 	}
 out:
-	releasef(fdes);
 	if (error) {
 		return (set_errno(error));
 	}
+	return (nwrite);
+}
+
+ssize_t
+lx_pwrite(int fdes, void *cbuf, size_t ccount, off64_t offset)
+{
+	file_t *fp;
+	size_t nwrite;
+
+	if ((fp = getf(fdes)) == NULL)
+		return (set_errno(EBADF));
+
+	nwrite = lx_pwrite_fp(fp, cbuf, ccount, offset);
+	releasef(fdes);
 	return (nwrite);
 }
 
@@ -788,12 +804,6 @@ lx_preadv(int fdes, void *iovp, int iovcnt, off64_t offset)
 		 */
 		if (fileoff + count > MAXOFFSET_T)
 			count = (ssize_t)((offset_t)MAXOFFSET_T - fileoff);
-	} else if (fp->f_vnode->v_type == VDIR) {
-		error = EISDIR;
-		goto out;
-	} else if (fp->f_vnode->v_type == VFIFO) {
-		error = ESPIPE;
-		goto out;
 	}
 
 	auio.uio_iov = aiov;
@@ -902,9 +912,6 @@ lx_pwritev(int fdes, void *iovp, int iovcnt, off64_t offset)
 		 */
 		if (fileoff + count > MAXOFFSET_T)
 			count = (ssize_t)((u_offset_t)MAXOFFSET_T - fileoff);
-	} else if (fp->f_vnode->v_type == VFIFO) {
-		error = ESPIPE;
-		goto out;
 	}
 
 	auio.uio_iov = aiov;

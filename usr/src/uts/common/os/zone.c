@@ -22,6 +22,7 @@
 /*
  * Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2016, Joyent Inc.
+ * Copyright (c) 2016 by Delphix. All rights reserved.
  */
 
 /*
@@ -6314,6 +6315,7 @@ zone_setattr(zoneid_t zoneid, int attr, void *buf, size_t bufsize)
 		break;
 	case ZONE_ATTR_RSS:
 		err = zone_set_rss(zone, (const uint64_t *)buf);
+		break;
 	case ZONE_ATTR_SECFLAGS:
 		err = zone_set_secflags(zone, (psecflags_t *)buf);
 		break;
@@ -6758,7 +6760,7 @@ zone_enter(zoneid_t zoneid)
 		do {
 			thread_lock(t);
 			/*
-			 * Kick this thread so that he doesn't sit
+			 * Kick this thread so that it doesn't sit
 			 * on a wrong wait queue.
 			 */
 			if (ISWAITING(t))
@@ -6948,8 +6950,8 @@ zone_list(zoneid_t *zoneidlist, uint_t *numzones)
 
 	/*
 	 * If user has allocated space for fewer entries than we found, then
-	 * return only up to his limit.  Either way, tell him exactly how many
-	 * we found.
+	 * return only up to their limit.  Either way, tell them exactly how
+	 * many we found.
 	 */
 	if (domi_nzones < user_nzones)
 		user_nzones = domi_nzones;
@@ -7765,6 +7767,13 @@ zone_list_datalink(zoneid_t zoneid, int *nump, datalink_id_t *idarray)
 	}
 	mutex_exit(&zone->zone_lock);
 	zone_rele(zone);
+
+	/*
+	 * Prevent returning negative nump values -- we should never
+	 * have this many links anyways.
+	 */
+	if (num > INT_MAX)
+		return (set_errno(EOVERFLOW));
 
 	/* Increased or decreased, caller should be notified. */
 	if (num != dlcount) {

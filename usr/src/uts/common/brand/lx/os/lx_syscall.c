@@ -22,7 +22,7 @@
 /*
  * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
- * Copyright 2016 Joyent, Inc.
+ * Copyright 2017 Joyent, Inc.
  */
 
 #include <sys/kmem.h>
@@ -644,7 +644,7 @@ lx_sysent_t lx_sysent32[] = {
 	{"uname",	lx_uname,		0,		1}, /* 122 */
 	{"modify_ldt",	lx_modify_ldt,		0,		3}, /* 123 */
 	{"adjtimex",	NULL,			0,		1}, /* 124 */
-	{"mprotect",	NULL,			0,		3}, /* 125 */
+	{"mprotect",	lx_mprotect,		0,		3}, /* 125 */
 	{"sigprocmask",	NULL,			0,		3}, /* 126 */
 	{"create_module", NULL,			NOSYS_KERNEL,	0}, /* 127 */
 	{"init_module",	NULL,			NOSYS_KERNEL,	0}, /* 128 */
@@ -663,16 +663,16 @@ lx_sysent_t lx_sysent32[] = {
 	{"getdents",	lx_getdents_32,		0,		3}, /* 141 */
 	{"select",	lx_select,		0,		5}, /* 142 */
 	{"flock",	NULL,			0,		2}, /* 143 */
-	{"msync",	NULL,			0,		3}, /* 144 */
+	{"msync",	lx_msync,		0,		3}, /* 144 */
 	{"readv",	lx_readv,		0,		3}, /* 145 */
 	{"writev",	lx_writev,		0,		3}, /* 146 */
 	{"getsid",	lx_getsid,		0,		1}, /* 147 */
 	{"fdatasync",	NULL,			0,		1}, /* 148 */
 	{"sysctl",	NULL,			0,		1}, /* 149 */
-	{"mlock",	NULL,			0,		2}, /* 150 */
-	{"munlock",	NULL,			0,		2}, /* 151 */
-	{"mlockall",	NULL,			0,		1}, /* 152 */
-	{"munlockall",	NULL,			0,		0}, /* 153 */
+	{"mlock",	lx_mlock,		0,		2}, /* 150 */
+	{"munlock",	lx_munlock,		0,		2}, /* 151 */
+	{"mlockall",	lx_mlockall,		0,		1}, /* 152 */
+	{"munlockall",	lx_munlockall,		0,		0}, /* 153 */
 	{"sched_setparam", lx_sched_setparam,	0,		2}, /* 154 */
 	{"sched_getparam", lx_sched_getparam,	0,		2}, /* 155 */
 	{"sched_setscheduler", lx_sched_setscheduler, 0,	3}, /* 156 */
@@ -738,7 +738,7 @@ lx_sysent_t lx_sysent32[] = {
 	{"setfsgid",	lx_setfsgid,		0,		1}, /* 216 */
 	{"pivot_root",	NULL,			NOSYS_KERNEL,	0}, /* 217 */
 	{"mincore",	lx_mincore,		0,		3}, /* 218 */
-	{"madvise",	NULL,			0,		3}, /* 219 */
+	{"madvise",	lx_madvise,		0,		3}, /* 219 */
 	{"getdents64",	lx_getdents64,		0,		3}, /* 220 */
 	{"fcntl64",	lx_fcntl64,		0,		3}, /* 221 */
 	{"tux",		NULL,			NOSYS_NO_EQUIV,	0}, /* 222 */
@@ -765,10 +765,10 @@ lx_sysent_t lx_sysent32[] = {
 	{"set_thread_area", lx_set_thread_area,	0,		1}, /* 243 */
 	{"get_thread_area", lx_get_thread_area,	0,		1}, /* 244 */
 	{"io_setup",	lx_io_setup,		0,		2}, /* 245 */
-	{"io_destroy",	NULL,			0,		1}, /* 246 */
-	{"io_getevents", NULL,			0,		5}, /* 247 */
-	{"io_submit",	NULL,			0,		3}, /* 248 */
-	{"io_cancel",	NULL,			0,		3}, /* 249 */
+	{"io_destroy",	lx_io_destroy,		0,		1}, /* 246 */
+	{"io_getevents", lx_io_getevents,	0,		5}, /* 247 */
+	{"io_submit",	lx_io_submit,		0,		3}, /* 248 */
+	{"io_cancel",	lx_io_cancel,		0,		3}, /* 249 */
 	{"fadvise64",	lx_fadvise64_32,	0,		5}, /* 250 */
 	{"nosys",	NULL,			0,		0}, /* 251 */
 	{"group_exit",	NULL,			0,		1}, /* 252 */
@@ -846,12 +846,12 @@ lx_sysent_t lx_sysent32[] = {
 	{"utimensat",	NULL,			0,		4}, /* 320 */
 	{"signalfd",	NULL,			0,		3}, /* 321 */
 	{"timerfd_create", NULL,		0,		2}, /* 322 */
-	{"eventfd",	NULL,			0,		1}, /* 323 */
+	{"eventfd",	lx_eventfd,		0,		1}, /* 323 */
 	{"fallocate",	lx_fallocate32,		LX_SYS_EBPARG6,	6}, /* 324 */
 	{"timerfd_settime", NULL,		0,		4}, /* 325 */
 	{"timerfd_gettime", NULL,		0,		2}, /* 326 */
 	{"signalfd4",	NULL,			0,		4}, /* 327 */
-	{"eventfd2",	NULL,			0,		2}, /* 328 */
+	{"eventfd2",	lx_eventfd2,		0,		2}, /* 328 */
 	{"epoll_create1", lx_epoll_create1,	0,		1}, /* 329 */
 	{"dup3",	lx_dup3,		0,		3}, /* 330 */
 	{"pipe2",	lx_pipe2,		0,		2}, /* 331 */
@@ -900,7 +900,7 @@ lx_sysent_t lx_sysent64[] = {
 	{"poll",	lx_poll,		0,		3}, /* 7 */
 	{"lseek",	lx_lseek64,		0,		3}, /* 8 */
 	{"mmap",	NULL,			0,		6}, /* 9 */
-	{"mprotect",	NULL,			0,		3}, /* 10 */
+	{"mprotect",	lx_mprotect,		0,		3}, /* 10 */
 	{"munmap",	lx_munmap,		0,		2}, /* 11 */
 	{"brk",		lx_brk,			0,		1}, /* 12 */
 	{"rt_sigaction", NULL,			0,		4}, /* 13 */
@@ -916,9 +916,9 @@ lx_sysent_t lx_sysent64[] = {
 	{"select",	lx_select,		0,		5}, /* 23 */
 	{"sched_yield",	lx_sched_yield,		0,		0}, /* 24 */
 	{"mremap",	NULL,			0,		5}, /* 25 */
-	{"msync",	NULL,			0,		3}, /* 26 */
+	{"msync",	lx_msync,		0,		3}, /* 26 */
 	{"mincore",	lx_mincore,		0,		3}, /* 27 */
-	{"madvise",	NULL,			0,		3}, /* 28 */
+	{"madvise",	lx_madvise,		0,		3}, /* 28 */
 	{"shmget",	NULL,			0,		3}, /* 29 */
 	{"shmat",	NULL,			0,		4}, /* 30 */
 	{"shmctl",	NULL,			0,		3}, /* 31 */
@@ -1039,10 +1039,10 @@ lx_sysent_t lx_sysent64[] = {
 	{"sched_get_priority_max", lx_sched_get_priority_max, 0, 1}, /* 146 */
 	{"sched_get_priority_min", lx_sched_get_priority_min, 0, 1}, /* 147 */
 	{"sched_rr_get_interval", lx_sched_rr_get_interval, 0,	2}, /* 148 */
-	{"mlock",	NULL,			0,		2}, /* 149 */
-	{"munlock",	NULL,			0,		2}, /* 150 */
-	{"mlockall",	NULL,			0,		1}, /* 151 */
-	{"munlockall",	NULL,			0,		0}, /* 152 */
+	{"mlock",	lx_mlock,		0,		2}, /* 149 */
+	{"munlock",	lx_munlock,		0,		2}, /* 150 */
+	{"mlockall",	lx_mlockall,		0,		1}, /* 151 */
+	{"munlockall",	lx_munlockall,		0,		0}, /* 152 */
 	{"vhangup",	lx_vhangup,		0,		0}, /* 153 */
 	{"modify_ldt",	lx_modify_ldt,		0,		3}, /* 154 */
 	{"pivot_root",	NULL,			NOSYS_KERNEL,	0}, /* 155 */
@@ -1097,10 +1097,10 @@ lx_sysent_t lx_sysent64[] = {
 	{"sched_getaffinity", lx_sched_getaffinity,	0,	3}, /* 204 */
 	{"set_thread_area", lx_set_thread_area, 0,		1}, /* 205 */
 	{"io_setup",	lx_io_setup,		0,		2}, /* 206 */
-	{"io_destroy",	NULL,			0,		1}, /* 207 */
-	{"io_getevents", NULL,			0,		5}, /* 208 */
-	{"io_submit",	NULL,			0,		3}, /* 209 */
-	{"io_cancel",	NULL,			0,		3}, /* 210 */
+	{"io_destroy",	lx_io_destroy,		0,		1}, /* 207 */
+	{"io_getevents", lx_io_getevents,	0,		5}, /* 208 */
+	{"io_submit",	lx_io_submit,		0,		3}, /* 209 */
+	{"io_cancel",	lx_io_cancel,		0,		3}, /* 210 */
 	{"get_thread_area", lx_get_thread_area,	0,		1}, /* 211 */
 	{"lookup_dcookie", NULL,		NOSYS_NO_EQUIV,	0}, /* 212 */
 	{"epoll_create", lx_epoll_create,	0,		1}, /* 213 */
@@ -1174,13 +1174,13 @@ lx_sysent_t lx_sysent64[] = {
 	{"epoll_pwait",	lx_epoll_pwait,		0,		5}, /* 281 */
 	{"signalfd",	NULL,			0,		3}, /* 282 */
 	{"timerfd_create", NULL,		0,		2}, /* 283 */
-	{"eventfd",	NULL,			0,		1}, /* 284 */
+	{"eventfd",	lx_eventfd,		0,		1}, /* 284 */
 	{"fallocate",	lx_fallocate,		0,		4}, /* 285 */
 	{"timerfd_settime", NULL,		0,		4}, /* 286 */
 	{"timerfd_gettime", NULL,		0,		2}, /* 287 */
 	{"accept4",	lx_accept4,		0,		4}, /* 288 */
 	{"signalfd4",	NULL,			0,		4}, /* 289 */
-	{"eventfd2",	NULL,			0,		2}, /* 290 */
+	{"eventfd2",	lx_eventfd2,		0,		2}, /* 290 */
 	{"epoll_create1", lx_epoll_create1,	0,		1}, /* 291 */
 	{"dup3",	lx_dup3,		0,		3}, /* 292 */
 	{"pipe2",	lx_pipe2,		0,		2}, /* 293 */

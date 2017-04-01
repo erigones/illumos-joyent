@@ -15,6 +15,7 @@
 #
 
 include $(SRC)/Makefile.master
+include $(SRC)/boot/Makefile.version
 
 CFLAGS= -O2
 CPPFLAGS= -DSTAND -nostdinc -I../../../../include -I../../..
@@ -53,7 +54,7 @@ INTERNALPROG=
 # architecture-specific loader code
 SRCS=		main.c conf.c vers.c chain.c
 
-CPPFLAGS +=	-DLOADER_TFTP_SUPPORT -DLOADER_GZIP_SUPPORT
+CPPFLAGS +=	-DLOADER_GZIP_SUPPORT
 
 # Enable BootForth
 CPPFLAGS +=	-DBOOT_FORTH -I$(SRC)/common/ficl -I../../ficl
@@ -106,11 +107,11 @@ CPPFLAGS +=	-I../btx/lib
 
 include ../Makefile.inc
 
-vers.c:	../../common/newvers.sh version
-	$(SH) ../../common/newvers.sh version ${NEWVERSWHAT}
+vers.c:	../../common/newvers.sh $(SRC)/boot/Makefile.version
+	$(SH) ../../common/newvers.sh ${LOADER_VERSION} ${NEWVERSWHAT}
 
 ${LOADER}: ${LOADER}.bin ${BTXLDR} ${BTXKERN}
-	$(BTXLD) -v -f aout -e ${LOADER_ADDRESS} -o $@ -l ${BTXLDR} \
+	$(BTXLD) -f aout -e ${LOADER_ADDRESS} -o $@ -l ${BTXLDR} \
 		-b ${BTXKERN} ${LOADER}.bin
 
 ${LOADER}.bin: ${LOADER}.sym

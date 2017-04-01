@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2016 Joyent, Inc.
+ * Copyright 2017 Joyent, Inc.
  */
 
 #ifndef _SYS__LX_MISC_H
@@ -43,6 +43,13 @@ extern void lx_set_gdt(int, user_desc_t *);
 extern void lx_clear_gdt(int);
 
 extern longlong_t lx_nosys();
+
+extern void lx_clone_grp_create(uint_t);
+extern void lx_clone_grp_enter(uint_t, proc_t *, proc_t *);
+extern void lx_clone_grp_exit(proc_t *, boolean_t);
+extern boolean_t lx_clone_grp_member(lx_proc_data_t *, uint_t);
+extern int lx_clone_grp_walk(lx_proc_data_t *, uint_t,
+    int (*)(proc_t *, void *), void *);
 
 extern greg_t lx_fixsegreg(greg_t, model_t);
 extern uintptr_t lx_fsbase(klwp_t *, uintptr_t);
@@ -111,6 +118,8 @@ extern boolean_t lx_vsyscall_iscall(klwp_t *, uintptr_t, int *);
 extern void lx_vsyscall_enter(proc_t *, klwp_t *, int);
 
 extern void lx_check_strict_failure(lx_lwp_data_t *);
+
+extern boolean_t lx_is_eventfd(file_t *);
 
 #endif
 

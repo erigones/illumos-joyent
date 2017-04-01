@@ -22,7 +22,7 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
- * Copyright 2016, Joyent, Inc.
+ * Copyright (c) 2017, Joyent, Inc.
  */
 
 #include <sys/types.h>
@@ -334,24 +334,38 @@ retry:
 		return (-1);
 	}
 
-	/* Bail on system processes or those which are incomplete */
-	if (p->p_stat == SIDL || (p->p_flag & SSYS) != 0) {
+	/*
+	 * Bail on processes belonging to the system, those which are not yet
+	 * complete and zombies (unless explicitly allowed via the flags).
+	 */
+	if (p->p_stat == SIDL || (p->p_flag & SSYS) != 0 ||
+	    (p->p_stat == SZOMB && (flag & LXP_ZOMBOK) == 0)) {
 		mutex_exit(&pidlock);
 		return (-1);
 	}
 	mutex_enter(&p->p_lock);
 	mutex_exit(&pidlock);
 
-	if (flag == PRLOCK) {
-		int res;
-
-		res = sprtrylock_proc(p);
-		if (res < 0) {
+	if (flag & LXP_PRLOCK) {
+		/*
+		 * It would be convenient to call sprtrylock_proc() for this
+		 * task.  Unfortunately, its behavior of filtering zombies is
+		 * excessive for some lx_proc use cases.  Instead, when the
+		 * provided flags do not indicate that zombies are allowed,
+		 * exiting processes are filtered out (as would be performed by
+		 * sprtrylock_proc).
+		 */
+		if ((p->p_flag & (SEXITING|SEXITLWPS)) != 0 &&
+		    (flag & LXP_ZOMBOK) == 0) {
 			mutex_exit(&p->p_lock);
 			return (-1);
-		} else if (res > 0) {
+		}
+		if (p->p_proc_flag & P_PR_LOCK) {
 			sprwaitlock_proc(p);
 			goto retry;
+		} else {
+			p->p_proc_flag |= P_PR_LOCK;
+			THREAD_KPRI_REQUEST();
 		}
 	}
 
@@ -362,7 +376,7 @@ retry:
 
 		ld = lwp_hash_lookup(p, tid);
 		if (ld == NULL) {
-			if (flag == PRLOCK) {
+			if (flag & LXP_PRLOCK) {
 				sprunprlock(p);
 			}
 			mutex_exit(&p->p_lock);
@@ -380,40 +394,32 @@ retry:
 
 /*
  * Given an lwp, return the Linux pid of its parent.  If the caller
- * wants them, we return the Solaris (pid, tid) as well.
+ * wants them, we return the SunOS (pid, tid) as well.
  */
 pid_t
 lx_lwp_ppid(klwp_t *lwp, pid_t *ppidp, id_t *ptidp)
 {
 	lx_lwp_data_t *lwpd = lwptolxlwp(lwp);
 	proc_t *p = lwptoproc(lwp);
-	struct lx_pid *hp;
-	pid_t zoneinit = curproc->p_zone->zone_proc_initpid;
-	pid_t lppid, ppid;
+	const pid_t zoneinit = p->p_zone->zone_proc_initpid;
+	const pid_t ppid = p->p_ppid;
 
 	/*
-	 * Be sure not to return a parent pid that should be invisible
-	 * within this zone.
+	 * Report a ppid of 1 for processes which are children to either init
+	 * or a process outside the zone.
 	 */
-	ppid = ((p->p_flag & SZONETOP)
-	    ? curproc->p_zone->zone_zsched->p_pid : p->p_ppid);
+	if (ppid == zoneinit || (p->p_flag & SZONETOP) != 0) {
+		goto ppid_is_zinit;
+	}
 
 	/*
-	 * If the parent process's pid is the zone's init process, force it
-	 * to the Linux init pid value of 1.
-	 */
-	if (ppid == zoneinit)
-		ppid = 1;
-
-	/*
-	 * There are two cases in which the Linux definition of a 'parent'
-	 * matches that of Solaris:
+	 * Our native concept of a 'parent pid' matches Linux in two cases:
 	 *
-	 * - if our tgid is the same as our PID, then we are either the
-	 *   first thread in the process or a CLONE_THREAD thread.
+	 * - TGID and PID are equal: This is either the first thread in the
+	 *   process or one created with CLONE_THREAD.
 	 *
-	 * - if the brand lwp value for ppid is 0, then we are either the
-	 *   child of a differently-branded process or a CLONE_PARENT thread.
+	 * - The brand lwp value for PPID is 0: This is either the child of a
+	 *   differently-branded process or was created with the CLONE_PARENT.
 	 */
 	if (p->p_pid == lwpd->br_tgid || lwpd->br_ppid == 0) {
 		if (ppidp != NULL)
@@ -424,58 +430,51 @@ lx_lwp_ppid(klwp_t *lwp, pid_t *ppidp, id_t *ptidp)
 	}
 
 	/*
-	 * Set the default Linux parent pid to be the pid of the zone's init
-	 * process; this will get converted back to the Linux default of 1
-	 * later.
+	 * In all other cases, we are looking for the parent of this specific
+	 * thread, which in Linux refers to the thread that clone(2)d it.   We
+	 * stashed that thread's PID away when this thread was created.
 	 */
-	lppid = zoneinit;
-
-	/*
-	 * If the process's parent isn't init, try and look up the Linux "pid"
-	 * corresponding to the process's parent.
-	 */
-	if (ppid != 1) {
-		/*
-		 * In all other cases, we are looking for the parent of this
-		 * specific thread, which in Linux refers to the thread that
-		 * clone()d it.   We stashed that thread's PID away when this
-		 * thread was created.
-		 */
-		mutex_enter(&hash_lock);
-		for (hp = ltos_pid_hash[LTOS_HASH(lwpd->br_ppid)]; hp != NULL;
-		    hp = hp->lxp_ltos_next) {
-			if (lwpd->br_ppid == hp->lxp_lpid) {
-				/*
-				 * We found the PID we were looking for, but
-				 * since we cached its value in this LWP's brand
-				 * structure, it has exited and been reused by
-				 * another process.
-				 */
-				if (hp->lxp_start > lwptot(lwp)->t_start)
-					break;
-
-				lppid = lwpd->br_ppid;
-				if (ppidp != NULL)
-					*ppidp = hp->lxp_spid;
-				if (ptidp != NULL)
-					*ptidp = hp->lxp_stid;
-
+	mutex_enter(&hash_lock);
+	for (struct lx_pid *hp = ltos_pid_hash[LTOS_HASH(lwpd->br_ppid)];
+	    hp != NULL; hp = hp->lxp_ltos_next) {
+		if (lwpd->br_ppid == hp->lxp_lpid) {
+			/*
+			 * The PID matches, but there are a couple cases when
+			 * the translation is not suitable:
+			 *
+			 * - The cached start time is too young, indicating
+			 *   that the thread exited and the PID was reused by
+			 *   another process.
+			 * - The parent is zoneinit
+			 *
+			 * In both cases, a result of ppid=1 is yielded.
+			 */
+			if (hp->lxp_start > lwptot(lwp)->t_start ||
+			    lwpd->br_ppid == zoneinit) {
 				break;
 			}
+
+			/* Good match, yield the result */
+			if (ppidp != NULL)
+				*ppidp = hp->lxp_spid;
+			if (ptidp != NULL)
+				*ptidp = hp->lxp_stid;
+			mutex_exit(&hash_lock);
+			return (lwpd->br_ppid);
 		}
-		mutex_exit(&hash_lock);
 	}
+	mutex_exit(&hash_lock);
+	/*
+	 * If no match is found in the Linux->SunOS translation hash, fall back
+	 * to assuming the zone init process as the parent.
+	 */
 
-	if (lppid == zoneinit) {
-		lppid = 1;
-
-		if (ppidp != NULL)
-			*ppidp = lppid;
-		if (ptidp != NULL)
-			*ptidp = -1;
-	}
-
-	return (lppid);
+ppid_is_zinit:
+	if (ppidp != NULL)
+		*ppidp = 1;
+	if (ptidp != NULL)
+		*ptidp = -1;
+	return (1);
 }
 
 void

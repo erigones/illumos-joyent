@@ -344,26 +344,17 @@ drv_ioc_attr(void *karg, intptr_t arg, int mode, cred_t *cred, int *rvalp)
 	    zone_check_datalink(&zoneid, diap->dia_linkid) != 0)
 		return (ENOENT);
 
-	if ((err = dls_devnet_hold_tmp(diap->dia_linkid, &dlh)) != 0)
+	if ((err = mac_perim_enter_by_linkid(diap->dia_linkid, &mph)) != 0)
 		return (err);
 
-	if ((err = mac_perim_enter_by_macname(
-	    dls_devnet_mac(dlh), &mph)) != 0) {
-		dls_devnet_rele_tmp(dlh);
-		return (err);
-	}
-
-	if ((err = dls_link_hold(dls_devnet_mac(dlh), &dlp)) != 0) {
+	if ((err = dls_devnet_hold_link(diap->dia_linkid, &dlh, &dlp)) != 0) {
 		mac_perim_exit(mph);
-		dls_devnet_rele_tmp(dlh);
 		return (err);
 	}
 
 	mac_sdu_get(dlp->dl_mh, NULL, &diap->dia_max_sdu);
-
-	dls_link_rele(dlp);
+	dls_devnet_rele_link(dlh, dlp);
 	mac_perim_exit(mph);
-	dls_devnet_rele_tmp(dlh);
 
 	return (0);
 }
@@ -671,11 +662,10 @@ drv_ioc_prop_common(dld_ioc_macprop_t *prop, intptr_t arg, boolean_t set,
 			goto done;
 	}
 
-	if ((err = dls_devnet_hold_tmp(linkid, &dlh)) != 0)
+	if ((err = mac_perim_enter_by_linkid(linkid, &mph)) != 0)
 		goto done;
-	if ((err = mac_perim_enter_by_macname(dls_devnet_mac(dlh), &mph)) != 0)
-		goto done;
-	if ((err = dls_link_hold(dls_devnet_mac(dlh), &dlp)) != 0)
+
+	if ((err = dls_devnet_hold_link(linkid, &dlh, &dlp)) != 0)
 		goto done;
 
 	/*
@@ -718,8 +708,18 @@ drv_ioc_prop_common(dld_ioc_macprop_t *prop, intptr_t arg, boolean_t set,
 			else
 				err = drv_ioc_clrap(linkid);
 		} else {
-			if (kprop->pr_valsize == 0)
-				return (ENOBUFS);
+			/*
+			 * You might think that the earlier call to
+			 * mac_prop_check_size() should catch this but
+			 * it can't. The autopush prop uses 0 as a
+			 * sentinel value to clear the prop. This
+			 * check ensures we don't allow a get with a
+			 * valsize of 0.
+			 */
+			if (kprop->pr_valsize == 0) {
+				err = ENOBUFS;
+				goto done;
+			}
 
 			kprop->pr_perm_flags = MAC_PROP_PERM_RW;
 			err = drv_ioc_getap(linkid, dlap);
@@ -796,8 +796,8 @@ done:
 	if (!set && ddi_copyout(kprop, (void *)arg, dsize, mode) != 0)
 		err = EFAULT;
 
-	if (dlp != NULL)
-		dls_link_rele(dlp);
+	if (dlh != NULL && dlp != NULL)
+		dls_devnet_rele_link(dlh, dlp);
 
 	if (mph != NULL) {
 		int32_t	cpuid;
@@ -813,9 +813,6 @@ done:
 		if (mdip != NULL && cpuid != -1)
 			mac_client_set_intr_cpu(mdip, dlp->dl_mch, cpuid);
 	}
-
-	if (dlh != NULL)
-		dls_devnet_rele_tmp(dlh);
 
 	if (kprop != NULL)
 		kmem_free(kprop, dsize);

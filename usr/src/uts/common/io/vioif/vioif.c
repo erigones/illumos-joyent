@@ -732,24 +732,10 @@ static uint_t
 vioif_add_rx(struct vioif_softc *sc, int kmflag)
 {
 	uint_t num_added = 0;
+	struct vq_entry *ve;
 
-	for (;;) {
-		struct vq_entry *ve;
-		struct vioif_rx_buf *buf;
-
-		ve = vq_alloc_entry(sc->sc_rx_vq);
-		if (!ve) {
-			/*
-			 * Out of free descriptors - ring already full.
-			 * It would be better to update sc_norxdescavail
-			 * but MAC does not ask for this info, hence we
-			 * update sc_norecvbuf.
-			 */
-			sc->sc_rxfail_no_descriptors++;
-			sc->sc_norecvbuf++;
-			break;
-		}
-		buf = sc->sc_rxbufs[ve->qe_index];
+	while ((ve = vq_alloc_entry(sc->sc_rx_vq)) != NULL) {
+		struct vioif_rx_buf *buf = sc->sc_rxbufs[ve->qe_index];
 
 		if (!buf) {
 			/* First run, allocate the buffer. */
@@ -1781,7 +1767,7 @@ vioif_attach(dev_info_t *devinfo, ddi_attach_cmd_t cmd)
 
 	sc->sc_tx_vq = virtio_alloc_vq(&sc->sc_virtio, 1,
 	    VIOIF_TX_QLEN, VIOIF_INDIRECT_MAX, "tx");
-	if (!sc->sc_rx_vq)
+	if (!sc->sc_tx_vq)
 		goto exit_alloc2;
 	virtio_stop_vq_intr(sc->sc_tx_vq);
 

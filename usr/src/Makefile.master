@@ -103,7 +103,6 @@ __GNUC64=		$(__GNUC)
 # The default is POUND_SIGN, meaning "not enabled". If the environment
 # passes in an override like ENABLE_SMB_PRINTING= (empty) that will
 # uncomment things in the lower Makefiles to enable the feature.
-ENABLE_IPP_PRINTING=	$(POUND_SIGN)
 ENABLE_SMB_PRINTING=	$(POUND_SIGN)
 
 # CLOSED is the root of the tree that contains source which isn't released
@@ -120,6 +119,8 @@ ONBLD_TOOLS=		$(BUILD_TOOLS)/onbld
 JAVA_HOME=	/usr/java
 # define buildtime JAVA_ROOT
 JAVA_ROOT=	/usr/java
+# define to build with JAVA 8
+BLD_JAVA_8=	$(POUND_SIGN)
 
 GCC_ROOT=	/opt/gcc/4.4.4
 GCCLIBDIR=	$(GCC_ROOT)/lib
@@ -928,8 +929,8 @@ CTFMRGFLAGS=
 # do not support stabs (eg. Sun Studio), so if GNUC is not set, we don't
 # honor them.
 #
-$(_GNUC)CTFCONVERT=	$(ONBLD_TOOLS)/bin/$(MACH)/ctfconvert-altexec
-$(_GNUC)CTFMERGE=	$(ONBLD_TOOLS)/bin/$(MACH)/ctfmerge-altexec
+$(__GNUC)CTFCONVERT=	$(ONBLD_TOOLS)/bin/$(MACH)/ctfconvert-altexec
+$(__GNUC)CTFMERGE=	$(ONBLD_TOOLS)/bin/$(MACH)/ctfmerge-altexec
 
 CTFCONVERT_O		= $(CTFCONVERT) $(CTFCVTFLAGS) $@
 

@@ -20,7 +20,6 @@
  */
 
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD$");
 
 #include <sys/param.h>
 #include <machine/elf.h>
@@ -49,7 +48,7 @@ static const boot_module_t *boot_modules[] =
 #endif
 };
 
-#define NUM_BOOT_MODULES (sizeof(boot_modules) / sizeof(boot_module_t*))
+#define NUM_BOOT_MODULES	nitems(boot_modules)
 /* The initial number of handles used to query EFI for partitions. */
 #define NUM_HANDLES_INIT	24
 
@@ -83,7 +82,8 @@ Malloc(size_t len, const char *file __unused, int line __unused)
 void
 Free(void *buf, const char *file __unused, int line __unused)
 {
-	(void)bs->FreePool(buf);
+	if (buf != NULL)
+		(void)bs->FreePool(buf);
 }
 
 /*
@@ -108,8 +108,8 @@ nodes_match(EFI_DEVICE_PATH *imgpath, EFI_DEVICE_PATH *devpath)
 
 /*
  * device_paths_match returns TRUE if the imgpath isn't NULL and all nodes
- * in imgpath and devpath match up to their respect occurances of a media
- * node, FALSE otherwise.
+ * in imgpath and devpath match up to their respective occurences of a
+ * media node, FALSE otherwise.
  */
 static BOOLEAN
 device_paths_match(EFI_DEVICE_PATH *imgpath, EFI_DEVICE_PATH *devpath)
@@ -336,8 +336,6 @@ load_loader(const boot_module_t **modp, dev_info_t **devinfop, void **bufp,
 	const boot_module_t *mod;
 
 	for (i = 0; i < NUM_BOOT_MODULES; i++) {
-		if (boot_modules[i] == NULL)
-			continue;
 		mod = boot_modules[i];
 		for (dev = mod->devices(); dev != NULL; dev = dev->next) {
 			if (dev->preferred != preferred)
@@ -503,9 +501,6 @@ probe_handle(EFI_HANDLE h, EFI_DEVICE_PATH *imgpath, BOOLEAN *preferred)
 
 	/* Run through each module, see if it can load this partition */
 	for (i = 0; i < NUM_BOOT_MODULES; i++) {
-		if (boot_modules[i] == NULL)
-			continue;
-
 		if ((status = bs->AllocatePool(EfiLoaderData,
 		    sizeof(*devinfo), (void **)&devinfo)) !=
 		    EFI_SUCCESS) {
@@ -610,9 +605,6 @@ efi_main(EFI_HANDLE Ximage, EFI_SYSTEM_TABLE *Xsystab)
 	printf("   Loader path: %s\n\n", PATH_LOADER_EFI);
 	printf("   Initializing modules:");
 	for (i = 0; i < NUM_BOOT_MODULES; i++) {
-		if (boot_modules[i] == NULL)
-			continue;
-
 		printf(" %s", boot_modules[i]->name);
 		if (boot_modules[i]->init != NULL)
 			boot_modules[i]->init();
@@ -634,7 +626,7 @@ efi_main(EFI_HANDLE Ximage, EFI_SYSTEM_TABLE *Xsystab)
 	case EFI_BUFFER_TOO_SMALL:
 		(void)bs->FreePool(handles);
 		if ((status = bs->AllocatePool(EfiLoaderData, hsize,
-		    (void **)&handles) != EFI_SUCCESS)) {
+		    (void **)&handles)) != EFI_SUCCESS) {
 			panic("Failed to allocate %zu handles (%lu)", hsize /
 			    sizeof(*handles), EFI_ERROR_CODE(status));
 		}
@@ -672,10 +664,8 @@ efi_main(EFI_HANDLE Ximage, EFI_SYSTEM_TABLE *Xsystab)
 
 	/* Status summary. */
 	for (i = 0; i < NUM_BOOT_MODULES; i++) {
-		if (boot_modules[i] != NULL) {
-			printf("    ");
-			boot_modules[i]->status();
-		}
+		printf("    ");
+		boot_modules[i]->status();
 	}
 
 	try_boot();

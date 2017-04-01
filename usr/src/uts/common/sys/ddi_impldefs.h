@@ -21,6 +21,8 @@
 /*
  * Copyright (c) 1991, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2012 Garrett D'Amore <garrett@damore.org>.  All rights reserved.
+ * Copyright 2016 Joyent, Inc.
+ * Copyright (c) 2016 by Delphix. All rights reserved.
  */
 
 #ifndef _SYS_DDI_IMPLDEFS_H
@@ -354,7 +356,7 @@ struct dev_info  {
 /*
  * Device state macros.
  * o All SET/CLR/DONE users must protect context with devi_lock.
- * o DEVI_SET_DEVICE_ONLINE users must do his own DEVI_SET_REPORT.
+ * o DEVI_SET_DEVICE_ONLINE users must do their own DEVI_SET_REPORT.
  * o DEVI_SET_DEVICE_{DOWN|DEGRADED|UP} should only be used when !OFFLINE.
  * o DEVI_SET_DEVICE_UP clears DOWN and DEGRADED.
  */
@@ -631,6 +633,17 @@ struct regspec {
 	uint_t regspec_bustype;		/* cookie for bus type it's on */
 	uint_t regspec_addr;		/* address of reg relative to bus */
 	uint_t regspec_size;		/* size of this register set */
+};
+
+/*
+ * This is a version of the above structure that works for 64-bit mappings and
+ * doesn't rely on overloading of fields as is done on SPARC. Eventually the
+ * struct regspec should be replaced with this.
+ */
+struct regspec64 {
+	uint64_t regspec_bustype;	/* cookie for bus type it's on */
+	uint64_t regspec_addr;		/* address of reg relative to bus */
+	uint64_t regspec_size;		/* size of this register set */
 };
 
 /*

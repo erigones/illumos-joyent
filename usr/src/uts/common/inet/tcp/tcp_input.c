@@ -22,7 +22,7 @@
 /*
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2011 Nexenta Systems, Inc. All rights reserved.
- * Copyright 2016 Joyent, Inc.
+ * Copyright 2017 Joyent, Inc.
  * Copyright (c) 2014 by Delphix. All rights reserved.
  */
 
@@ -1062,7 +1062,7 @@ tcp_eager_cleanup(tcp_t *listener, boolean_t q0_only)
 
 /*
  * If we are an eager connection hanging off a listener that hasn't
- * formally accepted the connection yet, get off his list and blow off
+ * formally accepted the connection yet, get off its list and blow off
  * any data that we have accumulated.
  */
 void
@@ -2874,12 +2874,20 @@ tcp_input_data(void *arg, mblk_t *mp, void *arg2, ip_recv_attr_t *ira)
 		/*
 		 * RST segments must not be subject to PAWS and are not
 		 * required to have timestamps.
+		 * We do not drop keepalive segments without
+		 * timestamps, to maintain compatibility with legacy TCP stacks.
 		 */
-		if (tcp->tcp_snd_ts_ok && !(flags & TH_RST)) {
+		boolean_t keepalive = (seg_len == 0 || seg_len == 1) &&
+		    (seg_seq + 1 == tcp->tcp_rnxt);
+		if (tcp->tcp_snd_ts_ok && !(flags & TH_RST) && !keepalive) {
 			/*
 			 * Per RFC 7323 section 3.2., silently drop non-RST
 			 * segments without expected TSopt. This is a 'SHOULD'
 			 * requirement.
+			 * We accept keepalives without TSopt to maintain
+			 * interoperability with tcp implementations that omit
+			 * the TSopt on these. Keepalive data is discarded, so
+			 * there is no risk corrupting data by accepting these.
 			 */
 			if (!(options & TCP_OPT_TSTAMP_PRESENT)) {
 				/*
@@ -5554,10 +5562,12 @@ noticmpv4:
 		switch (icmph->icmph_code) {
 		case ICMP_FRAGMENTATION_NEEDED:
 			/*
-			 * Update Path MTU, then try to send something out.
+			 * Attempt to update path MTU and, if the MSS of the
+			 * connection is altered, retransmit outstanding data.
 			 */
-			tcp_update_pmtu(tcp, B_TRUE);
-			tcp_rexmit_after_error(tcp);
+			if (tcp_update_pmtu(tcp, B_TRUE)) {
+				tcp_rexmit_after_error(tcp);
+			}
 			break;
 		case ICMP_PORT_UNREACHABLE:
 		case ICMP_PROTOCOL_UNREACHABLE:
@@ -5600,7 +5610,7 @@ noticmpv4:
 			break;
 		}
 		break;
-	case ICMP_SOURCE_QUENCH: {
+	case ICMP_SOURCE_QUENCH:
 		/*
 		 * use a global boolean to control
 		 * whether TCP should respond to ICMP_SOURCE_QUENCH.
@@ -5620,7 +5630,6 @@ noticmpv4:
 			tcp->tcp_cwnd_cnt = 0;
 		}
 		break;
-	}
 	}
 	freemsg(mp);
 }
@@ -5674,10 +5683,12 @@ noticmpv6:
 	switch (icmp6->icmp6_type) {
 	case ICMP6_PACKET_TOO_BIG:
 		/*
-		 * Update Path MTU, then try to send something out.
+		 * Attempt to update path MTU and, if the MSS of the connection
+		 * is altered, retransmit outstanding data.
 		 */
-		tcp_update_pmtu(tcp, B_TRUE);
-		tcp_rexmit_after_error(tcp);
+		if (tcp_update_pmtu(tcp, B_TRUE)) {
+			tcp_rexmit_after_error(tcp);
+		}
 		break;
 	case ICMP6_DST_UNREACH:
 		switch (icmp6->icmp6_code) {

@@ -23,6 +23,7 @@
  * Copyright (c) 2004, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2015 Joyent, Inc.
  * Copyright 2012 Milan Jurik. All rights reserved.
+ * Copyright 2017 RackTop Systems.
  */
 
 
@@ -3895,7 +3896,7 @@ commit:
  *
  */
 static int
-upgrade_manifestfiles(pgroup_t *pg, const entity_t *ient,
+upgrade_manifestfiles(pgroup_t *pg, entity_t *ient,
     const scf_snaplevel_t *running, void *ent)
 {
 	scf_propertygroup_t *ud_mfsts_pg = NULL;
@@ -3965,13 +3966,9 @@ upgrade_manifestfiles(pgroup_t *pg, const entity_t *ient,
 	}
 
 	/* Fetch the new manifests property group */
-	for (mfst_pgroup = uu_list_first(ient->sc_pgroups);
-	    mfst_pgroup != NULL;
-	    mfst_pgroup = uu_list_next(ient->sc_pgroups, mfst_pgroup)) {
-		if (strcmp(mfst_pgroup->sc_pgroup_name,
-		    SCF_PG_MANIFESTFILES) == 0)
-			break;
-	}
+	mfst_pgroup = internal_pgroup_find_or_create(ient,
+	    SCF_PG_MANIFESTFILES, SCF_GROUP_FRAMEWORK);
+	assert(mfst_pgroup != NULL);
 
 	if ((r = scf_iter_pg_properties(ud_prop_iter, ud_mfsts_pg)) !=
 	    SCF_SUCCESS)
@@ -10389,6 +10386,7 @@ export_notify_params(scf_propertygroup_t *pg, struct entity_elts *elts)
 	xmlNodePtr n, event, *type;
 	struct params_elts *eelts;
 	int ret, err, i;
+	char *s;
 
 	n = xmlNewNode(NULL, (xmlChar *)"notification_parameters");
 	event = xmlNewNode(NULL, (xmlChar *)"event");
@@ -10398,6 +10396,9 @@ export_notify_params(scf_propertygroup_t *pg, struct entity_elts *elts)
 	/* event value */
 	if (scf_pg_get_name(pg, exp_str, max_scf_name_len + 1) < 0)
 		scfdie();
+	/* trim SCF_NOTIFY_PG_POSTFIX appended to name on import */
+	if ((s = strchr(exp_str, ',')) != NULL)
+		*s = '\0';
 	safe_setprop(event, value_attr, exp_str);
 
 	(void) xmlAddChild(n, event);

@@ -25,7 +25,7 @@
  */
 
 /*
- * Copyright 2016 Joyent, Inc.
+ * Copyright 2017 Joyent, Inc.
  */
 
 #ifndef _SYS_LX_SYSCALL_H
@@ -104,13 +104,6 @@ extern long lx_clone(uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t);
 extern long lx_exit(uintptr_t);
 extern long lx_group_exit(uintptr_t);
 
-extern long lx_mlock(uintptr_t, uintptr_t);
-extern long lx_mlockall(uintptr_t);
-extern long lx_munlock(uintptr_t, uintptr_t);
-extern long lx_munlockall(void);
-extern long lx_msync(uintptr_t, uintptr_t, uintptr_t);
-extern long lx_madvise(uintptr_t, uintptr_t, uintptr_t);
-extern long lx_mprotect(uintptr_t, uintptr_t, uintptr_t);
 extern long lx_mmap(uintptr_t, uintptr_t, uintptr_t, uintptr_t,
     uintptr_t, uintptr_t);
 extern long lx_mmap2(uintptr_t, uintptr_t, uintptr_t, uintptr_t,
@@ -177,9 +170,6 @@ extern long lx_shmget(key_t, size_t, int);
 extern long lx_shmat(int, void *, int);
 extern long lx_shmctl(int, int, void *);
 
-extern long lx_close(int);
-extern long lx_eventfd(unsigned int);
-extern long lx_eventfd2(unsigned int, int);
 extern long lx_getgroups(int, gid_t *);
 extern long lx_inotify_add_watch(int, const char *, uint32_t);
 extern long lx_inotify_init(void);

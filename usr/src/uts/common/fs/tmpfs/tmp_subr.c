@@ -196,9 +196,12 @@ int
 tmp_convnum(char *str, size_t *maxbytes)
 {
 	u_longlong_t num = 0;
-	u_longlong_t max_bytes = (uint64_t)SIZE_MAX;
+#ifdef _LP64
+	u_longlong_t max_bytes = ULONG_MAX;
+#else
+	u_longlong_t max_bytes = PAGESIZE * (uint64_t)ULONG_MAX;
+#endif
 	size_t pages;
-
 	char *c;
 	const struct convchar {
 		char *cc_char;
@@ -288,7 +291,6 @@ valid_char:
 	}
 
 done:
-
 	/*
 	 * We've been given a size in bytes; however, we want to make sure that
 	 * we have at least one page worth no matter what. Therefore we use

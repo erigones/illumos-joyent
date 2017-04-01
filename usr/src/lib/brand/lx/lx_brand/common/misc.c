@@ -21,7 +21,7 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
- * Copyright 2016 Joyent, Inc.
+ * Copyright 2017 Joyent, Inc.
  */
 
 #include <stdlib.h>
@@ -296,15 +296,6 @@ lx_setgroups(uintptr_t p1, uintptr_t p2)
 }
 
 long
-lx_close(int fildes)
-{
-	int r;
-
-	r = close(fildes);
-	return ((r == -1) ? -errno : r);
-}
-
-long
 lx_getgroups(int gidsetsize, gid_t *grouplist)
 {
 	int r;
@@ -365,27 +356,4 @@ lx_utimes(const char *path, const struct timeval times[2])
 
 	r = utimes(path, times);
 	return ((r == -1) ? -errno : r);
-}
-
-long
-lx_eventfd(unsigned int initval)
-{
-	return (lx_eventfd2(initval, 0));
-}
-
-long
-lx_eventfd2(unsigned int initval, int flags)
-{
-	int r = eventfd(initval, flags);
-
-	/*
-	 * eventfd(3C) may fail with ENOENT if /dev/eventfd is not available.
-	 * It is less jarring to Linux programs to tell them that the system
-	 * call is not supported than to report an error number they are not
-	 * expecting.
-	 */
-	if (r == -1 && errno == ENOENT)
-		return (-ENOTSUP);
-
-	return (r == -1 ? -errno : r);
 }

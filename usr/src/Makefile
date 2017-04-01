@@ -25,6 +25,7 @@
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
 # Copyright 2015 OmniTI Computer Consulting, Inc. All rights reserved.
 # Copyright 2016 Toomas Soome <tsoome@me.com>
+# Copyright 2016 Joyent, Inc.
 #
 
 #
@@ -220,6 +221,7 @@ ucbheaders: FRC
 	@cd ucbhead; pwd; $(MAKE) install_h
 
 cmdheaders: FRC
+	@cd cmd/devfsadm; pwd; $(MAKE) install_h
 	@cd cmd/fm; pwd; $(MAKE) install_h
 	@cd cmd/mdb; pwd; $(MAKE) install_h
 

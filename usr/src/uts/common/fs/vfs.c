@@ -18,12 +18,14 @@
  *
  * CDDL HEADER END
  */
+
 /*
  * Copyright (c) 1988, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2016 Joyent, Inc.
- * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
  * Copyright 2016 Toomas Soome <tsoome@me.com>
  * Copyright (c) 2016 by Delphix. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.
+ * Copyright 2017 RackTop Systems.
  */
 
 /*	Copyright (c) 1983, 1984, 1985, 1986, 1987, 1988, 1989 AT&T	*/
@@ -793,6 +795,7 @@ vfs_mountfs(char *module, char *spec, char *path)
 	struct mounta mounta;
 	vfs_t *vfsp;
 
+	bzero(&mounta, sizeof (mounta));
 	mounta.flags = MS_SYSSPACE | MS_DATA;
 	mounta.fstype = module;
 	mounta.spec = spec;
@@ -918,32 +921,6 @@ vfs_mountroot(void)
 	if (getzoneid() == GLOBAL_ZONEID) {
 		vfs_mountfs("sharefs", "sharefs", "/etc/dfs/sharetab");
 	}
-
-#ifdef __sparc
-	/*
-	 * This bit of magic can go away when we convert sparc to
-	 * the new boot architecture based on ramdisk.
-	 *
-	 * Booting off a mirrored root volume:
-	 * At this point, we have booted and mounted root on a
-	 * single component of the mirror.  Complete the boot
-	 * by configuring SVM and converting the root to the
-	 * dev_t of the mirrored root device.  This dev_t conversion
-	 * only works because the underlying device doesn't change.
-	 */
-	if (root_is_svm) {
-		if (svm_rootconf()) {
-			panic("vfs_mountroot: cannot remount root");
-		}
-
-		/*
-		 * mnttab should reflect the new root device
-		 */
-		vfs_lock_wait(rootvfs);
-		vfs_setresource(rootvfs, rootfs.bo_name, 0);
-		vfs_unlock(rootvfs);
-	}
-#endif /* __sparc */
 
 	if (strcmp(rootfs.bo_fstype, "zfs") != 0) {
 		/*
@@ -4638,7 +4615,6 @@ getfsname(char *askfor, char *name, size_t namelen)
 static void
 getrootfs(char **fstypp, char **fsmodp)
 {
-	extern char *strplumb_get_netdev_path(void);
 	char *propstr = NULL;
 
 	/*
@@ -4688,11 +4664,7 @@ getrootfs(char **fstypp, char **fsmodp)
 		(void) strncpy(rootfs.bo_name, propstr, BO_MAXOBJNAME);
 		ddi_prop_free(propstr);
 	} else {
-		/* attempt to determine netdev_path via boot_mac address */
-		netdev_path = strplumb_get_netdev_path();
-		if (netdev_path == NULL)
-			panic("cannot find boot network interface");
-		(void) strncpy(rootfs.bo_name, netdev_path, BO_MAXOBJNAME);
+		rootfs.bo_name[0] = '\0';
 	}
 	*fstypp = rootfs.bo_fstype;
 	*fsmodp = "nfs";

@@ -269,6 +269,11 @@ tests = ['zpool_import_001_pos', 'zpool_import_002_pos',
     'zpool_import_missing_002_pos', 'zpool_import_missing_003_pos',
     'zpool_import_rename_001_pos']
 
+[/opt/zfs-tests/tests/functional/cli_root/zpool_labelclear]
+tests = ['zpool_labelclear_active', 'zpool_labelclear_exported']
+pre =
+post =
+
 [/opt/zfs-tests/tests/functional/cli_root/zpool_offline]
 tests = ['zpool_offline_001_pos', 'zpool_offline_002_neg']
 
@@ -500,7 +505,8 @@ tests = ['clone_001_pos', 'rollback_001_pos', 'rollback_002_pos',
     'snapshot_006_pos', 'snapshot_007_pos', 'snapshot_008_pos',
     'snapshot_009_pos', 'snapshot_010_pos', 'snapshot_011_pos',
     'snapshot_012_pos', 'snapshot_013_pos', 'snapshot_014_pos',
-    'snapshot_015_pos', 'snapshot_016_pos', 'snapshot_017_pos']
+    'snapshot_015_pos', 'snapshot_016_pos', 'snapshot_017_pos',
+    'deadlist_lock']
 
 [/opt/zfs-tests/tests/functional/snapused]
 tests = ['snapused_001_pos', 'snapused_002_pos', 'snapused_003_pos',

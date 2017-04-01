@@ -15,6 +15,7 @@
 #
 
 include $(SRC)/Makefile.master
+include $(SRC)/boot/Makefile.version
 
 CC=		$(GCC_ROOT)/bin/gcc
 LD=		$(GNU_ROOT)/bin/gld
@@ -26,9 +27,9 @@ MACHINE=	$(MACH64)
 
 # architecture-specific loader code
 SRCS=	autoload.c bootinfo.c conf.c copy.c devicename.c main.c self_reloc.c \
-	smbios.c biosacpi.c vers.c
+	smbios.c acpi.c vers.c
 OBJS= autoload.o bootinfo.o conf.o copy.o devicename.o main.o self_reloc.o \
-	smbios.o biosacpi.o vers.o
+	smbios.o acpi.o vers.o
 
 ASFLAGS=-m64 -fPIC
 CFLAGS=	-O2
@@ -50,6 +51,13 @@ CPPFLAGS +=	-I./../../zfs
 CPPFLAGS +=	-I./../../../cddl/boot/zfs
 CPPFLAGS +=	-DEFI_ZFS_BOOT
 CPPFLAGS +=	-DNO_PCI -DEFI -DTERM_EMU
+
+# Export serial numbers, UUID, and asset tag from loader.
+CPPFLAGS += -DSMBIOS_SERIAL_NUMBERS
+# Use little-endian UUID format as defined in SMBIOS 2.6.
+CPPFLAGS += -DSMBIOS_LITTLE_ENDIAN_UUID
+# Use network-endian UUID format for backward compatibility.
+#CPPFLAGS += -DSMBIOS_NETWORK_ENDIAN_UUID
 
 LIBSTAND=	../../libstand/${MACHINE}/libstand.a
 
@@ -93,8 +101,8 @@ all: loader.efi
 
 install: all $(ROOTBOOTFILES)
 
-vers.c:	../../common/newvers.sh ../../efi/loader/version
-	$(SH) ../../common/newvers.sh version ${NEWVERSWHAT}
+vers.c:	../../common/newvers.sh $(SRC)/boot/Makefile.version
+	$(SH) ../../common/newvers.sh ${LOADER_VERSION} ${NEWVERSWHAT}
 
 EFI_TARGET=	pei-x86-64
 

@@ -22,7 +22,7 @@
 /*
  * Copyright (c) 2013, OmniTI Computer Consulting, Inc. All rights reserved.
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2016, Joyent, Inc.
+ * Copyright 2017, Joyent, Inc.
  */
 
 #include <sys/errno.h>
@@ -107,7 +107,8 @@ struct brand_ops s10_brops = {
 	NULL,				/* b_sendsig */
 	NULL,				/* b_setid_clear */
 	NULL,				/* b_pagefault */
-	B_TRUE				/* b_intp_parse_arg */
+	B_TRUE,				/* b_intp_parse_arg */
+	NULL				/* b_clearbrand */
 };
 
 #ifdef	sparc

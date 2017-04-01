@@ -21,7 +21,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
- * Copyright (c) 2012, 2016 by Delphix. All rights reserved.
+ * Copyright (c) 2012, 2017 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
@@ -80,7 +80,7 @@ static boolean_t dbuf_evict_thread_exit;
  * Dbufs that are aged out of the cache will be immediately destroyed and
  * become eligible for arc eviction.
  */
-static multilist_t dbuf_cache;
+static multilist_t *dbuf_cache;
 static refcount_t dbuf_cache_size;
 uint64_t dbuf_cache_max_bytes = 100 * 1024 * 1024;
 
@@ -454,8 +454,8 @@ dbuf_cache_above_lowater(void)
 static void
 dbuf_evict_one(void)
 {
-	int idx = multilist_get_random_index(&dbuf_cache);
-	multilist_sublist_t *mls = multilist_sublist_lock(&dbuf_cache, idx);
+	int idx = multilist_get_random_index(dbuf_cache);
+	multilist_sublist_t *mls = multilist_sublist_lock(dbuf_cache, idx);
 
 	ASSERT(!MUTEX_HELD(&dbuf_evict_lock));
 
@@ -621,9 +621,8 @@ retry:
 	 */
 	dbu_evict_taskq = taskq_create("dbu_evict", 1, minclsyspri, 0, 0, 0);
 
-	multilist_create(&dbuf_cache, sizeof (dmu_buf_impl_t),
+	dbuf_cache = multilist_create(sizeof (dmu_buf_impl_t),
 	    offsetof(dmu_buf_impl_t, db_cache_link),
-	    zfs_arc_num_sublists_per_state,
 	    dbuf_cache_multilist_index_func);
 	refcount_create(&dbuf_cache_size);
 
@@ -660,7 +659,7 @@ dbuf_fini(void)
 	cv_destroy(&dbuf_evict_cv);
 
 	refcount_destroy(&dbuf_cache_size);
-	multilist_destroy(&dbuf_cache);
+	multilist_destroy(dbuf_cache);
 }
 
 /*
@@ -1357,41 +1356,6 @@ dbuf_free_range(dnode_t *dn, uint64_t start_blkid, uint64_t end_blkid,
 	mutex_exit(&dn->dn_dbufs_mtx);
 }
 
-static int
-dbuf_block_freeable(dmu_buf_impl_t *db)
-{
-	dsl_dataset_t *ds = db->db_objset->os_dsl_dataset;
-	uint64_t birth_txg = 0;
-
-	/*
-	 * We don't need any locking to protect db_blkptr:
-	 * If it's syncing, then db_last_dirty will be set
-	 * so we'll ignore db_blkptr.
-	 *
-	 * This logic ensures that only block births for
-	 * filled blocks are considered.
-	 */
-	ASSERT(MUTEX_HELD(&db->db_mtx));
-	if (db->db_last_dirty && (db->db_blkptr == NULL ||
-	    !BP_IS_HOLE(db->db_blkptr))) {
-		birth_txg = db->db_last_dirty->dr_txg;
-	} else if (db->db_blkptr != NULL && !BP_IS_HOLE(db->db_blkptr)) {
-		birth_txg = db->db_blkptr->blk_birth;
-	}
-
-	/*
-	 * If this block don't exist or is in a snapshot, it can't be freed.
-	 * Don't pass the bp to dsl_dataset_block_freeable() since we
-	 * are holding the db_mtx lock and might deadlock if we are
-	 * prefetching a dedup-ed block.
-	 */
-	if (birth_txg != 0)
-		return (ds == NULL ||
-		    dsl_dataset_block_freeable(ds, NULL, birth_txg));
-	else
-		return (B_FALSE);
-}
-
 void
 dbuf_new_size(dmu_buf_impl_t *db, int size, dmu_tx_t *tx)
 {
@@ -1441,7 +1405,7 @@ dbuf_new_size(dmu_buf_impl_t *db, int size, dmu_tx_t *tx)
 	}
 	mutex_exit(&db->db_mtx);
 
-	dnode_willuse_space(dn, size-osize, tx);
+	dmu_objset_willuse_space(dn->dn_objset, size - osize, tx);
 	DB_DNODE_EXIT(db);
 }
 
@@ -1491,7 +1455,6 @@ dbuf_dirty(dmu_buf_impl_t *db, dmu_tx_t *tx)
 	objset_t *os;
 	dbuf_dirty_record_t **drp, *dr;
 	int drop_struct_lock = FALSE;
-	boolean_t do_free_accounting = B_FALSE;
 	int txgoff = tx->tx_txg & TXG_MASK;
 
 	ASSERT(tx->tx_txg != 0);
@@ -1613,15 +1576,7 @@ dbuf_dirty(dmu_buf_impl_t *db, dmu_tx_t *tx)
 	dprintf_dbuf(db, "size=%llx\n", (u_longlong_t)db->db.db_size);
 
 	if (db->db_blkid != DMU_BONUS_BLKID) {
-		/*
-		 * Update the accounting.
-		 * Note: we delay "free accounting" until after we drop
-		 * the db_mtx.  This keeps us from grabbing other locks
-		 * (and possibly deadlocking) in bp_get_dsize() while
-		 * also holding the db_mtx.
-		 */
-		dnode_willuse_space(dn, db->db.db_size, tx);
-		do_free_accounting = dbuf_block_freeable(db);
+		dmu_objset_willuse_space(os, db->db.db_size, tx);
 	}
 
 	/*
@@ -1714,21 +1669,13 @@ dbuf_dirty(dmu_buf_impl_t *db, dmu_tx_t *tx)
 		drop_struct_lock = TRUE;
 	}
 
-	if (do_free_accounting) {
-		blkptr_t *bp = db->db_blkptr;
-		int64_t willfree = (bp && !BP_IS_HOLE(bp)) ?
-		    bp_get_dsize(os->os_spa, bp) : db->db.db_size;
-		/*
-		 * This is only a guess -- if the dbuf is dirty
-		 * in a previous txg, we don't know how much
-		 * space it will use on disk yet.  We should
-		 * really have the struct_rwlock to access
-		 * db_blkptr, but since this is just a guess,
-		 * it's OK if we get an odd answer.
-		 */
-		ddt_prefetch(os->os_spa, bp);
-		dnode_willuse_space(dn, -willfree, tx);
-	}
+	/*
+	 * If we are overwriting a dedup BP, then unless it is snapshotted,
+	 * when we get to syncing context we will need to decrement its
+	 * refcount in the DDT.  Prefetch the relevant DDT block so that
+	 * syncing context won't have to wait for the i/o.
+	 */
+	ddt_prefetch(os->os_spa, db->db_blkptr);
 
 	if (db->db_level == 0) {
 		dnode_new_blkid(dn, db->db_blkid, tx, drop_struct_lock);
@@ -2093,7 +2040,7 @@ dbuf_destroy(dmu_buf_impl_t *db)
 	dbuf_clear_data(db);
 
 	if (multilist_link_active(&db->db_cache_link)) {
-		multilist_remove(&dbuf_cache, db);
+		multilist_remove(dbuf_cache, db);
 		(void) refcount_remove_many(&dbuf_cache_size,
 		    db->db.db_size, db);
 	}
@@ -2172,8 +2119,6 @@ static int
 dbuf_findbp(dnode_t *dn, int level, uint64_t blkid, int fail_sparse,
     dmu_buf_impl_t **parentp, blkptr_t **bpp)
 {
-	int nlevels, epbs;
-
 	*parentp = NULL;
 	*bpp = NULL;
 
@@ -2192,17 +2137,35 @@ dbuf_findbp(dnode_t *dn, int level, uint64_t blkid, int fail_sparse,
 		return (0);
 	}
 
-	if (dn->dn_phys->dn_nlevels == 0)
-		nlevels = 1;
-	else
-		nlevels = dn->dn_phys->dn_nlevels;
-
-	epbs = dn->dn_indblkshift - SPA_BLKPTRSHIFT;
+	int nlevels =
+	    (dn->dn_phys->dn_nlevels == 0) ? 1 : dn->dn_phys->dn_nlevels;
+	int epbs = dn->dn_indblkshift - SPA_BLKPTRSHIFT;
 
 	ASSERT3U(level * epbs, <, 64);
 	ASSERT(RW_LOCK_HELD(&dn->dn_struct_rwlock));
+	/*
+	 * This assertion shouldn't trip as long as the max indirect block size
+	 * is less than 1M.  The reason for this is that up to that point,
+	 * the number of levels required to address an entire object with blocks
+	 * of size SPA_MINBLOCKSIZE satisfies nlevels * epbs + 1 <= 64.  In
+	 * other words, if N * epbs + 1 > 64, then if (N-1) * epbs + 1 > 55
+	 * (i.e. we can address the entire object), objects will all use at most
+	 * N-1 levels and the assertion won't overflow.  However, once epbs is
+	 * 13, 4 * 13 + 1 = 53, but 5 * 13 + 1 = 66.  Then, 4 levels will not be
+	 * enough to address an entire object, so objects will have 5 levels,
+	 * but then this assertion will overflow.
+	 *
+	 * All this is to say that if we ever increase DN_MAX_INDBLKSHIFT, we
+	 * need to redo this logic to handle overflows.
+	 */
+	ASSERT(level >= nlevels ||
+	    ((nlevels - level - 1) * epbs) +
+	    highbit64(dn->dn_phys->dn_nblkptr) <= 64);
 	if (level >= nlevels ||
-	    (blkid > (dn->dn_phys->dn_maxblkid >> (level * epbs)))) {
+	    blkid >= ((uint64_t)dn->dn_phys->dn_nblkptr <<
+	    ((nlevels - level - 1) * epbs)) ||
+	    (fail_sparse &&
+	    blkid > (dn->dn_phys->dn_maxblkid >> (level * epbs)))) {
 		/* the buffer has no parent yet */
 		return (SET_ERROR(ENOENT));
 	} else if (level < nlevels-1) {
@@ -2220,6 +2183,8 @@ dbuf_findbp(dnode_t *dn, int level, uint64_t blkid, int fail_sparse,
 		}
 		*bpp = ((blkptr_t *)(*parentp)->db.db_data) +
 		    (blkid & ((1ULL << epbs) - 1));
+		if (blkid > (dn->dn_phys->dn_maxblkid >> (level * epbs)))
+			ASSERT(BP_IS_HOLE(*bpp));
 		return (0);
 	} else {
 		/* the block is referenced from the dnode */
@@ -2623,7 +2588,7 @@ top:
 
 	if (multilist_link_active(&db->db_cache_link)) {
 		ASSERT(refcount_is_zero(&db->db_holds));
-		multilist_remove(&dbuf_cache, db);
+		multilist_remove(dbuf_cache, db);
 		(void) refcount_remove_many(&dbuf_cache_size,
 		    db->db.db_size, db);
 	}
@@ -2842,7 +2807,7 @@ dbuf_rele_and_unlock(dmu_buf_impl_t *db, void *tag)
 			    db->db_pending_evict) {
 				dbuf_destroy(db);
 			} else if (!multilist_link_active(&db->db_cache_link)) {
-				multilist_insert(&dbuf_cache, db);
+				multilist_insert(dbuf_cache, db);
 				(void) refcount_add_many(&dbuf_cache_size,
 				    db->db.db_size, db);
 				mutex_exit(&db->db_mtx);
@@ -2918,19 +2883,6 @@ void
 dmu_buf_user_evict_wait()
 {
 	taskq_wait(dbu_evict_taskq);
-}
-
-boolean_t
-dmu_buf_freeable(dmu_buf_t *dbuf)
-{
-	boolean_t res = B_FALSE;
-	dmu_buf_impl_t *db = (dmu_buf_impl_t *)dbuf;
-
-	if (db->db_blkptr)
-		res = dsl_dataset_block_freeable(db->db_objset->os_dsl_dataset,
-		    db->db_blkptr, db->db_blkptr->blk_birth);
-
-	return (res);
 }
 
 blkptr_t *

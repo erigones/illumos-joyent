@@ -24,8 +24,14 @@ all:	lib$(LIB).a
 
 install:
 
-SRCS=	delay.c efi_console.c efinet.c efipart.c errno.c handles.c \
+SRCS=	delay.c devpath.c efi_console.c efinet.c efipart.c errno.c handles.c \
 	libefi.c time.c
+
+#.if ${MACHINE_CPUARCH} == "amd64" || ${MACHINE_CPUARCH} == "i386"
+#SRCS +=	time.c
+#.elif ${MACHINE_CPUARCH} == "aarch64" || ${MACHINE_CPUARCH} == "arm"
+#SRCS+=	time_event.c
+#.endif
 
 OBJS=	$(SRCS:%.c=%.o)
 

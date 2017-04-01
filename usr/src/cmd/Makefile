@@ -19,13 +19,15 @@
 # CDDL HEADER END
 #
 
+#
 # Copyright (c) 1989, 2010, Oracle and/or its affiliates. All rights reserved.
-# Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
 # Copyright 2016 Joyent, Inc.
 # Copyright (c) 2012 by Delphix. All rights reserved.
 # Copyright (c) 2013 DEY Storage Systems, Inc. All rights reserved.
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
 # Copyright 2016 Toomas Soome <tsoome@me.com>
+# Copyright 2016 Nexenta Systems, Inc.
+#
 
 include ../Makefile.master
 
@@ -129,6 +131,7 @@ COMMON_SUBDIRS=		\
 	dircmp		\
 	dirname		\
 	dis		\
+	diskinfo	\
 	diskmgtd	\
 	dispadmin	\
 	dladm		\
@@ -190,6 +193,7 @@ COMMON_SUBDIRS=		\
 	grep		\
 	grep_xpg4	\
 	groups		\
+	growfs		\
 	grpck		\
 	gss		\
 	halt		\
@@ -343,7 +347,6 @@ COMMON_SUBDIRS=		\
 	refer		\
 	regcmp		\
 	renice		\
-	rexd		\
 	rm		\
 	rmdir		\
 	rmformat	\
@@ -455,6 +458,7 @@ COMMON_SUBDIRS=		\
 	wracct		\
 	write		\
 	xargs		\
+	xhci		\
 	xstr		\
 	yes		\
 	ypcmd		\
