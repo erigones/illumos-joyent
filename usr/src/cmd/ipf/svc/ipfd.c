@@ -22,6 +22,7 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ * Copyright 2015 Joyent, Inc.
  */
 
 /*
@@ -271,12 +272,23 @@ is_correct_event(const char *fmri, const scf_propertygroup_t *pg,
 	}
 
 	if ((state = smf_get_state(fmri)) == NULL) {
-        scf_error_t se = scf_error();
-        if (se == SCF_ERROR_NOT_FOUND) {
-            return (0);
-        }
-		syslog(LOG_ERR | LOG_DAEMON, "smf_get_state failed for %s: "
-		    "%s\n", fmri, scf_strerror(scf_error()));
+		scf_error_t se = scf_error();
+
+		if (se == SCF_ERROR_NOT_FOUND) {
+			/*
+			 * smf_get_state() looks for the "state" property in
+			 * the "restarter" property group.  If this event is
+			 * for a service that is currently being imported, but
+			 * has not yet been started, then this property may not
+			 * exist.  If this is the case, we want to ignore this
+			 * event; processing will be retried on a subsequent
+			 * event, once the service is running.
+			 */
+			return (0);
+		}
+
+		syslog(LOG_ERR | LOG_DAEMON, "smf_get_state failed for %s"
+		    " (pgname %s): %s\n", fmri, scratch_name, scf_strerror(se));
 		return (-1);
 	}
 
@@ -308,7 +320,7 @@ is_correct_event(const char *fmri, const scf_propertygroup_t *pg,
 	}
 
 out:
-    free(state);
+	free(state);
 	return (ret);
 }
 
