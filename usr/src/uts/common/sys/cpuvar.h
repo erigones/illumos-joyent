@@ -23,7 +23,7 @@
  * Copyright (c) 1989, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012 by Delphix. All rights reserved.
  * Copyright 2014 Igor Kozhukhov <ikozhukhov@gmail.com>.
- * Copyright 2016 Joyent, Inc.
+ * Copyright 2017 Joyent, Inc.
  */
 
 #ifndef _SYS_CPUVAR_H
@@ -424,19 +424,19 @@ extern void	cpuset_free(cpuset_t *);
  * They are now acceptable to use in non-_MACHDEP code.
  */
 extern	void	cpuset_all(cpuset_t *);
-extern	void	cpuset_all_but(cpuset_t *, uint_t);
+extern	void	cpuset_all_but(cpuset_t *, const uint_t);
 extern	int	cpuset_isnull(cpuset_t *);
 extern	int	cpuset_isequal(cpuset_t *, cpuset_t *);
-extern	void	cpuset_only(cpuset_t *, uint_t);
-extern	long	cpu_in_set(cpuset_t *, uint_t);
-extern	void	cpuset_add(cpuset_t *, uint_t);
-extern	void	cpuset_del(cpuset_t *, uint_t);
+extern	void	cpuset_only(cpuset_t *, const uint_t);
+extern	long	cpu_in_set(cpuset_t *, const uint_t);
+extern	void	cpuset_add(cpuset_t *, const uint_t);
+extern	void	cpuset_del(cpuset_t *, const uint_t);
 extern	uint_t	cpuset_find(cpuset_t *);
 extern	void	cpuset_bounds(cpuset_t *, uint_t *, uint_t *);
-extern	void	cpuset_atomic_del(cpuset_t *, uint_t);
-extern	void	cpuset_atomic_add(cpuset_t *, uint_t);
-extern	long	cpuset_atomic_xadd(cpuset_t *, uint_t);
-extern	long	cpuset_atomic_xdel(cpuset_t *, uint_t);
+extern	void	cpuset_atomic_del(cpuset_t *, const uint_t);
+extern	void	cpuset_atomic_add(cpuset_t *, const uint_t);
+extern	long	cpuset_atomic_xadd(cpuset_t *, const uint_t);
+extern	long	cpuset_atomic_xdel(cpuset_t *, const uint_t);
 extern	void	cpuset_or(cpuset_t *, cpuset_t *);
 extern	void	cpuset_xor(cpuset_t *, cpuset_t *);
 extern	void	cpuset_and(cpuset_t *, cpuset_t *);
@@ -513,6 +513,7 @@ extern struct cpu	**cpu_seq;	/* indexed by sequential CPU id */
 extern cpu_t		*cpu_list;	/* list of CPUs */
 extern cpu_t		*cpu_active;	/* list of active CPUs */
 extern cpuset_t		cpu_active_set;	/* cached set of active CPUs */
+extern cpuset_t		cpu_available;	/* cached set of available CPUs */
 extern int		ncpus;		/* number of CPUs present */
 extern int		ncpus_online;	/* number of CPUs not quiesced */
 extern int		max_ncpus;	/* max present before ncpus is known */

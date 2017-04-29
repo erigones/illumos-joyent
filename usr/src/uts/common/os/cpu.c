@@ -21,7 +21,7 @@
 /*
  * Copyright (c) 1991, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012 by Delphix. All rights reserved.
- * Copyright 2016 Joyent, Inc.
+ * Copyright 2017 Joyent, Inc.
  */
 
 /*
@@ -110,7 +110,7 @@ cpu_t		*cpu_list;		/* list of all CPUs */
 cpu_t		*clock_cpu_list;	/* used by clock to walk CPUs */
 cpu_t		*cpu_active;		/* list of active CPUs */
 cpuset_t	cpu_active_set;		/* cached set of active CPUs */
-static cpuset_t	cpu_available;		/* set of available CPUs */
+cpuset_t	cpu_available;		/* set of available CPUs */
 cpuset_t	cpu_seqid_inuse;	/* which cpu_seqids are in use */
 
 cpu_t		**cpu_seq;		/* ptrs to CPUs, indexed by seq_id */
@@ -2732,34 +2732,37 @@ cpuset_all(cpuset_t *s)
 }
 
 void
-cpuset_all_but(cpuset_t *s, uint_t cpu)
+cpuset_all_but(cpuset_t *s, const uint_t cpu)
 {
 	cpuset_all(s);
 	CPUSET_DEL(*s, cpu);
 }
 
 void
-cpuset_only(cpuset_t *s, uint_t cpu)
+cpuset_only(cpuset_t *s, const uint_t cpu)
 {
 	CPUSET_ZERO(*s);
 	CPUSET_ADD(*s, cpu);
 }
 
 long
-cpu_in_set(cpuset_t *s, uint_t cpu)
+cpu_in_set(cpuset_t *s, const uint_t cpu)
 {
+	VERIFY(cpu < NCPU);
 	return (BT_TEST(s->cpub, cpu));
 }
 
 void
-cpuset_add(cpuset_t *s, uint_t cpu)
+cpuset_add(cpuset_t *s, const uint_t cpu)
 {
+	VERIFY(cpu < NCPU);
 	BT_SET(s->cpub, cpu);
 }
 
 void
-cpuset_del(cpuset_t *s, uint_t cpu)
+cpuset_del(cpuset_t *s, const uint_t cpu)
 {
+	VERIFY(cpu < NCPU);
 	BT_CLEAR(s->cpub, cpu);
 }
 
@@ -2853,31 +2856,35 @@ cpuset_bounds(cpuset_t *s, uint_t *smallestid, uint_t *largestid)
 }
 
 void
-cpuset_atomic_del(cpuset_t *s, uint_t cpu)
+cpuset_atomic_del(cpuset_t *s, const uint_t cpu)
 {
+	VERIFY(cpu < NCPU);
 	BT_ATOMIC_CLEAR(s->cpub, (cpu))
 }
 
 void
-cpuset_atomic_add(cpuset_t *s, uint_t cpu)
+cpuset_atomic_add(cpuset_t *s, const uint_t cpu)
 {
+	VERIFY(cpu < NCPU);
 	BT_ATOMIC_SET(s->cpub, (cpu))
 }
 
 long
-cpuset_atomic_xadd(cpuset_t *s, uint_t cpu)
+cpuset_atomic_xadd(cpuset_t *s, const uint_t cpu)
 {
 	long res;
 
+	VERIFY(cpu < NCPU);
 	BT_ATOMIC_SET_EXCL(s->cpub, cpu, res);
 	return (res);
 }
 
 long
-cpuset_atomic_xdel(cpuset_t *s, uint_t cpu)
+cpuset_atomic_xdel(cpuset_t *s, const uint_t cpu)
 {
 	long res;
 
+	VERIFY(cpu < NCPU);
 	BT_ATOMIC_CLEAR_EXCL(s->cpub, cpu, res);
 	return (res);
 }

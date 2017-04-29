@@ -671,7 +671,6 @@ f kernel/drv/amd64/fcsm 0755 root sys
 f kernel/drv/amd64/fct 0755 root sys
 f kernel/drv/amd64/fp 0755 root sys
 f kernel/drv/amd64/fm 0755 root sys
-f kernel/drv/amd64/heci 0755 root sys
 f kernel/drv/amd64/hid 0755 root sys
 f kernel/drv/amd64/hubd 0755 root sys
 f kernel/drv/amd64/hxge 0755 root sys
@@ -1639,7 +1638,6 @@ f lib/svc/manifest/network/iscsi/iscsi-target.xml 0444 root sys
 f lib/svc/manifest/network/isns_server.xml 0444 root sys
 d lib/svc/manifest/network/ldap 0755 root sys
 f lib/svc/manifest/network/ldap/client.xml 0444 root sys
-f lib/svc/manifest/network/lms.xml 0444 root sys
 d lib/svc/manifest/network/loadbalancer 0755 root sys
 f lib/svc/manifest/network/loadbalancer/ilbd.xml 0444 root sys
 f lib/svc/manifest/network/login.xml 0444 root sys
@@ -1821,7 +1819,6 @@ f lib/svc/method/svc-ii 0744 root sys
 f lib/svc/method/svc-intrd 0555 root sys
 f lib/svc/method/svc-labeld 0555 root sys
 f lib/svc/method/svc-legacy-routing 0555 root bin
-f lib/svc/method/svc-lms 0555 root sys
 f lib/svc/method/svc-ndmp 0555 root sys
 f lib/svc/method/svc-ndp 0555 root bin
 f lib/svc/method/svc-nscd 0555 root bin
@@ -5275,6 +5272,8 @@ f usr/lib/devfsadm/linkmod/SUNW_zfs_link.so 0755 root sys
 f usr/lib/devfsadm/linkmod/SUNW_zut_link.so 0755 root sys
 f usr/lib/diff3prog 0555 root bin
 f usr/lib/diffh 0555 root bin
+d usr/lib/dl 0755 root sys
+f usr/lib/dl/dltraninfo 0555 root bin
 f usr/lib/dscfglockd 0555 root bin
 d usr/lib/dtrace 0755 root bin
 d usr/lib/dtrace/64 0755 root bin
@@ -6592,7 +6591,6 @@ f usr/lib/link_audit/amd64/who.so.1 0755 root bin
 f usr/lib/link_audit/ldprof.so.1 0755 root bin
 f usr/lib/link_audit/truss.so.1 0755 root bin
 f usr/lib/link_audit/who.so.1 0755 root bin
-f usr/lib/lms 0555 root bin
 d usr/lib/locale 0755 root bin
 d usr/lib/locale/C 0755 root bin
 d usr/lib/locale/C/LC_COLLATE 0755 root bin
@@ -12148,7 +12146,6 @@ f usr/share/man/man1m/ldapclient.1m 0444 root bin
 f usr/share/man/man1m/link.1m 0444 root bin
 f usr/share/man/man1m/listdgrp.1m 0444 root bin
 f usr/share/man/man1m/listen.1m 0444 root bin
-f usr/share/man/man1m/lms.1m 0444 root bin
 f usr/share/man/man1m/locator.1m 0444 root bin
 f usr/share/man/man1m/lockfs.1m 0444 root bin
 f usr/share/man/man1m/lockstat.1m 0444 root bin
@@ -13997,6 +13994,8 @@ s usr/share/man/man3c/wcstok.3c=wcstring.3c
 f usr/share/man/man3c/wcstol.3c 0444 root bin
 s usr/share/man/man3c/wcstold.3c=wcstod.3c
 s usr/share/man/man3c/wcstoll.3c=wcstol.3c
+f usr/share/man/man3c/wcstombs.3c 0444 root bin
+s usr/share/man/man3c/wcstombs_l.3c=wcstombs.3c
 f usr/share/man/man3c/wcstoul.3c 0444 root bin
 s usr/share/man/man3c/wcstoull.3c=wcstoul.3c
 s usr/share/man/man3c/wcstoumax.3c=wcstoimax.3c
@@ -18707,6 +18706,7 @@ f usr/share/man/man5/lx.5 0444 root bin
 f usr/share/man/man5/man.5 0444 root bin
 f usr/share/man/man5/mandoc_char.5 0444 root bin
 f usr/share/man/man5/mandoc_roff.5 0444 root bin
+f usr/share/man/man5/mansun.5 0444 root bin
 f usr/share/man/man5/mdoc.5 0444 root bin
 f usr/share/man/man5/me.5 0444 root bin
 f usr/share/man/man5/mech_spnego.5 0444 root bin
@@ -18807,7 +18807,6 @@ s usr/share/man/man7d/firewire.7d=ieee1394.7d
 f usr/share/man/man7d/full.7d 0444 root bin
 f usr/share/man/man7d/gld.7d 0444 root bin
 f usr/share/man/man7d/hci1394.7d 0444 root bin
-f usr/share/man/man7d/heci.7d 0444 root bin
 f usr/share/man/man7d/hid.7d 0444 root bin
 f usr/share/man/man7d/hubd.7d 0444 root bin
 f usr/share/man/man7d/hxge.7d 0444 root bin
@@ -19058,6 +19057,7 @@ f usr/share/man/man9e/ks_snapshot.9e 0444 root bin
 f usr/share/man/man9e/ks_update.9e 0444 root bin
 s usr/share/man/man9e/MAC.9e=mac.9e
 f usr/share/man/man9e/mac.9e 0444 root bin
+f usr/share/man/man9e/mac_capab_transceiver.9e 0444 root bin
 s usr/share/man/man9e/mc_close.9e=mc_open.9e
 f usr/share/man/man9e/mc_getcapab.9e 0444 root bin
 f usr/share/man/man9e/mc_getprop.9e 0444 root bin
@@ -19072,6 +19072,8 @@ f usr/share/man/man9e/mc_start.9e 0444 root bin
 s usr/share/man/man9e/mc_stop.9e=mc_start.9e
 f usr/share/man/man9e/mc_tx.9e 0444 root bin
 f usr/share/man/man9e/mc_unicst.9e 0444 root bin
+s usr/share/man/man9e/mct_info.9e=mac_capab_transceiver.9e
+s usr/share/man/man9e/mct_read.9e=mac_capab_transceiver.9e
 f usr/share/man/man9e/mmap.9e 0444 root bin
 f usr/share/man/man9e/open.9e 0444 root bin
 f usr/share/man/man9e/power.9e 0444 root bin
@@ -19900,6 +19902,9 @@ s usr/share/man/man9f/mac_prop_info_set_perm.9f=mac_prop_info.9f
 s usr/share/man/man9f/mac_prop_info_set_range_uint32.9f=mac_prop_info.9f
 f usr/share/man/man9f/mac_register.9f 0444 root bin
 f usr/share/man/man9f/mac_rx.9f 0444 root bin
+f usr/share/man/man9f/mac_transceiver_info.9f 0444 root bin
+s usr/share/man/man9f/mac_transceiver_info_set_present.9f=mac_transceiver_info.9f
+s usr/share/man/man9f/mac_transceiver_info_set_usable.9f=mac_transceiver_info.9f
 f usr/share/man/man9f/mac_tx_update.9f 0444 root bin
 s usr/share/man/man9f/mac_unregister.9f=mac_register.9f
 f usr/share/man/man9f/max.9f 0444 root bin
@@ -20454,7 +20459,7 @@ f usr/share/man/man9s/usb_dev_qlf_descr.9s 0444 root bin
 f usr/share/man/man9s/usb_ep_descr.9s 0444 root bin
 f usr/share/man/man9s/usb_ep_xdescr.9s 0444 root bin
 f usr/share/man/man9s/usb_ep_ss_comp_descr.9s 0444 root bin
-s usr/share/man/man9s/usb_ep_ss_comp_descr_t.9s=usb_ep_ss_comp_descr
+s usr/share/man/man9s/usb_ep_ss_comp_descr_t.9s=usb_ep_ss_comp_descr.9s
 f usr/share/man/man9s/usb_if_descr.9s 0444 root bin
 s usr/share/man/man9s/usb_intr_req_t.9s=usb_intr_req.9s
 f usr/share/man/man9s/usb_intr_req.9s 0444 root bin

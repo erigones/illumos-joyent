@@ -133,9 +133,6 @@ uint64_t zfs_delay_scale = 1000 * 1000 * 1000 / 2000;
  */
 int zfs_sync_taskq_batch_pct = 75;
 
-hrtime_t zfs_throttle_delay = MSEC2NSEC(10);
-hrtime_t zfs_throttle_resolution = MSEC2NSEC(10);
-
 int
 dsl_pool_open_special_dir(dsl_pool_t *dp, const char *name, dsl_dir_t **ddp)
 {
@@ -460,7 +457,7 @@ dsl_pool_dirty_delta(dsl_pool_t *dp, int64_t delta)
 	 * Note: we signal even when increasing dp_dirty_total.
 	 * This ensures forward progress -- each thread wakes the next waiter.
 	 */
-	if (dp->dp_dirty_total <= zfs_dirty_data_max)
+	if (dp->dp_dirty_total < zfs_dirty_data_max)
 		cv_signal(&dp->dp_spaceavail_cv);
 }
 

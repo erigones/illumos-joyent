@@ -1099,7 +1099,6 @@ int
 dbuf_read(dmu_buf_impl_t *db, zio_t *zio, uint32_t flags)
 {
 	int err = 0;
-	boolean_t havepzio = (zio != NULL);
 	boolean_t prefetch;
 	dnode_t *dn;
 
@@ -1143,9 +1142,13 @@ dbuf_read(dmu_buf_impl_t *db, zio_t *zio, uint32_t flags)
 		DB_DNODE_EXIT(db);
 	} else if (db->db_state == DB_UNCACHED) {
 		spa_t *spa = dn->dn_objset->os_spa;
+		boolean_t need_wait = B_FALSE;
 
-		if (zio == NULL)
+		if (zio == NULL &&
+		    db->db_blkptr != NULL && !BP_IS_HOLE(db->db_blkptr)) {
 			zio = zio_root(spa, NULL, NULL, ZIO_FLAG_CANFAIL);
+			need_wait = B_TRUE;
+		}
 		dbuf_read_impl(db, zio, flags);
 
 		/* dbuf_read_impl has dropped db_mtx for us */
@@ -1157,7 +1160,7 @@ dbuf_read(dmu_buf_impl_t *db, zio_t *zio, uint32_t flags)
 			rw_exit(&dn->dn_struct_rwlock);
 		DB_DNODE_EXIT(db);
 
-		if (!havepzio)
+		if (need_wait)
 			err = zio_wait(zio);
 	} else {
 		/*
@@ -1192,7 +1195,6 @@ dbuf_read(dmu_buf_impl_t *db, zio_t *zio, uint32_t flags)
 		mutex_exit(&db->db_mtx);
 	}
 
-	ASSERT(err || havepzio || db->db_state == DB_CACHED);
 	return (err);
 }
 
@@ -1563,6 +1565,7 @@ dbuf_dirty(dmu_buf_impl_t *db, dmu_tx_t *tx)
 	 * this assertion only if we're not already dirty.
 	 */
 	os = dn->dn_objset;
+	VERIFY3U(tx->tx_txg, <=, spa_final_dirty_txg(os->os_spa));
 #ifdef DEBUG
 	if (dn->dn_objset->os_dsl_dataset != NULL)
 		rrw_enter(&os->os_dsl_dataset->ds_bp_rwlock, RW_READER, FTAG);

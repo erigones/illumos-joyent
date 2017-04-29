@@ -1,7 +1,7 @@
 \ Copyright (c) 2006-2015 Devin Teske <dteske@FreeBSD.org>
 \ Copyright (c) 2016 Erigones, s. r. o.
 \ All rights reserved.
-\ 
+\
 \ Redistribution and use in source and binary forms, with or without
 \ modification, are permitted provided that the following conditions
 \ are met:
@@ -10,7 +10,7 @@
 \ 2. Redistributions in binary form must reproduce the above copyright
 \    notice, this list of conditions and the following disclaimer in the
 \    documentation and/or other materials provided with the distribution.
-\ 
+\
 \ THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
 \ ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 \ IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -22,7 +22,7 @@
 \ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
 \ OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 \ SUCH DAMAGE.
-\ 
+\
 \ Copyright 2015 Toomas Soome <tsoome@me.com>
 
 marker task-menu-commands.4th
@@ -46,9 +46,9 @@ variable debug_state
 
 also menu-namespace also menu-command-helpers
 
-\ 
+\
 \ Boot
-\ 
+\
 
 : init_boot ( N -- N )
 	dup
@@ -67,9 +67,9 @@ also menu-namespace also menu-command-helpers
 	evaluate
 ;
 
-\ 
+\
 \ Alternate Boot
-\ 
+\
 
 : init_altboot ( N -- N )
 	dup
@@ -106,9 +106,9 @@ also menu-namespace also menu-command-helpers
 	0 boot ( state -- )
 ;
 
-\ 
+\
 \ Single User Mode
-\ 
+\
 
 : singleuser_enabled? ( -- flag )
 	s" boot_single" getenv -1 <> dup if
@@ -145,9 +145,9 @@ also menu-namespace also menu-command-helpers
 	TRUE \ loop menu again
 ;
 
-\ 
+\
 \ Verbose Boot
-\ 
+\
 
 : verbose_enabled? ( -- flag )
 	s" boot_verbose" getenv -1 <> dup if
@@ -184,9 +184,9 @@ also menu-namespace also menu-command-helpers
 	TRUE \ loop menu again
 ;
 
-\ 
+\
 \ kmdb
-\ 
+\
 
 : kmdb_enabled? ( -- flag )
 	s" boot_kmdb" getenv -1 <> dup if
@@ -232,9 +232,9 @@ also menu-namespace also menu-command-helpers
 	TRUE \ loop menu again
 ;
 
-\ 
+\
 \ kmdb + debug
-\ 
+\
 
 : debug_disable ( -- )
 	s" boot_debug" unsetenv
@@ -279,9 +279,9 @@ also menu-namespace also menu-command-helpers
 	TRUE \ loop menu again
 ;
 
-\ 
+\
 \ Reconfiguration boot
-\ 
+\
 
 : reconfigure_enabled? ( -- flag )
 	s" boot_reconfigure" getenv -1 <> dup if
@@ -318,9 +318,9 @@ also menu-namespace also menu-command-helpers
 	TRUE \ loop menu again
 ;
 
-\ 
+\
 \ Escape to Prompt
-\ 
+\
 
 : goto_prompt ( N -- N FALSE )
 
@@ -334,9 +334,9 @@ also menu-namespace also menu-command-helpers
 	FALSE \ exit the menu
 ;
 
-\ 
+\
 \ Cyclestate (used by osconsole/acpi/kernel/root below)
-\ 
+\
 
 : init_cyclestate ( N K -- N )
 	over cycle_stateN ( n k -- n k addr )
@@ -351,12 +351,12 @@ also menu-namespace also menu-command-helpers
 	2drop ( n k addr -- n )
 ;
 
-\ 
+\
 \ OS Console
 \ getenv os_console, if not set getenv console, if not set, default to "text"
 \ allowed serial consoles: ttya .. ttyd
 \ if new console will be added (graphics?), this section needs to be updated
-\ 
+\
 : init_osconsole ( N -- N )
 	s" os_console" getenv dup -1 = if
 		drop
@@ -403,9 +403,9 @@ also menu-namespace also menu-command-helpers
 	TRUE		\ loop menu again
 ;
 
-\ 
+\
 \ ACPI
-\ 
+\
 : init_acpi ( N -- N )
 	s" acpi-user-options" getenv dup -1 <> if
 		evaluate		\ use ?number parse step
@@ -451,7 +451,7 @@ also menu-namespace also menu-command-helpers
 
 \
 \ Kernel
-\ 
+\
 
 : init_kernel ( N -- N )
 	kernel_state @  ( n -- n k )
@@ -475,9 +475,9 @@ also menu-namespace also menu-command-helpers
 	TRUE		\ loop menu again
 ;
 
-\ 
+\
 \ Root
-\ 
+\
 
 : init_root ( N -- N )
 	root_state @    ( n -- n k )
@@ -501,9 +501,9 @@ also menu-namespace also menu-command-helpers
 	TRUE		\ loop menu again
 ;
 
-\ 
+\
 \ Menusets
-\ 
+\
 
 : goto_menu ( N M -- N TRUE )
 	menu-unset
@@ -512,23 +512,29 @@ also menu-namespace also menu-command-helpers
 	TRUE \ Loop menu again
 ;
 
-\ 
+\
 \ Defaults
-\ 
+\
 
-: set_default_boot_options ( N -- N TRUE )
+: unset_boot_options
 	0 acpi_state !
 	s" acpi-user-options" unsetenv
+	s" boot-args" unsetenv
+	s" boot_ask" unsetenv
 	singleuser_disable
 	verbose_disable
 	kmdb_disable		\ disables debug as well
 	reconfigure_disable
+;
+
+: set_default_boot_options ( N -- N TRUE )
+	unset_boot_options
 	2 goto_menu
 ;
 
-\ 
+\
 \ Set boot environment defaults
-\ 
+\
 
 
 : init_bootenv ( -- )
@@ -542,7 +548,7 @@ also menu-namespace also menu-command-helpers
 
 \
 \ Redraw the entire screen. A long BE name can corrupt the menu
-\ 
+\
 
 : be_draw_screen
 	clear		\ Clear the screen (in screen.4th)
@@ -554,7 +560,7 @@ also menu-namespace also menu-command-helpers
 
 \
 \ Select a boot environment
-\ 
+\
 
 : set_bootenv ( N -- N TRUE )
 	dup s" bootenv_root[E]" 13 +c! getenv
@@ -568,6 +574,7 @@ also menu-namespace also menu-command-helpers
 		." Activating " s" currdev" getenv type cr
 		s" unload" evaluate
 		free-module-options
+		unset_boot_options
 		s" /boot/defaults/loader.conf" read-conf
 		s" /boot/loader.conf" read-conf
 		s" /boot/loader.conf.local" read-conf
