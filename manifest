@@ -4339,6 +4339,7 @@ f usr/include/sys/stat_impl.h 0644 root bin
 f usr/include/sys/statfs.h 0644 root bin
 f usr/include/sys/statvfs.h 0644 root bin
 f usr/include/sys/stdbool.h 0644 root bin
+f usr/include/sys/stddef.h 0644 root bin
 f usr/include/sys/stdint.h 0644 root bin
 f usr/include/sys/stermio.h 0644 root bin
 f usr/include/sys/stmf.h 0644 root bin
@@ -5273,6 +5274,8 @@ f usr/lib/devfsadm/linkmod/SUNW_zut_link.so 0755 root sys
 f usr/lib/diff3prog 0555 root bin
 f usr/lib/diffh 0555 root bin
 d usr/lib/dl 0755 root sys
+f usr/lib/dl/dlrecv 0555 root bin
+f usr/lib/dl/dlsend 0555 root bin
 f usr/lib/dl/dltraninfo 0555 root bin
 f usr/lib/dscfglockd 0555 root bin
 d usr/lib/dtrace 0755 root bin
@@ -11091,6 +11094,7 @@ f usr/share/lib/zoneinfo/America/Port_of_Spain 0644 root bin
 h usr/share/lib/zoneinfo/America/Porto_Acre=usr/share/lib/zoneinfo/Brazil/Acre
 f usr/share/lib/zoneinfo/America/Porto_Velho 0644 root bin
 f usr/share/lib/zoneinfo/America/Puerto_Rico 0644 root bin
+f usr/share/lib/zoneinfo/America/Punta_Arenas 0644 root bin
 f usr/share/lib/zoneinfo/America/Rainy_River 0644 root bin
 f usr/share/lib/zoneinfo/America/Rankin_Inlet 0644 root bin
 f usr/share/lib/zoneinfo/America/Recife 0644 root bin
@@ -11149,6 +11153,7 @@ f usr/share/lib/zoneinfo/Asia/Aqtau 0644 root bin
 f usr/share/lib/zoneinfo/Asia/Aqtobe 0644 root bin
 f usr/share/lib/zoneinfo/Asia/Ashgabat 0644 root bin
 f usr/share/lib/zoneinfo/Asia/Ashkhabad 0644 root bin
+f usr/share/lib/zoneinfo/Asia/Atyrau 0644 root bin
 f usr/share/lib/zoneinfo/Asia/Baghdad 0644 root bin
 h usr/share/lib/zoneinfo/Asia/Bahrain=usr/share/lib/zoneinfo/Asia/Qatar
 f usr/share/lib/zoneinfo/Asia/Baku 0644 root bin
@@ -11169,6 +11174,7 @@ f usr/share/lib/zoneinfo/Asia/Dhaka 0644 root bin
 f usr/share/lib/zoneinfo/Asia/Dili 0644 root bin
 f usr/share/lib/zoneinfo/Asia/Dubai 0644 root bin
 f usr/share/lib/zoneinfo/Asia/Dushanbe 0644 root bin
+f usr/share/lib/zoneinfo/Asia/Famagusta 0644 root bin
 f usr/share/lib/zoneinfo/Asia/Gaza 0644 root bin
 h usr/share/lib/zoneinfo/Asia/Harbin=usr/share/lib/zoneinfo/Asia/Shanghai
 f usr/share/lib/zoneinfo/Asia/Hebron 0644 root bin
@@ -11382,6 +11388,7 @@ f usr/share/lib/zoneinfo/Europe/Prague 0644 root bin
 f usr/share/lib/zoneinfo/Europe/Riga 0644 root bin
 f usr/share/lib/zoneinfo/Europe/Rome 0644 root bin
 f usr/share/lib/zoneinfo/Europe/Samara 0644 root bin
+f usr/share/lib/zoneinfo/Europe/Saratov 0644 root bin
 h usr/share/lib/zoneinfo/Europe/San_Marino=usr/share/lib/zoneinfo/Europe/Rome
 h usr/share/lib/zoneinfo/Europe/Sarajevo=usr/share/lib/zoneinfo/Europe/Belgrade
 f usr/share/lib/zoneinfo/Europe/Simferopol 0644 root bin
@@ -11464,7 +11471,7 @@ f usr/share/lib/zoneinfo/Pacific/Gambier 0644 root bin
 f usr/share/lib/zoneinfo/Pacific/Guadalcanal 0644 root bin
 f usr/share/lib/zoneinfo/Pacific/Guam 0644 root bin
 f usr/share/lib/zoneinfo/Pacific/Honolulu 0644 root bin
-f usr/share/lib/zoneinfo/Pacific/Johnston 0644 root bin
+h usr/share/lib/zoneinfo/Pacific/Johnston=usr/share/lib/zoneinfo/Pacific/Honolulu 
 f usr/share/lib/zoneinfo/Pacific/Kiritimati 0644 root bin
 f usr/share/lib/zoneinfo/Pacific/Kosrae 0644 root bin
 f usr/share/lib/zoneinfo/Pacific/Kwajalein 0644 root bin
