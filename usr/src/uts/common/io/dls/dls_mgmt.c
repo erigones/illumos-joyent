@@ -21,7 +21,10 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
- * Copyright 2016 Joyent, Inc.
+ * Copyright (c) 2017 Joyent, Inc.
+ */
+/*
+ * Copyright (c) 2016 by Delphix. All rights reserved.
  */
 
 /*
@@ -80,9 +83,17 @@ boolean_t		devnet_need_rebuild;
 /* Upcall door handle */
 static door_handle_t	dls_mgmt_dh = NULL;
 
+/* dls_devnet_t dd_flags */
 #define	DD_CONDEMNED		0x1
-#define	DD_KSTAT_CHANGING	0x2
-#define	DD_IMPLICIT_IPTUN	0x4 /* Implicitly-created ip*.*tun* tunnel */
+#define	DD_IMPLICIT_IPTUN	0x2 /* Implicitly-created ip*.*tun* tunnel */
+#define	DD_INITIALIZING		0x4
+
+/*
+ * If the link is marked as initializing or condemned then it should
+ * not be visible outside of the DLS framework.
+ */
+#define	DD_NOT_VISIBLE(flags)	(					\
+	(flags & (DD_CONDEMNED | DD_INITIALIZING)) != 0)
 
 /*
  * This structure is used to keep the <linkid, macname> mapping.
@@ -113,7 +124,7 @@ static int i_dls_devnet_create_iptun(const char *, const char *,
     datalink_id_t *);
 static int i_dls_devnet_destroy_iptun(datalink_id_t);
 static int i_dls_devnet_setzid(dls_devnet_t *, zoneid_t, boolean_t, boolean_t);
-static int dls_devnet_unset(const char *, datalink_id_t *, boolean_t);
+static int dls_devnet_unset(mac_handle_t, datalink_id_t *, boolean_t);
 
 /*ARGSUSED*/
 static int
@@ -133,9 +144,9 @@ i_dls_devnet_destructor(void *buf, void *arg)
 {
 	dls_devnet_t	*ddp = buf;
 
-	ASSERT(ddp->dd_ksp == NULL);
-	ASSERT(ddp->dd_ref == 0);
-	ASSERT(ddp->dd_tref == 0);
+	VERIFY(ddp->dd_ksp == NULL);
+	VERIFY(ddp->dd_ref == 0);
+	VERIFY(ddp->dd_tref == 0);
 	mutex_destroy(&ddp->dd_mutex);
 	cv_destroy(&ddp->dd_cv);
 }
@@ -731,27 +742,20 @@ dls_devnet_rele_link(dls_dl_handle_t dlh, dls_link_t *dlp)
 static int
 dls_devnet_stat_update(kstat_t *ksp, int rw)
 {
-	dls_devnet_t	*ddp = ksp->ks_private;
+	datalink_id_t	linkid = (datalink_id_t)(uintptr_t)ksp->ks_private;
+	dls_devnet_t	*ddp;
 	dls_link_t	*dlp;
 	int		err;
 
-	/*
-	 * Check the link is being renamed or if the link is going away
-	 * before incrementing dd_tref which in turn prevents the link
-	 * from being renamed or deleted until we finish.
-	 */
-	mutex_enter(&ddp->dd_mutex);
-	if (ddp->dd_flags & (DD_CONDEMNED | DD_KSTAT_CHANGING)) {
-		mutex_exit(&ddp->dd_mutex);
-		return (ENOENT);
+	if ((err = dls_devnet_hold_tmp(linkid, &ddp)) != 0) {
+		return (err);
 	}
-	ddp->dd_tref++;
-	mutex_exit(&ddp->dd_mutex);
 
 	/*
 	 * If a device detach happens at this time, it will block in
-	 * dls_devnet_unset since the dd_tref has been bumped up above. So the
-	 * access to 'dlp' is safe even though we don't hold the mac perimeter.
+	 * dls_devnet_unset since the dd_tref has been bumped in
+	 * dls_devnet_hold_tmp(). So the access to 'dlp' is safe even though
+	 * we don't hold the mac perimeter.
 	 */
 	if (mod_hash_find(i_dls_link_hash, (mod_hash_key_t)ddp->dd_mac,
 	    (mod_hash_val_t *)&dlp) != 0) {
@@ -785,7 +789,8 @@ dls_devnet_stat_create(dls_devnet_t *ddp, zoneid_t zoneid, zoneid_t newzoneid)
 	}
 
 	if (dls_stat_create("link", 0, nm, zoneid,
-	    dls_devnet_stat_update, ddp, &ksp, newzoneid) == 0) {
+	    dls_devnet_stat_update, (void *)(uintptr_t)ddp->dd_linkid,
+	    &ksp, newzoneid) == 0) {
 		ASSERT(ksp != NULL);
 		if (zoneid == ddp->dd_owner_zid) {
 			ASSERT(ddp->dd_ksp == NULL);
@@ -843,12 +848,16 @@ dls_devnet_stat_rename(dls_devnet_t *ddp, boolean_t zoneinit)
 }
 
 /*
- * Associate a linkid with a given link (identified by macname)
+ * Associate the linkid with the link identified by macname. If this
+ * is called on behalf of a physical link then linkid may be
+ * DATALINK_INVALID_LINKID. Otherwise, if called on behalf of a
+ * virtual link, linkid must have a value.
  */
 static int
-dls_devnet_set(const char *macname, datalink_id_t linkid, zoneid_t zoneid,
+dls_devnet_set(mac_handle_t mh, datalink_id_t linkid, zoneid_t zoneid,
     dls_devnet_t **ddpp)
 {
+	const char		*macname = mac_name(mh);
 	dls_devnet_t		*ddp = NULL;
 	datalink_class_t	class;
 	int			err;
@@ -881,17 +890,41 @@ dls_devnet_set(const char *macname, datalink_id_t linkid, zoneid_t zoneid,
 		}
 
 		/*
-		 * This might be a physical link that has already
-		 * been created, but which does not have a linkid
-		 * because dlmgmtd was not running when it was created.
+		 * If we arrive here we know we are attempting to set
+		 * the linkid on a physical link. A virtual link
+		 * should never arrive here because it should never
+		 * call this function without a linkid. Virtual links
+		 * are created through dlgmtmd and thus we know
+		 * dlmgmtd is alive to assign it a linkid (search for
+		 * uses of dladm_create_datalink_id() to prove this to
+		 * yourself); we don't have the same guarantee for a
+		 * physical link which may perform an upcall for a
+		 * linkid while dlmgmtd is down but will continue
+		 * creating a devnet without the linkid (see
+		 * softmac_create_datalink() to see how physical link
+		 * creation works). That is why there is no entry in
+		 * the id hash but there is one in the macname hash --
+		 * softmac couldn't acquire a linkid the first time it
+		 * called this function.
+		 *
+		 * Because of the check above, we also know that
+		 * ddp->dd_linkid is not set. Following this, the link
+		 * must still be in the DD_INITIALIZING state because
+		 * that flag is removed IFF dd_linkid is set. This is
+		 * why we can ASSERT the DD_INITIALIZING flag below if
+		 * the call to i_dls_devnet_setzid() fails.
 		 */
 		if (linkid == DATALINK_INVALID_LINKID ||
 		    class != DATALINK_CLASS_PHYS) {
 			err = EINVAL;
 			goto done;
 		}
+
+		ASSERT(ddp->dd_flags & DD_INITIALIZING);
+
 	} else {
 		ddp = kmem_cache_alloc(i_dls_devnet_cachep, KM_SLEEP);
+		ddp->dd_flags = DD_INITIALIZING;
 		ddp->dd_tref = 0;
 		ddp->dd_ref++;
 		ddp->dd_owner_zid = zoneid;
@@ -909,12 +942,6 @@ dls_devnet_set(const char *macname, datalink_id_t linkid, zoneid_t zoneid,
 		    (mod_hash_val_t)ddp) == 0);
 		devnet_need_rebuild = B_TRUE;
 		stat_create = B_TRUE;
-		mutex_enter(&ddp->dd_mutex);
-		if (!ddp->dd_prop_loaded && (ddp->dd_prop_taskid == NULL)) {
-			ddp->dd_prop_taskid = taskq_dispatch(system_taskq,
-			    dls_devnet_prop_task, ddp, TQ_SLEEP);
-		}
-		mutex_exit(&ddp->dd_mutex);
 	}
 	err = 0;
 done:
@@ -929,8 +956,18 @@ done:
 	if (err == 0) {
 		if (zoneid != GLOBAL_ZONEID &&
 		    (err = i_dls_devnet_setzid(ddp, zoneid, B_FALSE,
-		    B_FALSE)) != 0)
-			(void) dls_devnet_unset(macname, &linkid, B_TRUE);
+		    B_FALSE)) != 0) {
+			/*
+			 * At this point the link is marked as
+			 * DD_INITIALIZING -- there can be no
+			 * outstanding temp refs and therefore no need
+			 * to wait for them.
+			 */
+			ASSERT(ddp->dd_flags & DD_INITIALIZING);
+			(void) dls_devnet_unset(mh, &linkid, B_FALSE);
+			return (err);
+		}
+
 		/*
 		 * The kstat subsystem holds its own locks (rather perimeter)
 		 * before calling the ks_update (dls_devnet_stat_update) entry
@@ -941,17 +978,32 @@ done:
 			dls_devnet_stat_create(ddp, zoneid, zoneid);
 		if (ddpp != NULL)
 			*ddpp = ddp;
+
+		mutex_enter(&ddp->dd_mutex);
+		if (linkid != DATALINK_INVALID_LINKID &&
+		    !ddp->dd_prop_loaded && ddp->dd_prop_taskid == NULL) {
+			ddp->dd_prop_taskid = taskq_dispatch(system_taskq,
+			    dls_devnet_prop_task, ddp, TQ_SLEEP);
+		}
+		mutex_exit(&ddp->dd_mutex);
+
 	}
 	return (err);
 }
 
 /*
- * Disassociate a linkid with a given link (identified by macname)
- * This waits until temporary references to the dls_devnet_t are gone.
+ * Disassociate the linkid from the link identified by macname. If
+ * wait is B_TRUE, wait until all temporary refs are released and the
+ * prop task is finished.
+ *
+ * If waiting then you SHOULD NOT call this from inside the MAC perim
+ * as deadlock will ensue. Otherwise, this function is safe to call
+ * from inside or outside the MAC perim.
  */
 static int
-dls_devnet_unset(const char *macname, datalink_id_t *id, boolean_t wait)
+dls_devnet_unset(mac_handle_t mh, datalink_id_t *id, boolean_t wait)
 {
+	const char	*macname = mac_name(mh);
 	dls_devnet_t	*ddp;
 	int		err;
 	mod_hash_val_t	val;
@@ -972,7 +1024,7 @@ dls_devnet_unset(const char *macname, datalink_id_t *id, boolean_t wait)
 	 * deadlock. Return EBUSY if the asynchronous thread started for
 	 * property loading as part of the post attach hasn't yet completed.
 	 */
-	ASSERT(ddp->dd_ref != 0);
+	VERIFY(ddp->dd_ref != 0);
 	if ((ddp->dd_ref != 1) || (!wait &&
 	    (ddp->dd_tref != 0 || ddp->dd_prop_taskid != NULL))) {
 		int zstatus = 0;
@@ -1028,26 +1080,6 @@ dls_devnet_unset(const char *macname, datalink_id_t *id, boolean_t wait)
 	ddp->dd_ref--;
 	*id = ddp->dd_linkid;
 
-	if (ddp->dd_zid != GLOBAL_ZONEID) {
-		/*
-		 * We need to release the dd_mutex before we try and destroy the
-		 * stat. When we destroy it, we'll need to grab the lock for the
-		 * kstat but if there's a concurrent reader of the kstat, we'll
-		 * be blocked on it. This will lead to deadlock because these
-		 * kstats employ a ks_update function (dls_devnet_stat_update)
-		 * which needs the dd_mutex that we currently hold.
-		 *
-		 * Because we've already flagged the dls_devnet_t as
-		 * DD_CONDEMNED and we still have a write lock on
-		 * i_dls_devnet_lock, we should be able to release the dd_mutex.
-		 */
-		mutex_exit(&ddp->dd_mutex);
-		dls_devnet_stat_destroy(ddp, ddp->dd_zid);
-		mutex_enter(&ddp->dd_mutex);
-		(void) i_dls_devnet_setzid(ddp, GLOBAL_ZONEID, B_FALSE,
-		    B_FALSE);
-	}
-
 	/*
 	 * Remove this dls_devnet_t from the hash table.
 	 */
@@ -1062,25 +1094,40 @@ dls_devnet_unset(const char *macname, datalink_id_t *id, boolean_t wait)
 	}
 	rw_exit(&i_dls_devnet_lock);
 
+	/*
+	 * It is important to call i_dls_devnet_setzid() WITHOUT the
+	 * i_dls_devnet_lock held. The setzid call grabs the MAC
+	 * perim; thus causing DLS -> MAC lock ordering if performed
+	 * with the i_dls_devnet_lock held. This forces consumers to
+	 * grab the MAC perim before calling dls_devnet_unset() (the
+	 * locking rules state MAC -> DLS order). By performing the
+	 * setzid outside of the i_dls_devnet_lock consumers can
+	 * safely call dls_devnet_unset() outside the MAC perim.
+	 */
+	if (ddp->dd_zid != GLOBAL_ZONEID) {
+		dls_devnet_stat_destroy(ddp, ddp->dd_zid);
+		(void) i_dls_devnet_setzid(ddp, GLOBAL_ZONEID, B_FALSE,
+		    B_FALSE);
+	}
+
 	if (wait) {
 		/*
 		 * Wait until all temporary references are released.
+		 * The holders of the tref need the MAC perim to
+		 * perform their work and release the tref. To avoid
+		 * deadlock, assert that the perim is never held here.
 		 */
+		ASSERT0(MAC_PERIM_HELD(mh));
 		while ((ddp->dd_tref != 0) || (ddp->dd_prop_taskid != NULL))
 			cv_wait(&ddp->dd_cv, &ddp->dd_mutex);
 	} else {
-		ASSERT(ddp->dd_tref == 0 && ddp->dd_prop_taskid == NULL);
+		VERIFY(ddp->dd_tref == 0);
+		VERIFY(ddp->dd_prop_taskid == NULL);
 	}
 
 	if (ddp->dd_linkid != DATALINK_INVALID_LINKID) {
-		/*
-		 * See the earlier call in this function for an explanation.
-		 */
-		mutex_exit(&ddp->dd_mutex);
 		dls_devnet_stat_destroy(ddp, ddp->dd_owner_zid);
-		mutex_enter(&ddp->dd_mutex);
 	}
-
 
 	ddp->dd_prop_loaded = B_FALSE;
 	ddp->dd_linkid = DATALINK_INVALID_LINKID;
@@ -1110,8 +1157,8 @@ dls_devnet_hold_tmp_by_link(dls_link_t *dlp, dls_dl_handle_t *ddhp)
 	}
 
 	mutex_enter(&ddp->dd_mutex);
-	ASSERT(ddp->dd_ref > 0);
-	if (ddp->dd_flags & DD_CONDEMNED) {
+	VERIFY(ddp->dd_ref > 0);
+	if (DD_NOT_VISIBLE(ddp->dd_flags)) {
 		mutex_exit(&ddp->dd_mutex);
 		rw_exit(&i_dls_devnet_lock);
 		return (ENOENT);
@@ -1140,7 +1187,7 @@ dls_devnet_hold_common(datalink_id_t linkid, dls_devnet_t **ddpp,
 	if (dls_mgmt_get_phydev(linkid, &phydev) == 0)
 		(void) softmac_hold_device(phydev, &ddh);
 
-	rw_enter(&i_dls_devnet_lock, RW_WRITER);
+	rw_enter(&i_dls_devnet_lock, RW_READER);
 	if ((err = mod_hash_find(i_dls_devnet_id_hash,
 	    (mod_hash_key_t)(uintptr_t)linkid, (mod_hash_val_t *)&ddp)) != 0) {
 		ASSERT(err == MH_ERR_NOTFOUND);
@@ -1150,8 +1197,8 @@ dls_devnet_hold_common(datalink_id_t linkid, dls_devnet_t **ddpp,
 	}
 
 	mutex_enter(&ddp->dd_mutex);
-	ASSERT(ddp->dd_ref > 0);
-	if (ddp->dd_flags & DD_CONDEMNED) {
+	VERIFY(ddp->dd_ref > 0);
+	if (DD_NOT_VISIBLE(ddp->dd_flags)) {
 		mutex_exit(&ddp->dd_mutex);
 		rw_exit(&i_dls_devnet_lock);
 		softmac_rele_device(ddh);
@@ -1221,7 +1268,7 @@ dls_devnet_hold_by_dev(dev_t dev, dls_dl_handle_t *ddhp)
 	if (DLS_MINOR2INST(getminor(dev)) <= DLS_MAX_PPA)
 		(void) softmac_hold_device(dev, &ddh);
 
-	rw_enter(&i_dls_devnet_lock, RW_WRITER);
+	rw_enter(&i_dls_devnet_lock, RW_READER);
 	if ((err = mod_hash_find(i_dls_devnet_hash,
 	    (mod_hash_key_t)name, (mod_hash_val_t *)&ddp)) != 0) {
 		ASSERT(err == MH_ERR_NOTFOUND);
@@ -1230,8 +1277,8 @@ dls_devnet_hold_by_dev(dev_t dev, dls_dl_handle_t *ddhp)
 		return (ENOENT);
 	}
 	mutex_enter(&ddp->dd_mutex);
-	ASSERT(ddp->dd_ref > 0);
-	if (ddp->dd_flags & DD_CONDEMNED) {
+	VERIFY(ddp->dd_ref > 0);
+	if (DD_NOT_VISIBLE(ddp->dd_flags)) {
 		mutex_exit(&ddp->dd_mutex);
 		rw_exit(&i_dls_devnet_lock);
 		softmac_rele_device(ddh);
@@ -1251,7 +1298,7 @@ void
 dls_devnet_rele(dls_devnet_t *ddp)
 {
 	mutex_enter(&ddp->dd_mutex);
-	ASSERT(ddp->dd_ref > 1);
+	VERIFY(ddp->dd_ref > 1);
 	ddp->dd_ref--;
 	if ((ddp->dd_flags & DD_IMPLICIT_IPTUN) && ddp->dd_ref == 1) {
 		mutex_exit(&ddp->dd_mutex);
@@ -1430,7 +1477,6 @@ dls_devnet_rename(datalink_id_t id1, datalink_id_t id2, const char *link,
 	mac_perim_handle_t	mph = NULL;
 	mac_handle_t		mh;
 	mod_hash_val_t		val;
-	boolean_t		clear_dd_flag = B_FALSE;
 
 	/*
 	 * In the second case, id2 must be a REMOVED physical link.
@@ -1466,14 +1512,6 @@ dls_devnet_rename(datalink_id_t id1, datalink_id_t id2, const char *link,
 		goto done;
 	}
 
-	/*
-	 * Return EBUSY if any applications have this link open, if any thread
-	 * is currently accessing the link kstats, or if the link is on-loan
-	 * to a non-global zone. Then set the DD_KSTAT_CHANGING flag to
-	 * prevent any access to the kstats while we delete and recreate
-	 * kstats below.  However, we skip this check if we're renaming the
-	 * vnic as part of bringing it up for a zone.
-	 */
 	mutex_enter(&ddp->dd_mutex);
 	if (!zoneinit) {
 		if (ddp->dd_ref > 1) {
@@ -1482,9 +1520,6 @@ dls_devnet_rename(datalink_id_t id1, datalink_id_t id2, const char *link,
 			goto done;
 		}
 	}
-
-	ddp->dd_flags |= DD_KSTAT_CHANGING;
-	clear_dd_flag = B_TRUE;
 	mutex_exit(&ddp->dd_mutex);
 
 	if (id2 == DATALINK_INVALID_LINKID) {
@@ -1566,22 +1601,10 @@ dls_devnet_rename(datalink_id_t id1, datalink_id_t id2, const char *link,
 	mutex_exit(&ddp->dd_mutex);
 
 done:
-	/*
-	 * Change the name of the kstat based on the new link name.
-	 * We can't hold the i_dls_devnet_lock across calls to the kstat
-	 * subsystem. Instead the DD_KSTAT_CHANGING flag set above in this
-	 * function prevents any access to the dd_ksp while we delete and
-	 * recreate it below.
-	 */
 	rw_exit(&i_dls_devnet_lock);
+
 	if (err == 0)
 		dls_devnet_stat_rename(ddp, zoneinit);
-
-	if (clear_dd_flag) {
-		mutex_enter(&ddp->dd_mutex);
-		ddp->dd_flags &= ~DD_KSTAT_CHANGING;
-		mutex_exit(&ddp->dd_mutex);
-	}
 
 	if (mph != NULL)
 		mac_perim_exit(mph);
@@ -1830,13 +1853,32 @@ dls_devnet_create(mac_handle_t mh, datalink_id_t linkid, zoneid_t zoneid)
 	 * we need to use the linkid to get the user name for the link
 	 * when we create the MAC client.
 	 */
-	if ((err = dls_devnet_set(mac_name(mh), linkid, zoneid, &ddp)) == 0) {
+	if ((err = dls_devnet_set(mh, linkid, zoneid, &ddp)) == 0) {
 		if ((err = dls_link_hold_create(mac_name(mh), &dlp)) != 0) {
 			mac_perim_exit(mph);
-			(void) dls_devnet_unset(mac_name(mh), &linkid, B_TRUE);
+			(void) dls_devnet_unset(mh, &linkid, B_FALSE);
 			return (err);
 		}
+
+		/*
+		 * If dd_linkid is set then the link was successfully
+		 * initialized. In this case we can remove the
+		 * initializing flag and make the link visible to the
+		 * rest of the system.
+		 *
+		 * If not set then we were called by softmac and it
+		 * was unable to obtain a linkid for the physical link
+		 * because dlmgmtd is down. In that case softmac will
+		 * eventually obtain a linkid and call
+		 * dls_devnet_recreate() to complete initialization.
+		 */
+		mutex_enter(&ddp->dd_mutex);
+		if (ddp->dd_linkid != DATALINK_INVALID_LINKID)
+			ddp->dd_flags &= ~DD_INITIALIZING;
+		mutex_exit(&ddp->dd_mutex);
+
 	}
+
 	mac_perim_exit(mph);
 	return (err);
 }
@@ -1850,8 +1892,19 @@ dls_devnet_create(mac_handle_t mh, datalink_id_t linkid, zoneid_t zoneid)
 int
 dls_devnet_recreate(mac_handle_t mh, datalink_id_t linkid)
 {
-	ASSERT(linkid != DATALINK_INVALID_LINKID);
-	return (dls_devnet_set(mac_name(mh), linkid, GLOBAL_ZONEID, NULL));
+	dls_devnet_t	*ddp;
+	int		err;
+
+	VERIFY(linkid != DATALINK_INVALID_LINKID);
+	if ((err = dls_devnet_set(mh, linkid, GLOBAL_ZONEID, &ddp)) == 0) {
+		mutex_enter(&ddp->dd_mutex);
+		if (ddp->dd_linkid != DATALINK_INVALID_LINKID)
+			ddp->dd_flags &= ~DD_INITIALIZING;
+		mutex_exit(&ddp->dd_mutex);
+	}
+
+	return (err);
+
 }
 
 int
@@ -1861,8 +1914,7 @@ dls_devnet_destroy(mac_handle_t mh, datalink_id_t *idp, boolean_t wait)
 	mac_perim_handle_t	mph;
 
 	*idp = DATALINK_INVALID_LINKID;
-	mac_perim_enter_by_mh(mh, &mph);
-	err = dls_devnet_unset(mac_name(mh), idp, wait);
+	err = dls_devnet_unset(mh, idp, wait);
 
 	/*
 	 * We continue on in the face of ENOENT because the devnet
@@ -1900,12 +1952,14 @@ dls_devnet_destroy(mac_handle_t mh, datalink_id_t *idp, boolean_t wait)
 	 * reference that dls has on the mac_impl_t.
 	 */
 	if (err != 0 && err != ENOENT) {
-		mac_perim_exit(mph);
 		return (err);
 	}
 
+	mac_perim_enter_by_mh(mh, &mph);
 	err = dls_link_rele_by_name(mac_name(mh));
 	if (err != 0) {
+		dls_devnet_t	*ddp;
+
 		/*
 		 * XXX It is a general GLDv3 bug that dls_devnet_set() has to
 		 * be called to re-set the link when destroy fails.  The
@@ -1913,8 +1967,19 @@ dls_devnet_destroy(mac_handle_t mh, datalink_id_t *idp, boolean_t wait)
 		 * called from kernel context or from a zone other than that
 		 * which initially created the link.
 		 */
-		(void) dls_devnet_set(mac_name(mh), *idp, crgetzoneid(CRED()),
-		    NULL);
+		(void) dls_devnet_set(mh, *idp, crgetzoneid(CRED()), &ddp);
+
+		/*
+		 * You might think dd_linkid should always be set
+		 * here, but in the case where dls_devnet_unset()
+		 * returns ENOENT it will be DATALINK_INVALID_LINKID.
+		 * Stay consistent with the rest of DLS and only
+		 * remove the initializing flag if linkid is set.
+		 */
+		mutex_enter(&ddp->dd_mutex);
+		if (ddp->dd_linkid != DATALINK_INVALID_LINKID)
+			ddp->dd_flags &= ~DD_INITIALIZING;
+		mutex_exit(&ddp->dd_mutex);
 	}
 
 	mac_perim_exit(mph);

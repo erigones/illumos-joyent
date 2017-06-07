@@ -45,6 +45,7 @@
 #include <sys/arc.h>
 #include <sys/zil.h>
 #include <sys/dsl_scan.h>
+#include <sys/abd.h>
 
 /*
  * Virtual device management.
@@ -961,16 +962,16 @@ vdev_probe_done(zio_t *zio)
 			vps->vps_readable = 1;
 		if (zio->io_error == 0 && spa_writeable(spa)) {
 			zio_nowait(zio_write_phys(vd->vdev_probe_zio, vd,
-			    zio->io_offset, zio->io_size, zio->io_data,
+			    zio->io_offset, zio->io_size, zio->io_abd,
 			    ZIO_CHECKSUM_OFF, vdev_probe_done, vps,
 			    ZIO_PRIORITY_SYNC_WRITE, vps->vps_flags, B_TRUE));
 		} else {
-			zio_buf_free(zio->io_data, zio->io_size);
+			abd_free(zio->io_abd);
 		}
 	} else if (zio->io_type == ZIO_TYPE_WRITE) {
 		if (zio->io_error == 0)
 			vps->vps_writeable = 1;
-		zio_buf_free(zio->io_data, zio->io_size);
+		abd_free(zio->io_abd);
 	} else if (zio->io_type == ZIO_TYPE_NULL) {
 		zio_t *pio;
 
@@ -1086,8 +1087,8 @@ vdev_probe(vdev_t *vd, zio_t *zio)
 	for (int l = 1; l < VDEV_LABELS; l++) {
 		zio_nowait(zio_read_phys(pio, vd,
 		    vdev_label_offset(vd->vdev_psize, l,
-		    offsetof(vdev_label_t, vl_pad2)),
-		    VDEV_PAD_SIZE, zio_buf_alloc(VDEV_PAD_SIZE),
+		    offsetof(vdev_label_t, vl_pad2)), VDEV_PAD_SIZE,
+		    abd_alloc_for_io(VDEV_PAD_SIZE, B_TRUE),
 		    ZIO_CHECKSUM_OFF, vdev_probe_done, vps,
 		    ZIO_PRIORITY_SYNC_READ, vps->vps_flags, B_TRUE));
 	}
@@ -1787,6 +1788,9 @@ vdev_dtl_should_excise(vdev_t *vd)
 
 	ASSERT0(scn->scn_phys.scn_errors);
 	ASSERT0(vd->vdev_children);
+
+	if (vd->vdev_state < VDEV_STATE_DEGRADED)
+		return (B_FALSE);
 
 	if (vd->vdev_resilver_txg == 0 ||
 	    range_tree_space(vd->vdev_dtl[DTL_MISSING]) == 0)
@@ -2765,8 +2769,8 @@ vdev_get_stats(vdev_t *vd, vdev_stat_t *vs)
 	 * since that determines how much space the pool can expand.
 	 */
 	if (vd->vdev_aux == NULL && tvd != NULL) {
-		vs->vs_esize = P2ALIGN(vd->vdev_max_asize - vd->vdev_asize,
-		    1ULL << tvd->vdev_ms_shift);
+		vs->vs_esize = P2ALIGN(vd->vdev_max_asize - vd->vdev_asize -
+		    spa->spa_bootsize, 1ULL << tvd->vdev_ms_shift);
 	}
 	if (vd->vdev_aux == NULL && vd == vd->vdev_top && !vd->vdev_ishole) {
 		vs->vs_fragmentation = vd->vdev_mg->mg_fragmentation;

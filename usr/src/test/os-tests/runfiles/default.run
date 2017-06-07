@@ -56,8 +56,16 @@ tests = ['timer_limit']
 user = root
 tests = ['tmpfs_badmount', 'tmpfs_enospc']
 
+[/opt/os-tests/tests/stress]
+user = root
+tests = ['dladm-kstat']
+
 [/opt/os-tests/tests/file-locking]
 tests = ['runtests.32', 'runtests.64']
+
+[/opt/os-tests/tests/sockfs]
+user = root
+tests = ['conn', 'dgram', 'drop_priv', 'sockpair']
 
 [/opt/os-tests/tests/OS-6097.32]
 [/opt/os-tests/tests/OS-6097.64]
