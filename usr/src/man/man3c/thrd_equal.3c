@@ -41,7 +41,8 @@ if
 .Fa thrd0
 and
 .Fa thrd1
-refer to the same thread. Otherwise,
+refer to the same thread.
+Otherwise,
 .Sy 0
 is returned, indicating that
 .Fa thrd0

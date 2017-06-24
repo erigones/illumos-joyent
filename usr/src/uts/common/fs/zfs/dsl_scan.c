@@ -22,6 +22,7 @@
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2016 Gary Mills
  * Copyright (c) 2011, 2016 by Delphix. All rights reserved.
+ * Copyright 2017 Joyent, Inc.
  */
 
 #include <sys/dsl_scan.h>
@@ -214,9 +215,10 @@ dsl_scan_setup_sync(void *arg, dmu_tx_t *tx)
 
 		if (vdev_resilver_needed(spa->spa_root_vdev,
 		    &scn->scn_phys.scn_min_txg, &scn->scn_phys.scn_max_txg)) {
-			spa_event_notify(spa, NULL, ESC_ZFS_RESILVER_START);
+			spa_event_notify(spa, NULL, NULL,
+			    ESC_ZFS_RESILVER_START);
 		} else {
-			spa_event_notify(spa, NULL, ESC_ZFS_SCRUB_START);
+			spa_event_notify(spa, NULL, NULL, ESC_ZFS_SCRUB_START);
 		}
 
 		spa->spa_scrub_started = B_TRUE;
@@ -323,7 +325,8 @@ dsl_scan_done(dsl_scan_t *scn, boolean_t complete, dmu_tx_t *tx)
 		vdev_dtl_reassess(spa->spa_root_vdev, tx->tx_txg,
 		    complete ? scn->scn_phys.scn_max_txg : 0, B_TRUE);
 		if (complete) {
-			spa_event_notify(spa, NULL, scn->scn_phys.scn_min_txg ?
+			spa_event_notify(spa, NULL, NULL,
+			    scn->scn_phys.scn_min_txg ?
 			    ESC_ZFS_RESILVER_FINISH : ESC_ZFS_SCRUB_FINISH);
 		}
 		spa_errlog_rotate(spa);
@@ -1362,7 +1365,7 @@ dsl_scan_visit(dsl_scan_t *scn, dmu_tx_t *tx)
 		dsl_dataset_t *ds;
 		uint64_t dsobj;
 
-		dsobj = strtonum(za.za_name, NULL);
+		dsobj = zfs_strtonum(za.za_name, NULL);
 		VERIFY3U(0, ==, zap_remove_int(dp->dp_meta_objset,
 		    scn->scn_phys.scn_queue_obj, dsobj, tx));
 

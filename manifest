@@ -1319,6 +1319,8 @@ f lib/amd64/libnsl.so.1 0755 root bin
 s lib/amd64/libnsl.so=libnsl.so.1
 f lib/amd64/libnvpair.so.1 0755 root bin
 s lib/amd64/libnvpair.so=libnvpair.so.1
+f lib/amd64/libofmt.so.1 0755 root bin
+s lib/amd64/libofmt.so=libofmt.so.1
 f lib/amd64/libpam.so.1 0755 root bin
 s lib/amd64/libpam.so=libpam.so.1
 s lib/amd64/libposix4.so.1=librt.so.1
@@ -1518,6 +1520,8 @@ f lib/libnvpair.so.1 0755 root bin
 s lib/libnvpair.so=libnvpair.so.1
 f lib/libnwam.so.1 0755 root bin
 s lib/libnwam.so=libnwam.so.1
+f lib/libofmt.so.1 0755 root bin
+s lib/libofmt.so=libofmt.so.1
 f lib/libpam.so.1 0755 root bin
 s lib/libpam.so=libpam.so.1
 s lib/libposix4.so.1=librt.so.1
@@ -2798,6 +2802,7 @@ f usr/include/fm/topo_mod.h 0644 root bin
 f usr/include/fmtmsg.h 0644 root bin
 f usr/include/fnmatch.h 0644 root bin
 f usr/include/form.h 0644 root bin
+f usr/include/fts.h 0644 root bin
 f usr/include/ftw.h 0644 root bin
 d usr/include/fwflash 0755 root bin
 f usr/include/fwflash/fwflash.h 0644 root bin
@@ -3240,7 +3245,6 @@ f usr/include/rpc/pmap_clnt.h 0644 root bin
 f usr/include/rpc/pmap_prot.h 0644 root bin
 f usr/include/rpc/pmap_prot.x 0644 root bin
 f usr/include/rpc/pmap_rmt.h 0644 root bin
-f usr/include/rpc/raw.h 0644 root bin
 f usr/include/rpc/rpc.h 0644 root bin
 f usr/include/rpc/rpc_com.h 0644 root bin
 f usr/include/rpc/rpc_msg.h 0644 root bin
@@ -13070,6 +13074,12 @@ f usr/share/man/man3c/ftime.3c 0444 root bin
 f usr/share/man/man3c/ftok.3c 0444 root bin
 s usr/share/man/man3c/ftruncate.3c=truncate.3c
 s usr/share/man/man3c/ftrylockfile.3c=flockfile.3c
+f usr/share/man/man3c/fts.3c 0444 root bin
+s usr/share/man/man3c/fts_children.3c=fts.3c
+s usr/share/man/man3c/fts_close.3c=fts.3c
+s usr/share/man/man3c/fts_open.3c=fts.3c
+s usr/share/man/man3c/fts_read.3c=fts.3c
+s usr/share/man/man3c/fts_set.3c=fts.3c
 f usr/share/man/man3c/ftw.3c 0444 root bin
 s usr/share/man/man3c/func_to_decimal.3c=string_to_decimal.3c
 s usr/share/man/man3c/funlockfile.3c=flockfile.3c
@@ -13612,6 +13622,7 @@ s usr/share/man/man3c/re_exec.3c=re_comp.3c
 f usr/share/man/man3c/readdir.3c 0444 root bin
 s usr/share/man/man3c/readdir_r.3c=readdir.3c
 s usr/share/man/man3c/realloc.3c=malloc.3c
+s usr/share/man/man3c/reallocarray.3c=malloc.3c
 f usr/share/man/man3c/realpath.3c 0444 root bin
 f usr/share/man/man3c/reboot.3c 0444 root bin
 f usr/share/man/man3c/regcmp.3c 0444 root bin
@@ -13792,6 +13803,7 @@ s usr/share/man/man3c/strtok_r.3c=string.3c
 f usr/share/man/man3c/strtol.3c 0444 root bin
 s usr/share/man/man3c/strtold.3c=strtod.3c
 s usr/share/man/man3c/strtoll.3c=strtol.3c
+f usr/share/man/man3c/strtonum.3c 0444 root bin
 f usr/share/man/man3c/strtoul.3c 0444 root bin
 s usr/share/man/man3c/strtoull.3c=strtoul.3c
 s usr/share/man/man3c/strtoumax.3c=strtoimax.3c
@@ -16561,6 +16573,13 @@ s usr/share/man/man3nvpair/nvpair_value_uint64.3nvpair=nvpair_value_byte.3nvpair
 s usr/share/man/man3nvpair/nvpair_value_uint64_array.3nvpair=nvpair_value_byte.3nvpair
 s usr/share/man/man3nvpair/nvpair_value_uint8.3nvpair=nvpair_value_byte.3nvpair
 s usr/share/man/man3nvpair/nvpair_value_uint8_array.3nvpair=nvpair_value_byte.3nvpair
+d usr/share/man/man3ofmt 0755 root bin
+f usr/share/man/man3ofmt/ofmt.3ofmt 0444 root bin
+s usr/share/man/man3ofmt/ofmt_close.3ofmt=ofmt.3ofmt
+s usr/share/man/man3ofmt/ofmt_open.3ofmt=ofmt.3ofmt
+s usr/share/man/man3ofmt/ofmt_print.3ofmt=ofmt.3ofmt
+s usr/share/man/man3ofmt/ofmt_strerror.3ofmt=ofmt.3ofmt
+s usr/share/man/man3ofmt/ofmt_update_winsize.3ofmt=ofmt.3ofmt
 d usr/share/man/man3pam 0755 root bin
 f usr/share/man/man3pam/pam.3pam 0444 root bin
 f usr/share/man/man3pam/pam_acct_mgmt.3pam 0444 root bin
@@ -18517,6 +18536,7 @@ f usr/share/man/man4/krb5.conf.4 0444 root bin
 f usr/share/man/man4/ldapfilter.conf.4 0444 root bin
 f usr/share/man/man4/ldapsearchprefs.conf.4 0444 root bin
 f usr/share/man/man4/ldaptemplates.conf.4 0444 root bin
+f usr/share/man/man4/loader.conf.4 0444 root bin
 f usr/share/man/man4/logadm.conf.4 0444 root bin
 f usr/share/man/man4/logindevperm.4 0444 root bin
 f usr/share/man/man4/loginlog.4 0444 root bin
@@ -18667,10 +18687,13 @@ f usr/share/man/man5/audit_binfile.5 0444 root bin
 f usr/share/man/man5/audit_remote.5 0444 root bin
 f usr/share/man/man5/audit_syslog.5 0444 root bin
 s usr/share/man/man5/availability.5=attributes.5
+f usr/share/man/man5/brand.4th.5 0444 root bin
 f usr/share/man/man5/brands.5 0444 root bin
 f usr/share/man/man5/byteorder.5 0444 root bin
 f usr/share/man/man5/cancellation.5 0444 root bin
 f usr/share/man/man5/charmap.5 0444 root bin
+f usr/share/man/man5/check-password.4th.5 0444 root bin
+f usr/share/man/man5/color.4th.5 0444 root bin
 s usr/share/man/man5/compile.5=regexp.5
 f usr/share/man/man5/condition.5 0444 root bin
 f usr/share/man/man5/crypt_bsdbf.5 0444 root bin
@@ -18679,6 +18702,7 @@ f usr/share/man/man5/crypt_sha256.5 0444 root bin
 f usr/share/man/man5/crypt_sha512.5 0444 root bin
 f usr/share/man/man5/crypt_sunmd5.5 0444 root bin
 f usr/share/man/man5/crypt_unix.5 0444 root bin
+f usr/share/man/man5/delay.4th.5 0444 root bin
 f usr/share/man/man5/device_clean.5 0444 root bin
 f usr/share/man/man5/dhcp.5 0444 root bin
 s usr/share/man/man5/endian.5=byteorder.5
@@ -18692,6 +18716,7 @@ f usr/share/man/man5/filesystem.5 0444 root bin
 f usr/share/man/man5/fnmatch.5 0444 root bin
 f usr/share/man/man5/formats.5 0444 root bin
 f usr/share/man/man5/fsattr.5 0444 root bin
+f usr/share/man/man5/gptzfsboot.5 0444 root bin
 f usr/share/man/man5/grub.5 0444 root bin
 f usr/share/man/man5/gss_auth_rules.5 0444 root bin
 f usr/share/man/man5/iconv.5 0444 root bin
@@ -18706,6 +18731,8 @@ f usr/share/man/man5/kerberos.5 0444 root bin
 f usr/share/man/man5/krb5_auth_rules.5 0444 root bin
 f usr/share/man/man5/krb5envvar.5 0444 root bin
 f usr/share/man/man5/largefile.5 0444 root bin
+f usr/share/man/man5/loader.4th.5 0444 root bin
+f usr/share/man/man5/loader.5 0444 root bin
 f usr/share/man/man5/lf64.5 0444 root bin
 f usr/share/man/man5/lfcompile.5 0444 root bin
 f usr/share/man/man5/lfcompile64.5 0444 root bin
@@ -18718,6 +18745,8 @@ f usr/share/man/man5/mansun.5 0444 root bin
 f usr/share/man/man5/mdoc.5 0444 root bin
 f usr/share/man/man5/me.5 0444 root bin
 f usr/share/man/man5/mech_spnego.5 0444 root bin
+f usr/share/man/man5/menu.4th.5 0444 root bin
+f usr/share/man/man5/menusets.4th.5 0444 root bin
 f usr/share/man/man5/mm.5 0444 root bin
 f usr/share/man/man5/ms.5 0444 root bin
 f usr/share/man/man5/mutex.5 0444 root bin
@@ -18750,6 +18779,7 @@ f usr/share/man/man5/pkcs11_softtoken.5 0444 root bin
 f usr/share/man/man5/privileges.5 0444 root bin
 f usr/share/man/man5/prof.5 0444 root bin
 s usr/share/man/man5/pthreads.5=threads.5
+f usr/share/man/man5/pxeboot.5 0444 root bin
 f usr/share/man/man5/rbac.5 0444 root bin
 f usr/share/man/man5/regex.5 0444 root bin
 f usr/share/man/man5/regexp.5 0444 root bin
@@ -18772,7 +18802,9 @@ s usr/share/man/man5/teclarc.5=tecla.5
 f usr/share/man/man5/term.5 0444 root bin
 f usr/share/man/man5/threads.5 0444 root bin
 f usr/share/man/man5/timerfd.5 0444 root bin
+f usr/share/man/man5/version.4th.5 0444 root bin
 f usr/share/man/man5/vgrindefs.5 0444 root bin
+f usr/share/man/man5/zfsloader.5 0444 root bin
 f usr/share/man/man5/zones.5 0444 root bin
 f usr/share/man/man5/zpool-features.5 0444 root bin
 d usr/share/man/man7 0755 root bin
@@ -19023,8 +19055,12 @@ f usr/share/man/man7p/udp.7p 0444 root bin
 f usr/share/man/man7p/vxlan.7p 0444 root bin
 d usr/share/man/man9 0755 root bin
 f usr/share/man/man9/Intro.9 0444 root bin
+f usr/share/man/man9/iport.9 0444 root bin
 f usr/share/man/man9/vmem.9 0444 root bin
 s usr/share/man/man9/intro.9=Intro.9
+s usr/share/man/man9/iportmap.9=iport.9
+s usr/share/man/man9/phymap.9=iport.9
+s usr/share/man/man9/tgtmap.9=iport.9
 d usr/share/man/man9e 0755 root bin
 f usr/share/man/man9e/Intro.9e 0444 root bin
 f usr/share/man/man9e/_fini.9e 0444 root bin
@@ -20182,10 +20218,26 @@ s usr/share/man/man9f/rw_tryenter.9f=rwlock.9f
 s usr/share/man/man9f/rw_tryupgrade.9f=rwlock.9f
 f usr/share/man/man9f/rwlock.9f 0444 root bin
 s usr/share/man/man9f/samestr.9f=SAMESTR.9f
+f usr/share/man/man9f/sas_phymap_create.9f 0444 root bin
+s usr/share/man/man9f/sas_phymap_destroy.9f=sas_phymap_create.9f
+f usr/share/man/man9f/sas_phymap_lookup_ua.9f 0444 root bin
+s usr/share/man/man9f/sas_phymap_lookup_uapriv.9f=sas_phymap_lookup_ua.9f
+s usr/share/man/man9f/sas_phymap_phy2ua.9f=sas_phymap_lookup_ua.9f
+s usr/share/man/man9f/sas_phymap_phy_add.9f=sas_phymap_create.9f
+s usr/share/man/man9f/sas_phymap_phy_rem.9f=sas_phymap_create.9f
+s usr/share/man/man9f/sas_phymap_phys_free.9f=sas_phymap_lookup_ua.9f
+s usr/share/man/man9f/sas_phymap_phys_next.9f=sas_phymap_lookup_ua.9f
+s usr/share/man/man9f/sas_phymap_ua2phys.9f=sas_phymap_lookup_ua.9f
+s usr/share/man/man9f/sas_phymap_ua_free.9f=sas_phymap_lookup_ua.9f
+s usr/share/man/man9f/sas_phymap_uahasphys.9f=sas_phymap_lookup_ua.9f
 f usr/share/man/man9f/scsi_abort.9f 0444 root bin
+f usr/share/man/man9f/scsi_address_device.9f 0444 root bin
 f usr/share/man/man9f/scsi_alloc_consistent_buf.9f 0444 root bin
 f usr/share/man/man9f/scsi_cname.9f 0444 root bin
 f usr/share/man/man9f/scsi_destroy_pkt.9f 0444 root bin
+s usr/share/man/man9f/scsi_device_hba_private_get.9f=scsi_address_device.9f
+s usr/share/man/man9f/scsi_device_hba_private_set.9f=scsi_address_device.9f
+s usr/share/man/man9f/scsi_device_unit_address.9f=scsi_address_device.9f
 s usr/share/man/man9f/scsi_dmafree.9f=scsi_dmaget.9f
 f usr/share/man/man9f/scsi_dmaget.9f 0444 root bin
 s usr/share/man/man9f/scsi_dname.9f=scsi_cname.9f
@@ -20193,6 +20245,7 @@ f usr/share/man/man9f/scsi_errmsg.9f 0444 root bin
 f usr/share/man/man9f/scsi_ext_sense_fields.9f 0444 root bin
 f usr/share/man/man9f/scsi_find_sense_descr.9f 0444 root bin
 f usr/share/man/man9f/scsi_free_consistent_buf.9f 0444 root bin
+s usr/share/man/man9f/scsi_free_wwnstr.9f=scsi_wwnstr_to_wwn.9f
 f usr/share/man/man9f/scsi_get_device_type_scsi_options.9f 0444 root bin
 f usr/share/man/man9f/scsi_get_device_type_string.9f 0444 root bin
 s usr/share/man/man9f/scsi_hba_attach.9f=scsi_hba_attach_setup.9f
@@ -20200,11 +20253,26 @@ f usr/share/man/man9f/scsi_hba_attach_setup.9f 0444 root bin
 s usr/share/man/man9f/scsi_hba_detach.9f=scsi_hba_attach_setup.9f
 s usr/share/man/man9f/scsi_hba_fini.9f=scsi_hba_init.9f
 f usr/share/man/man9f/scsi_hba_init.9f 0444 root bin
+f usr/share/man/man9f/scsi_hba_iport_exist.9f 0444 root bin
+s usr/share/man/man9f/scsi_hba_iport_find.9f=scsi_hba_iport_exist.9f
+f usr/share/man/man9f/scsi_hba_iport_register.9f 0444 root bin
+f usr/share/man/man9f/scsi_hba_iport_unit_address.9f 0444 root bin
+f usr/share/man/man9f/scsi_hba_iportmap_create.9f 0444 root bin
+s usr/share/man/man9f/scsi_hba_iportmap_destroy.9f=scsi_hba_iportmap_create.9f
+s usr/share/man/man9f/scsi_hba_iportmap_iport_add.9f=scsi_hba_iportmap_create.9f
+s usr/share/man/man9f/scsi_hba_iportmap_iport_remove.9f=scsi_hba_iportmap_create.9f
 f usr/share/man/man9f/scsi_hba_lookup_capstr.9f 0444 root bin
 f usr/share/man/man9f/scsi_hba_pkt_alloc.9f 0444 root bin
 f usr/share/man/man9f/scsi_hba_pkt_comp.9f 0444 root bin
 s usr/share/man/man9f/scsi_hba_pkt_free.9f=scsi_hba_pkt_alloc.9f
 f usr/share/man/man9f/scsi_hba_probe.9f 0444 root bin
+f usr/share/man/man9f/scsi_hba_tgtmap_create.9f 0444 root bin
+s usr/share/man/man9f/scsi_hba_tgtmap_set_add.9f=scsi_hba_tgtmap_create.9f
+s usr/share/man/man9f/scsi_hba_tgtmap_set_begin.9f=scsi_hba_tgtmap_create.9f
+s usr/share/man/man9f/scsi_hba_tgtmap_set_end.9f=scsi_hba_tgtmap_create.9f
+s usr/share/man/man9f/scsi_hba_tgtmap_set_flush.9f=scsi_hba_tgtmap_create.9f
+s usr/share/man/man9f/scsi_hba_tgtmap_tgt_add.9f=scsi_hba_tgtmap_create.9f
+s usr/share/man/man9f/scsi_hba_tgtmap_tgt_remove.9f=scsi_hba_tgtmap_create.9f
 f usr/share/man/man9f/scsi_hba_tran_alloc.9f 0444 root bin
 s usr/share/man/man9f/scsi_hba_tran_free.9f=scsi_hba_tran_alloc.9f
 f usr/share/man/man9f/scsi_ifgetcap.9f 0444 root bin
@@ -20235,6 +20303,8 @@ f usr/share/man/man9f/scsi_unprobe.9f 0444 root bin
 s usr/share/man/man9f/scsi_unslave.9f=scsi_unprobe.9f
 f usr/share/man/man9f/scsi_validate_sense.9f 0444 root bin
 f usr/share/man/man9f/scsi_vu_errmsg.9f 0444 root bin
+s usr/share/man/man9f/scsi_wwn_to_wwnstr.9f=scsi_wwnstr_to_wwn.9f
+f usr/share/man/man9f/scsi_wwnstr_to_wwn.9f 0444 root bin
 s usr/share/man/man9f/sema_destroy.9f=semaphore.9f
 s usr/share/man/man9f/sema_init.9f=semaphore.9f
 s usr/share/man/man9f/sema_p.9f=semaphore.9f

@@ -231,6 +231,7 @@ static void lxpr_read_sys_fs_inotify_max_user_instances(lxpr_node_t *,
     lxpr_uiobuf_t *);
 static void lxpr_read_sys_fs_inotify_max_user_watches(lxpr_node_t *,
     lxpr_uiobuf_t *);
+static void lxpr_read_sys_fs_pipe_max(lxpr_node_t *, lxpr_uiobuf_t *);
 static void lxpr_read_sys_kernel_caplcap(lxpr_node_t *, lxpr_uiobuf_t *);
 static void lxpr_read_sys_kernel_corepatt(lxpr_node_t *, lxpr_uiobuf_t *);
 static void lxpr_read_sys_kernel_hostname(lxpr_node_t *, lxpr_uiobuf_t *);
@@ -263,6 +264,8 @@ static void lxpr_read_sys_vm_overcommit_mem(lxpr_node_t *, lxpr_uiobuf_t *);
 static void lxpr_read_sys_vm_swappiness(lxpr_node_t *, lxpr_uiobuf_t *);
 
 static int lxpr_write_pid_loginuid(lxpr_node_t *, uio_t *, cred_t *,
+    caller_context_t *);
+static int lxpr_write_sys_fs_pipe_max(lxpr_node_t *, uio_t *, cred_t *,
     caller_context_t *);
 static int lxpr_write_sys_net_core_somaxc(lxpr_node_t *, uio_t *, cred_t *,
     caller_context_t *);
@@ -517,6 +520,7 @@ static lxpr_dirent_t sys_fsdir[] = {
 	{ LXPR_SYS_FS_FILEMAX,		"file-max" },
 	{ LXPR_SYS_FS_FILENR,		"file-nr" },
 	{ LXPR_SYS_FS_INOTIFYDIR,	"inotify" },
+	{ LXPR_SYS_FS_PIPE_MAX,		"pipe-max-size" },
 };
 
 #define	SYS_FSDIRFILES (sizeof (sys_fsdir) / sizeof (sys_fsdir[0]))
@@ -640,6 +644,7 @@ static wftab_t wr_tab[] = {
 	{LXPR_SYS_KERNEL_COREPATT, lxpr_write_sys_kernel_corepatt},
 	{LXPR_SYS_KERNEL_SHMALL, NULL},
 	{LXPR_SYS_KERNEL_SHMMAX, NULL},
+	{LXPR_SYS_FS_PIPE_MAX, lxpr_write_sys_fs_pipe_max},
 	{LXPR_SYS_NET_CORE_SOMAXCON, lxpr_write_sys_net_core_somaxc},
 	{LXPR_SYS_NET_IPV4_IP_LPORT_RANGE,
 	    lxpr_write_sys_net_ipv4_ip_lport_range},
@@ -859,6 +864,7 @@ static void (*lxpr_read_function[LXPR_NFILES])() = {
 	lxpr_read_sys_fs_inotify_max_queued_events, /* max_queued_events */
 	lxpr_read_sys_fs_inotify_max_user_instances, /* max_user_instances */
 	lxpr_read_sys_fs_inotify_max_user_watches, /* max_user_watches */
+	lxpr_read_sys_fs_pipe_max,	/* /proc/sys/fs/pipe-max-size */
 	lxpr_read_invalid,		/* /proc/sys/kernel	*/
 	lxpr_read_sys_kernel_caplcap,	/* /proc/sys/kernel/cap_last_cap */
 	lxpr_read_sys_kernel_corepatt,	/* /proc/sys/kernel/core_pattern */
@@ -1007,6 +1013,7 @@ static vnode_t *(*lxpr_lookup_function[LXPR_NFILES])() = {
 	lxpr_lookup_not_a_dir,		/* .../inotify/max_queued_events */
 	lxpr_lookup_not_a_dir,		/* .../inotify/max_user_instances */
 	lxpr_lookup_not_a_dir,		/* .../inotify/max_user_watches */
+	lxpr_lookup_not_a_dir,		/* /proc/sys/fs/pipe-max-size */
 	lxpr_lookup_sys_kerneldir,	/* /proc/sys/kernel	*/
 	lxpr_lookup_not_a_dir,		/* /proc/sys/kernel/cap_last_cap */
 	lxpr_lookup_not_a_dir,		/* /proc/sys/kernel/core_pattern */
@@ -1155,6 +1162,7 @@ static int (*lxpr_readdir_function[LXPR_NFILES])() = {
 	lxpr_readdir_not_a_dir,		/* .../inotify/max_queued_events */
 	lxpr_readdir_not_a_dir,		/* .../inotify/max_user_instances */
 	lxpr_readdir_not_a_dir,		/* .../inotify/max_user_watches	*/
+	lxpr_readdir_not_a_dir,		/* /proc/sys/fs/pipe-max-size */
 	lxpr_readdir_sys_kerneldir,	/* /proc/sys/kernel	*/
 	lxpr_readdir_not_a_dir,		/* /proc/sys/kernel/cap_last_cap */
 	lxpr_readdir_not_a_dir,		/* /proc/sys/kernel/core_pattern */
@@ -4460,6 +4468,23 @@ lxpr_read_sys_fs_inotify_max_user_watches(lxpr_node_t *lxpnp,
 
 /* ARGSUSED */
 static void
+lxpr_read_sys_fs_pipe_max(lxpr_node_t *lxpnp, lxpr_uiobuf_t *uiobuf)
+{
+	lx_zone_data_t *lxzd = ztolxzd(LXPTOZ(lxpnp));
+	uint_t pipe_max;
+
+	ASSERT(lxpnp->lxpr_type == LXPR_SYS_FS_PIPE_MAX);
+	ASSERT(lxzd != NULL);
+
+	mutex_enter(&lxzd->lxzd_lock);
+	pipe_max = lxzd->lxzd_pipe_max_sz;
+	mutex_exit(&lxzd->lxzd_lock);
+
+	lxpr_uiobuf_printf(uiobuf, "%u\n", pipe_max);
+}
+
+/* ARGSUSED */
+static void
 lxpr_read_sys_kernel_caplcap(lxpr_node_t *lxpnp, lxpr_uiobuf_t *uiobuf)
 {
 	ASSERT(lxpnp->lxpr_type == LXPR_SYS_KERNEL_CAPLCAP);
@@ -5155,6 +5180,8 @@ typedef enum {
 	LXCS_CPUID1_ECX,
 	LXCS_CPUID1_EDX,
 	LXCS_CPUID7_EBX,
+	LXCS_CPUID7_ECX,
+	LXCS_CPUID7_EDX,
 	LXCS_CPUIDD1_EAX,
 	LXCS_CPUIDX1_ECX,
 	LXCS_CPUIDX1_EDX,
@@ -5348,37 +5375,55 @@ lx_cpuinfo_mapping_t lx_cpuinfo_mappings[] = {
 	{ LXCS_CPUID7_EBX, 0x00000001,			"fsgsbase" },
 	{ LXCS_CPUID7_EBX, 0x00000002,			"tsc_adjust" },
 	{ LXCS_CPUID7_EBX, CPUID_INTC_EBX_7_0_BMI1,	"bmi1" },
-	{ LXCS_CPUID7_EBX, 0x00000010,			"hle" },
+	{ LXCS_CPUID7_EBX, CPUID_INTC_EBX_7_0_HLE,	"hle" },
 	{ LXCS_CPUID7_EBX, CPUID_INTC_EBX_7_0_AVX2,	"avx2" },
 	{ LXCS_CPUID7_EBX, CPUID_INTC_EBX_7_0_SMEP,	"smep" },
 	{ LXCS_CPUID7_EBX, CPUID_INTC_EBX_7_0_BMI2,	"bmi2" },
 	{ LXCS_CPUID7_EBX, 0x00000200,			"erms" },
 	{ LXCS_CPUID7_EBX, 0x00000400,			"invpcid" },
 	{ LXCS_CPUID7_EBX, 0x00000800,			"rtm" },
-	{ LXCS_CPUID7_EBX, 0x00000000,			"cqm" },
-	{ LXCS_CPUID7_EBX, 0x00004000,			"mpx" },
-	{ LXCS_CPUID7_EBX, 0x00010000,			"avx512f" },
+	{ LXCS_CPUID7_EBX, 0x00001000,			"cqm" },
+	{ LXCS_CPUID7_EBX, CPUID_INTC_EBX_7_0_MPX,	"mpx" },
+	{ LXCS_CPUID7_EBX, CPUID_INTC_EBX_7_0_AVX512F,	"avx512f" },
+	{ LXCS_CPUID7_EBX, CPUID_INTC_EBX_7_0_AVX512DQ,	"avx512dq" },
 
 	{ LXCS_CPUID7_EBX, CPUID_INTC_EBX_7_0_RDSEED,	"rdseed" },
 	{ LXCS_CPUID7_EBX, CPUID_INTC_EBX_7_0_ADX,	"adx" },
 	{ LXCS_CPUID7_EBX, CPUID_INTC_EBX_7_0_SMAP,	"smap" },
+	{ LXCS_CPUID7_EBX, CPUID_INTC_EBX_7_0_AVX512IFMA, "avx512ifma" },
 
 	{ LXCS_CPUID7_EBX, 0x00400000,			"pcommit" },
 	{ LXCS_CPUID7_EBX, 0x00800000,			"clflushopt" },
-	{ LXCS_CPUID7_EBX, 0x01000000,			"clwb" },
+	{ LXCS_CPUID7_EBX, CPUID_INTC_EBX_7_0_CLWB,	"clwb" },
 
-	{ LXCS_CPUID7_EBX, 0x04000000,			"avx512pf" },
-	{ LXCS_CPUID7_EBX, 0x08000000,			"avx512er" },
-	{ LXCS_CPUID7_EBX, 0x10000000,			"avx512cd" },
-	{ LXCS_CPUID7_EBX, 0x20000000,			"sha_ni" },
+	{ LXCS_CPUID7_EBX, CPUID_INTC_EBX_7_0_AVX512PF,	"avx512pf" },
+	{ LXCS_CPUID7_EBX, CPUID_INTC_EBX_7_0_AVX512ER,	"avx512er" },
+	{ LXCS_CPUID7_EBX, CPUID_INTC_EBX_7_0_AVX512CD,	"avx512cd" },
+	{ LXCS_CPUID7_EBX, CPUID_INTC_EBX_7_0_SHA,	"sha_ni" },
+
+	{ LXCS_CPUID7_EBX, CPUID_INTC_EBX_7_0_AVX512BW,	"avx512bw" },
+	{ LXCS_CPUID7_EBX, CPUID_INTC_EBX_7_0_AVX512VL,	"avx512vl" },
+
+	/*
+	 * Intel-defined CPU features, CPUID level 0x00000007:0 (ecx)
+	 */
+	{ LXCS_CPUID7_ECX, CPUID_INTC_ECX_7_0_AVX512VBMI, "avx512vbmi" },
+	{ LXCS_CPUID7_ECX, CPUID_INTC_ECX_7_0_AVX512VPOPCDQ,
+	    "avx512_vpopcntdq" },
+
+	/*
+	 * Intel-defined CPU features, CPUID level 0x00000007:0 (edx)
+	 */
+	{ LXCS_CPUID7_EDX, CPUID_INTC_EDX_7_0_AVX5124NNIW, "avx512_4nniw" },
+	{ LXCS_CPUID7_EDX, CPUID_INTC_EDX_7_0_AVX5124FMAPS, "avx512_4fmaps" },
 
 	/*
 	 * Extended state features, CPUID level 0x0000000d:1 (eax)
 	 */
-	{ LXCS_CPUIDD1_EAX, 0x00000001,			"xsaveopt" },
-	{ LXCS_CPUIDD1_EAX, 0x00000002,			"xsavec" },
+	{ LXCS_CPUIDD1_EAX, CPUID_INTC_EAX_D_1_XSAVEOPT, "xsaveopt" },
+	{ LXCS_CPUIDD1_EAX, CPUID_INTC_EAX_D_1_XSAVEC,	"xsavec" },
 	{ LXCS_CPUIDD1_EAX, 0x00000004,			"xgetbv1" },
-	{ LXCS_CPUIDD1_EAX, 0x00000008,			"xsaves" },
+	{ LXCS_CPUIDD1_EAX, CPUID_INTC_EAX_D_1_XSAVES,	"xsaves" },
 
 	/*
 	 * Skipped:
@@ -5456,6 +5501,8 @@ lxpr_read_cpuinfo(lxpr_node_t *lxpnp, lxpr_uiobuf_t *uiobuf)
 			cpr.cp_eax = 7;
 			(void) cpuid_insn(cp, &cpr);
 			cpuid_res[LXCS_CPUID7_EBX] = cpr.cp_ebx;
+			cpuid_res[LXCS_CPUID7_ECX] = cpr.cp_ecx;
+			cpuid_res[LXCS_CPUID7_EDX] = cpr.cp_edx;
 		}
 		if (maxeax >= 0xd) {
 			cpr.cp_eax = 0xd;
@@ -7248,6 +7295,59 @@ lxpr_write_sys_net_ipv4_tcp_winscale(lxpr_node_t *lxpnp, struct uio *uio,
 	ASSERT(lxpnp->lxpr_type == LXPR_SYS_NET_IPV4_TCP_WINSCALE);
 	return (lxpr_write_tcp_property(lxpnp, uio, cr, ct, "_wscale_always",
 	    NULL));
+}
+
+/* ARGSUSED */
+static int
+lxpr_write_sys_fs_pipe_max(lxpr_node_t *lxpnp, struct uio *uio,
+    struct cred *cr, caller_context_t *ct)
+{
+	int error;
+	size_t olen;
+	char val[16];	/* big enough for a uint numeric string */
+	char *ep;
+	long u;
+	size_t size;
+	lx_zone_data_t *lxzd = ztolxzd(LXPTOZ(lxpnp));
+
+	ASSERT(lxpnp->lxpr_type == LXPR_SYS_FS_PIPE_MAX);
+
+	if (uio->uio_loffset != 0)
+		return (EINVAL);
+
+	if (uio->uio_resid == 0)
+		return (0);
+
+	olen = uio->uio_resid;
+	if (olen > sizeof (val) - 1)
+		return (EINVAL);
+
+	bzero(val, sizeof (val));
+	error = uiomove(val, olen, UIO_WRITE, uio);
+	if (error != 0)
+		return (error);
+
+	if (lxpr_tokenize_num(val, &u, &ep) != 0)
+		return (EINVAL);
+	if (*ep != '\0')
+		return (EINVAL);
+
+	/*
+	 * Bound to PAGESIZE <= input <= lx_pipe_max_limit, then round to the
+	 * nearest page.  Linux is a little more picky, rounding to the nearest
+	 * power-of-two pages.  Such strengthened behavior can be added later
+	 * if needed.
+	 */
+	size = (size_t)u;
+	size = P2ROUNDUP(MIN(MAX(PAGESIZE, size), lx_pipe_max_limit), PAGESIZE);
+
+	ASSERT(size <= lx_pipe_max_limit);
+
+	mutex_enter(&lxzd->lxzd_lock);
+	lxzd->lxzd_pipe_max_sz = size;
+	mutex_exit(&lxzd->lxzd_lock);
+
+	return (0);
 }
 
 /* ARGSUSED */

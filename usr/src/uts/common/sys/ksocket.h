@@ -34,6 +34,7 @@ extern "C" {
 /* Opaque kernel socket type */
 typedef struct __ksocket *ksocket_t;
 struct nmsghdr;
+struct msgb;	/* avoiding sys/stream.h here */
 
 /* flag bit for each Callback Event */
 #define	KSOCKET_CB_CONNECTED		0x00000001
@@ -97,8 +98,8 @@ extern int	ksocket_sendto(ksocket_t, void *, size_t, int,
 		    struct sockaddr *, socklen_t, size_t *, struct cred *);
 extern int 	ksocket_sendmsg(ksocket_t, struct nmsghdr *, int, size_t *,
 		    struct cred *);
-extern int	ksocket_sendmblk(ksocket_t, struct nmsghdr *, int, mblk_t **,
-		    struct cred *);
+extern int	ksocket_sendmblk(ksocket_t, struct nmsghdr *, int,
+		    struct msgb **, struct cred *);
 extern int 	ksocket_recv(ksocket_t, void *, size_t, int, size_t *,
 		    struct cred *);
 extern int	ksocket_recvfrom(ksocket_t, void *, size_t, int,
@@ -122,7 +123,8 @@ extern int 	ksocket_close(ksocket_t, struct cred *);
 extern void	ksocket_hold(ksocket_t);
 extern void	ksocket_rele(ksocket_t);
 
-typedef boolean_t (*ksocket_krecv_f)(ksocket_t, mblk_t *, size_t, int, void *);
+typedef boolean_t (*ksocket_krecv_f)(ksocket_t, struct msgb *, size_t, int,
+		    void *);
 extern int	ksocket_krecv_set(ksocket_t, ksocket_krecv_f, void *);
 extern void	ksocket_krecv_unblock(ksocket_t);
 

@@ -183,11 +183,12 @@ static char *x86_feature_names[NUM_X86_FEATURES] = {
 	"avx512er",
 	"avx512cd",
 	"avx512bw",
+	"avx512vl",
 	"avx512fma",
 	"avx512vbmi",
-	"avx512vpcdq",
-	"avx512nniw",
-	"avx512fmaps",
+	"avx512_vpopcntdq",
+	"avx512_4vnniw",
+	"avx512_4fmaps",
 	"xsaveopt",
 	"xsavec",
 	"xsaves",
@@ -364,6 +365,7 @@ struct cpuid_info {
 	char cpi_brandstr[49];		/* fn 0x8000000[234] */
 	uint8_t cpi_pabits;		/* fn 0x80000006: %eax */
 	uint8_t	cpi_vabits;		/* fn 0x80000006: %eax */
+	uint8_t cpi_fp_amd_save;	/* AMD: FP error pointer save rqd. */
 	struct	cpuid_regs cpi_extd[NMAX_CPI_EXTD];	/* 0x800000XX */
 
 	id_t cpi_coreid;		/* same coreid => strands share core */
@@ -975,16 +977,12 @@ setup_xfem(void)
 
 	/*
 	 * TBD:
-	 * Enabling MPX and AVX512 implies that xsave_state is large enough
-	 * to hold the MPX state and the full AVX512 state, or that we're
-	 * supporting xsavec or xsaveopt.
-	 *
 	 * if (is_x86_feature(x86_featureset, X86FSET_MPX))
 	 *	flags |= XFEATURE_MPX;
-	 *
-	 * if (is_x86_feature(x86_featureset, X86FSET_AVX512F))
-	 *	flags |= XFEATURE_AVX512;
 	 */
+
+	if (is_x86_feature(x86_featureset, X86FSET_AVX512F))
+		flags |= XFEATURE_AVX512;
 
 	set_xcr(XFEATURE_ENABLED_MASK, flags);
 
@@ -1483,15 +1481,19 @@ cpuid_pass1(cpu_t *cpu, uchar_t *featureset)
 				    CPUID_INTC_EBX_7_0_AVX512BW)
 					add_x86_feature(featureset,
 					    X86FSET_AVX512BW);
+				if (cpi->cpi_std[7].cp_ebx &
+				    CPUID_INTC_EBX_7_0_AVX512VL)
+					add_x86_feature(featureset,
+					    X86FSET_AVX512VL);
 
 				if (cpi->cpi_std[7].cp_ecx &
 				    CPUID_INTC_ECX_7_0_AVX512VBMI)
 					add_x86_feature(featureset,
 					    X86FSET_AVX512VBMI);
 				if (cpi->cpi_std[7].cp_ecx &
-				    CPUID_INTC_ECX_7_0_AVX512VPCDQ)
+				    CPUID_INTC_ECX_7_0_AVX512VPOPCDQ)
 					add_x86_feature(featureset,
-					    X86FSET_AVX512VPCDQ);
+					    X86FSET_AVX512VPOPCDQ);
 
 				if (cpi->cpi_std[7].cp_edx &
 				    CPUID_INTC_EDX_7_0_AVX5124NNIW)
@@ -1881,6 +1883,21 @@ cpuid_pass1(cpu_t *cpu, uchar_t *featureset)
 	cpi->cpi_socket = _cpuid_skt(cpi->cpi_vendor, cpi->cpi_family,
 	    cpi->cpi_model, cpi->cpi_step);
 
+	/*
+	 * While we're here, check for the AMD "Error Pointer Zero/Restore"
+	 * feature. This can be used to setup the FP save handlers
+	 * appropriately.
+	 */
+	if (cpi->cpi_vendor == X86_VENDOR_AMD) {
+		if (cpi->cpi_xmaxeax >= 0x80000008 &&
+		    cpi->cpi_extd[8].cp_ebx & CPUID_AMD_EBX_ERR_PTR_ZERO) {
+			/* Special handling for AMD FP not necessary. */
+			cpi->cpi_fp_amd_save = 0;
+		} else {
+			cpi->cpi_fp_amd_save = 1;
+		}
+	}
+
 pass1_done:
 	cpi->cpi_pass = 1;
 }
@@ -2256,11 +2273,13 @@ cpuid_pass2(cpu_t *cpu)
 					remove_x86_feature(x86_featureset,
 					    X86FSET_AVX512BW);
 					remove_x86_feature(x86_featureset,
+					    X86FSET_AVX512VL);
+					remove_x86_feature(x86_featureset,
 					    X86FSET_AVX512FMA);
 					remove_x86_feature(x86_featureset,
 					    X86FSET_AVX512VBMI);
 					remove_x86_feature(x86_featureset,
-					    X86FSET_AVX512VPCDQ);
+					    X86FSET_AVX512VPOPCDQ);
 					remove_x86_feature(x86_featureset,
 					    X86FSET_AVX512NNIW);
 					remove_x86_feature(x86_featureset,
@@ -3019,17 +3038,47 @@ cpuid_pass4(cpu_t *cpu, uint_t *hwcap_out)
 			hwcap_flags |= AV_386_XSAVE;
 
 			if (*ecx & CPUID_INTC_ECX_AVX) {
+				uint32_t *ecx_7 = &CPI_FEATURES_7_0_ECX(cpi);
+				uint32_t *edx_7 = &CPI_FEATURES_7_0_EDX(cpi);
+
 				hwcap_flags |= AV_386_AVX;
 				if (*ecx & CPUID_INTC_ECX_F16C)
 					hwcap_flags_2 |= AV_386_2_F16C;
 				if (*ecx & CPUID_INTC_ECX_FMA)
 					hwcap_flags_2 |= AV_386_2_FMA;
+
 				if (*ebx & CPUID_INTC_EBX_7_0_BMI1)
 					hwcap_flags_2 |= AV_386_2_BMI1;
 				if (*ebx & CPUID_INTC_EBX_7_0_BMI2)
 					hwcap_flags_2 |= AV_386_2_BMI2;
 				if (*ebx & CPUID_INTC_EBX_7_0_AVX2)
 					hwcap_flags_2 |= AV_386_2_AVX2;
+				if (*ebx & CPUID_INTC_EBX_7_0_AVX512F)
+					hwcap_flags_2 |= AV_386_2_AVX512F;
+				if (*ebx & CPUID_INTC_EBX_7_0_AVX512DQ)
+					hwcap_flags_2 |= AV_386_2_AVX512DQ;
+				if (*ebx & CPUID_INTC_EBX_7_0_AVX512IFMA)
+					hwcap_flags_2 |= AV_386_2_AVX512IFMA;
+				if (*ebx & CPUID_INTC_EBX_7_0_AVX512PF)
+					hwcap_flags_2 |= AV_386_2_AVX512PF;
+				if (*ebx & CPUID_INTC_EBX_7_0_AVX512ER)
+					hwcap_flags_2 |= AV_386_2_AVX512ER;
+				if (*ebx & CPUID_INTC_EBX_7_0_AVX512CD)
+					hwcap_flags_2 |= AV_386_2_AVX512CD;
+				if (*ebx & CPUID_INTC_EBX_7_0_AVX512BW)
+					hwcap_flags_2 |= AV_386_2_AVX512BW;
+				if (*ebx & CPUID_INTC_EBX_7_0_AVX512VL)
+					hwcap_flags_2 |= AV_386_2_AVX512VL;
+
+				if (*ecx_7 & CPUID_INTC_ECX_7_0_AVX512VBMI)
+					hwcap_flags_2 |= AV_386_2_AVX512VBMI;
+				if (*ecx_7 & CPUID_INTC_ECX_7_0_AVX512VPOPCDQ)
+					hwcap_flags_2 |= AV_386_2_AVX512VPOPCDQ;
+
+				if (*edx_7 & CPUID_INTC_EDX_7_0_AVX5124NNIW)
+					hwcap_flags_2 |= AV_386_2_AVX512_4NNIW;
+				if (*edx_7 & CPUID_INTC_EDX_7_0_AVX5124FMAPS)
+					hwcap_flags_2 |= AV_386_2_AVX512_4FMAPS;
 			}
 		}
 		if (*ecx & CPUID_INTC_ECX_VMX)
@@ -3537,6 +3586,22 @@ cpuid_get_xsave_size()
 {
 	return (MAX(cpuid_info0.cpi_xsave.xsav_max_size,
 	    sizeof (struct xsave_state)));
+}
+
+/*
+ * Return true if the CPUs on this system require 'pointer clearing' for the
+ * floating point error pointer exception handling. In the past, this has been
+ * true for all AMD K7 & K8 CPUs, although newer AMD CPUs have been changed to
+ * behave the same as Intel. This is checked via the CPUID_AMD_EBX_ERR_PTR_ZERO
+ * feature bit and is reflected in the cpi_fp_amd_save member. Once this has
+ * been confirmed on hardware which supports that feature, this test should be
+ * narrowed. In the meantime, we always follow the existing behavior on any AMD
+ * CPU.
+ */
+boolean_t
+cpuid_need_fp_excp_handling()
+{
+	return (cpuid_info0.cpi_vendor == X86_VENDOR_AMD);
 }
 
 /*
