@@ -22,6 +22,7 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  * Copyright (c) 2012 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2017 Joyent, Inc.
  */
 
 #ifndef	_INET_SADB_H
@@ -247,7 +248,7 @@ typedef struct ipsa_s {
 	uint32_t ipsa_spi;	/* Security parameters index. */
 	uint32_t ipsa_replay;	/* Highest seen replay value for this SA. */
 	uint32_t ipsa_kmp;	/* key management proto */
-	uint32_t ipsa_kmc;	/* key management cookie */
+	uint64_t ipsa_kmc;	/* key management cookie (now 64-bit) */
 
 	boolean_t ipsa_haspeer;		/* Has peer in another table. */
 
@@ -568,15 +569,13 @@ typedef struct sadb_s
 } sadb_t;
 
 /*
- * A pair of SADB's (one for v4, one for v6), and related state (including
- * acquire callbacks).
+ * A pair of SADB's (one for v4, one for v6), and related state.
  */
 
 typedef struct sadbp_s
 {
 	uint32_t	s_satype;
 	uint32_t	*s_acquire_timeout;
-	void 		(*s_acqfn)(ipsacq_t *, mblk_t *, netstack_t *);
 	sadb_t		s_v4;
 	sadb_t		s_v6;
 	uint32_t	s_addflags;
@@ -692,7 +691,8 @@ struct ipsa_query_s {
 	sa_family_t af;
 	uint32_t *srcaddr, *dstaddr;
 	uint32_t ifindex;
-	uint32_t kmc, kmp;
+	uint32_t kmp;
+	uint64_t kmc;
 	char *didstr, *sidstr;
 	uint16_t didtype, sidtype;
 	sadbp_t *spp;
@@ -773,7 +773,6 @@ void cbc_params_init(ipsa_t *, uchar_t *, uint_t, uchar_t *, ipsa_cm_mech_t *,
 
 void sadb_destroy_acquire(ipsacq_t *, netstack_t *);
 struct ipsec_stack;
-mblk_t *sadb_setup_acquire(ipsacq_t *, uint8_t, struct ipsec_stack *);
 ipsa_t *sadb_getspi(keysock_in_t *, uint32_t, int *, netstack_t *, uint_t);
 void sadb_in_acquire(sadb_msg_t *, sadbp_t *, queue_t *, netstack_t *);
 boolean_t sadb_replay_check(ipsa_t *, uint32_t);

@@ -1,5 +1,5 @@
 /*	Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T	*/
-/*	  All Rights Reserved  	*/
+/*	  All Rights Reserved	*/
 
 
 /*
@@ -247,6 +247,9 @@ struct itimerval32 {
 
 #define	MSEC2NSEC(m)	((hrtime_t)(m) * (NANOSEC / MILLISEC))
 #define	NSEC2MSEC(n)	((n) / (NANOSEC / MILLISEC))
+
+#define	USEC2NSEC(m)    ((hrtime_t)(m) * (NANOSEC / MICROSEC))
+#define	NSEC2USEC(n)    ((n) / (NANOSEC / MICROSEC))
 
 #define	NSEC2SEC(n)	((n) / (NANOSEC / SEC))
 #define	SEC2NSEC(m)	((hrtime_t)(m) * (NANOSEC / SEC))

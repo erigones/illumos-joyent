@@ -562,7 +562,7 @@ lx_sysent_t lx_sysent32[] = {
 	{"rmdir",	NULL,			0,		1}, /* 40 */
 	{"dup",		lx_dup,			0,		1}, /* 41 */
 	{"pipe",	lx_pipe,		0,		1}, /* 42 */
-	{"times",	NULL,			0,		1}, /* 43 */
+	{"times",	lx_times,		0,		1}, /* 43 */
 	{"prof",	NULL,			NOSYS_OBSOLETE,	0}, /* 44 */
 	{"brk",		lx_brk,			0,		1}, /* 45 */
 	{"setgid16",	lx_setgid16,		0,		1}, /* 46 */
@@ -570,7 +570,7 @@ lx_sysent_t lx_sysent32[] = {
 	{"signal",	NULL,			0,		2}, /* 48 */
 	{"geteuid16",	lx_geteuid16,		0,		0}, /* 49 */
 	{"getegid16",	lx_getegid16,		0,		0}, /* 50 */
-	{"acct",	NULL,			NOSYS_NO_EQUIV,	0}, /* 51 */
+	{"acct",	lx_acct,		0,		1}, /* 51 */
 	{"umount2",	lx_umount2,		0,		2}, /* 52 */
 	{"lock",	NULL,			NOSYS_OBSOLETE,	0}, /* 53 */
 	{"ioctl",	lx_ioctl,		0,		3}, /* 54 */
@@ -606,7 +606,7 @@ lx_sysent_t lx_sysent32[] = {
 	{"oldlstat",	NULL,			NOSYS_OBSOLETE,	0}, /* 84 */
 	{"readlink",	lx_readlink,		0,		3}, /* 85 */
 	{"uselib",	NULL,			NOSYS_KERNEL,	0}, /* 86 */
-	{"swapon",	NULL,			NOSYS_KERNEL,	0}, /* 87 */
+	{"swapon",	lx_swapon,		0,		2}, /* 87 */
 	{"reboot",	lx_reboot,		0,		4}, /* 88 */
 	{"readdir",	NULL,			0,		3}, /* 89 */
 	{"mmap",	NULL,			0,		6}, /* 90 */
@@ -634,7 +634,7 @@ lx_sysent_t lx_sysent32[] = {
 	{"idle",	NULL,			NOSYS_NO_EQUIV,	0}, /* 112 */
 	{"vm86old",	NULL,			NOSYS_OBSOLETE,	0}, /* 113 */
 	{"wait4",	lx_wait4,		0,		4}, /* 114 */
-	{"swapoff",	NULL,			NOSYS_KERNEL,	0}, /* 115 */
+	{"swapoff",	lx_swapoff,		0,		1}, /* 115 */
 	{"sysinfo",	lx_sysinfo32,		0,		1}, /* 116 */
 	{"ipc",		NULL,			0,		5}, /* 117 */
 	{"fsync",	NULL,			0,		1}, /* 118 */
@@ -833,10 +833,10 @@ lx_sysent_t lx_sysent32[] = {
 	{"faccessat",	lx_faccessat,		0,		4}, /* 307 */
 	{"pselect6",	lx_pselect,		LX_SYS_EBPARG6,	6}, /* 308 */
 	{"ppoll",	lx_ppoll,		0,		5}, /* 309 */
-	{"unshare",	NULL,			NOSYS_NULL,	0}, /* 310 */
+	{"unshare",	lx_unshare,		0,		1}, /* 310 */
 	{"set_robust_list", lx_set_robust_list,	0,		2}, /* 311 */
 	{"get_robust_list", lx_get_robust_list,	0,		3}, /* 312 */
-	{"splice",	NULL,			NOSYS_NULL,	0}, /* 313 */
+	{"splice",	lx_splice,		LX_SYS_EBPARG6,	6}, /* 313 */
 	{"sync_file_range", lx_sync_file_range,	0,		4}, /* 314 */
 	{"tee",		NULL,			NOSYS_NULL,	0}, /* 315 */
 	{"vmsplice",	NULL,			NOSYS_NULL,	0}, /* 316 */
@@ -990,7 +990,7 @@ lx_sysent_t lx_sysent64[] = {
 	{"getrlimit",	lx_getrlimit,		0,		2}, /* 97 */
 	{"getrusage",	lx_getrusage,		0,		2}, /* 98 */
 	{"sysinfo",	lx_sysinfo64,		0,		1}, /* 99 */
-	{"times",	NULL,			0,		1}, /* 100 */
+	{"times",	lx_times,		0,		1}, /* 100 */
 	{"ptrace",	lx_ptrace,		0,		4}, /* 101 */
 	{"getuid",	lx_getuid,		0,		0}, /* 102 */
 	{"syslog",	lx_syslog,		0,		3}, /* 103 */
@@ -1053,12 +1053,12 @@ lx_sysent_t lx_sysent64[] = {
 	{"setrlimit",	lx_setrlimit,		0,		2}, /* 160 */
 	{"chroot",	lx_chroot,		0,		1}, /* 161 */
 	{"sync",	lx_sync,		0,		0}, /* 162 */
-	{"acct",	NULL,			NOSYS_NO_EQUIV,	0}, /* 163 */
+	{"acct",	lx_acct,		0,		1}, /* 163 */
 	{"settimeofday", NULL,			0,		2}, /* 164 */
 	{"mount",	lx_mount,		0,		5}, /* 165 */
 	{"umount2",	lx_umount2,		0,		2}, /* 166 */
-	{"swapon",	NULL,			NOSYS_KERNEL,	0}, /* 167 */
-	{"swapoff",	NULL,			NOSYS_KERNEL,	0}, /* 168 */
+	{"swapon",	lx_swapon,		0,		2}, /* 167 */
+	{"swapoff",	lx_swapoff,		0,		1}, /* 168 */
 	{"reboot",	lx_reboot,		0,		4}, /* 169 */
 	{"sethostname",	lx_sethostname,		0,		2}, /* 170 */
 	{"setdomainname", lx_setdomainname,	0,		2}, /* 171 */
@@ -1162,10 +1162,10 @@ lx_sysent_t lx_sysent64[] = {
 	{"faccessat",	lx_faccessat,		0,		4}, /* 269 */
 	{"pselect6",	lx_pselect,		0,		6}, /* 270 */
 	{"ppoll",	lx_ppoll,		0,		5}, /* 271 */
-	{"unshare",	NULL,			NOSYS_NULL,	0}, /* 272 */
+	{"unshare",	lx_unshare,		0,		1}, /* 272 */
 	{"set_robust_list", lx_set_robust_list,	0,		2}, /* 273 */
 	{"get_robust_list", lx_get_robust_list,	0,		3}, /* 274 */
-	{"splice",	NULL,			NOSYS_NULL,	0}, /* 275 */
+	{"splice",	lx_splice,		0,		6}, /* 275 */
 	{"tee",		NULL,			NOSYS_NULL,	0}, /* 276 */
 	{"sync_file_range", lx_sync_file_range,	0,		4}, /* 277 */
 	{"vmsplice",	NULL,			NOSYS_NULL,	0}, /* 278 */

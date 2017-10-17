@@ -72,9 +72,7 @@ setfsuid04
 setfsuid04_16
 settimeofday01
 stime01
-swapoff01
 swapoff02
-swapon01
 swapon02
 swapon03
 switch01
@@ -130,6 +128,7 @@ add_key01
 add_key02
 clone02
 clone08
+clone09
 crash02
 dirtyc0w
 fallocate04		# needs SEEK_HOLE
@@ -173,6 +172,10 @@ ioctl04
 ioctl05
 ioctl06
 keyctl01
+keyctl02
+keyctl03
+keyctl04
+keyctl05
 kcmp01
 kcmp02
 kcmp03
@@ -191,6 +194,7 @@ mq_timedsend01
 mq_unlink01
 msgctl12
 msgrcv07
+msync04
 open02
 open10
 perf_event_open01
@@ -236,11 +240,7 @@ setxattr02
 setxattr03
 sgetmask01
 shmget05		# OS-3326
-splice01
-splice02
-splice03
-splice04
-splice05
+splice02		# bad test, fails on Linux too
 ssetmask01
 sync_file_range01
 sysconf01		# OS-3305

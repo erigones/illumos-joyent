@@ -21,7 +21,7 @@
 
 /*
  * Copyright 2015 OmniTI Computer Consulting, Inc. All rights reserved.
- * Copyright 2016 Joyent, Inc.
+ * Copyright (c) 2017, Joyent, Inc.
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
@@ -524,6 +524,7 @@ typedef struct smbios_processor {
 #define	SMB_PRU_BGA1515		0x35	/* BGA1515 */
 #define	SMB_PRU_LGA36471	0x36	/* LGA3647-1 */
 #define	SMB_PRU_SP3		0x37	/* socket SP3 */
+#define	SMB_PRU_SP3r2		0x38	/* socket SP3r2 */
 
 #define	SMB_PRC_RESERVED	0x0001	/* reserved */
 #define	SMB_PRC_UNKNOWN		0x0002	/* unknown */
@@ -632,6 +633,7 @@ typedef struct smbios_processor {
 #define	SMB_PRF_OPTERON_X2K	0x68	/* AMD Opteron X2000 APU */
 #define	SMB_PRF_OPTERON_A	0x69	/* AMD Opteron A Series */
 #define	SMB_PRF_OPERTON_X3K	0x6A	/* AMD Opteron X3000 APU */
+#define	SMB_PRF_ZEN		0x6B	/* AMD Zen Processor Family */
 #define	SMB_PRF_HOBBIT		0x70	/* Hobbit */
 #define	SMB_PRF_TM5000		0x78	/* Crusoe TM5000 */
 #define	SMB_PRF_TM3000		0x79	/* Crusoe TM3000 */
@@ -1349,6 +1351,50 @@ typedef struct smbios_ipmi {
 #define	SMB_IPMI_F_INTREDGE	0x08	/* intr is edge triggered (else lvl) */
 
 /*
+ * SMBIOS System Power Supply Information.  See DSP0134 7.40 for more
+ * information.
+ */
+typedef struct smbios_powersup {
+	uint32_t smbps_group;		/* group ID */
+	uint64_t smbps_maxout;		/* max output in milliwatts */
+	uint32_t smbps_flags;		/* see below */
+	uint8_t smbps_ivrs;		/* input voltage range switching type */
+	uint8_t smbps_status;		/* PSU status */
+	uint8_t smbps_pstype;		/* PSU type */
+	id_t smbps_vprobe;		/* voltage probe handle */
+	id_t smbps_cooldev;		/* cooling device handle */
+	id_t smbps_iprobe;		/* current probe handle */
+} smbios_powersup_t;
+
+/* smbpfs_flags */
+#define	SMB_POWERSUP_F_HOT	0x01	/* PSU is hot-replaceable */
+#define	SMB_POWERSUP_F_PRESENT	0x02	/* PSU is present */
+#define	SMB_POWERSUP_F_UNPLUG	0x04	/* PSU is unplugged from outlet */
+
+/* Values for smbps_ivrs */
+#define	SMB_POWERSUP_I_OTHER	0x01	/* other */
+#define	SMB_POWERSUP_I_UNKNOWN	0x02	/* unknown */
+#define	SMB_POWERSUP_I_MANUAL	0x03	/* manual */
+#define	SMB_POWERSUP_I_AUTO	0x04	/* auto-switch */
+#define	SMB_POWERSUP_I_WIDE	0x05	/* wide range */
+#define	SMB_POWERSUP_I_NA	0x06	/* not applicable */
+
+#define	SMB_POWERSUP_S_OTHER	0x01	/* other */
+#define	SMB_POWERSUP_S_UNKNOWN	0x02	/* unknown */
+#define	SMB_POWERSUP_S_OK	0x03	/* OK */
+#define	SMB_POWERSUP_S_NONCRIT	0x04	/* non-critical */
+#define	SMB_POWERSUP_S_CRIT	0x05	/* critical; PSU failed */
+
+#define	SMB_POWERSUP_T_OTHER	0x01	/* other */
+#define	SMB_POWERSUP_T_UNKNOWN	0x02	/* unknown */
+#define	SMB_POWERSUP_T_LINEAR	0x03	/* linear */
+#define	SMB_POWERSUP_T_SWITCH	0x04	/* switching */
+#define	SMB_POWERSUP_T_BAT	0x05	/* battery */
+#define	SMB_POWERSUP_T_UPS	0x06	/* UPS */
+#define	SMB_POWERSUP_T_CONV	0x07	/* converter */
+#define	SMB_POWERSUP_T_REGL	0x08	/* regulator */
+
+/*
  * SMBIOS Onboard Devices Extended Information.  See DSP0134 Section 7.42
  * for more information.
  */
@@ -1505,6 +1551,7 @@ extern int smbios_info_memdevmap(smbios_hdl_t *, id_t, smbios_memdevmap_t *);
 extern id_t smbios_info_hwsec(smbios_hdl_t *, smbios_hwsec_t *);
 extern id_t smbios_info_boot(smbios_hdl_t *, smbios_boot_t *);
 extern id_t smbios_info_ipmi(smbios_hdl_t *, smbios_ipmi_t *);
+extern int smbios_info_powersup(smbios_hdl_t *, id_t, smbios_powersup_t *);
 extern int smbios_info_pciexrc(smbios_hdl_t *, id_t, smbios_pciexrc_t *);
 
 extern const char *smbios_psn(smbios_hdl_t *);
@@ -1552,6 +1599,12 @@ extern const char *smbios_evlog_method_desc(uint_t);
 extern const char *smbios_ipmi_flag_name(uint_t);
 extern const char *smbios_ipmi_flag_desc(uint_t);
 extern const char *smbios_ipmi_type_desc(uint_t);
+
+extern const char *smbios_powersup_flag_name(uint_t);
+extern const char *smbios_powersup_flag_desc(uint_t);
+extern const char *smbios_powersup_input_desc(uint_t);
+extern const char *smbios_powersup_status_desc(uint_t);
+extern const char *smbios_powersup_type_desc(uint_t);
 
 extern const char *smbios_hwsec_desc(uint_t);
 

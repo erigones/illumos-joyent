@@ -28,6 +28,7 @@
 # Copyright (c) 2015 Gary Mills
 # Copyright 2016 Toomas Soome <tsoome@me.com>
 # Copyright 2017 Nexenta Systems, Inc.
+# Copyright (c) 2016, Chris Fraire <cfraire@me.com>.
 #
 
 include ../Makefile.master
@@ -43,7 +44,7 @@ include ../Makefile.master
 
 # Build libc and its dependencies
 SUBDIRS=			\
-	common			\
+	crt			\
 	../cmd/sgs/libconv	\
 	../cmd/sgs/libdl	\
 	libc			\
@@ -203,6 +204,7 @@ SUBDIRS +=				\
 	libsec		\
 	libsecdb	\
 	libsendfile	\
+	libsff		\
 	libshare	\
 	libshell	\
 	libsip		\
@@ -459,6 +461,7 @@ HDRSUBDIRS=				\
 	libsasl		\
 	libscf		\
 	libsec		\
+	libsff		\
 	libshare	\
 	libshell	\
 	libsip		\
@@ -560,8 +563,8 @@ _msg:			$(MSGSUBDIRS:%=%-nodepend) .WAIT _dc
 _dc:			$(DCSUBDIRS:%=%-nodepend)
 
 # Library interdependencies are called out explicitly here.
-../cmd/sgs/libconv: common
-../cmd/sgs/libdl: common
+../cmd/sgs/libconv: crt
+../cmd/sgs/libdl: crt
 libc:		../cmd/sgs/libconv ../cmd/sgs/libdl
 
 libm:		libc
@@ -586,7 +589,7 @@ auditd_plugins: libbsm libsecdb libgss libmtmalloc
 brand:		libzonecfg libmapmalloc libipadm libcmdutils libproc librpcsvc
 cfgadm_plugins:	libdevice libdevinfo libhotplug librcm hbaapi libkstat libscf
 fm:		libexacct libipmi libzfs scsi libdevinfo libdevid libcfgadm \
-		libcontract libsysevent ../cmd/sgs/libelf
+		libcontract libsysevent ../cmd/sgs/libelf libdladm
 $(SPARC_BLD)fm:	libpri
 gss_mechs/mech_dh: libgss
 gss_mechs/mech_dummy: libgss
@@ -634,7 +637,7 @@ libidmap:	libavl libuutil
 libidspace:	libumem
 libinetsvc:	libscf
 libinstzones:	libzonecfg libcontract
-libipadm:	libinetutil libdlpi libdhcpagent libdladm libsecdb
+libipadm:	libinetutil libdlpi libdhcpagent libdladm libsecdb libdhcputil
 libipmp:	libinetutil
 libipsecutil:	libtecla libtsol
 libiscsit:	libstmf libuuid
@@ -644,7 +647,7 @@ libldap5:	libsasl
 libmapid:	libresolv2 libscf
 libndmp:	libscf
 libnisdb:	libldap5
-libnwam:	libscf libbsm libdladm
+libnwam:	libscf libbsm libdladm libipadm
 libpcp:		libumem libdevinfo
 libpctx:	libproc
 libpkg:		libwanboot libscf libadm
@@ -662,6 +665,7 @@ libsasl:	libgss pkcs11
 libsaveargs:	libdisasm
 libscf:		libuutil libgen libsmbios
 libsec:		libavl libidmap
+libsff:		libnvpair
 libshare:	libscf libzfs libuuid libfsmgt libsecdb libumem libsmbfs
 libshell:	libast libcmd libdll libsecdb
 libsip:		libmd5

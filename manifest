@@ -20,90 +20,104 @@
 #
 #
 # Copyright 2017 Joyent, Inc.
+# Copyright 2017 ASS-Einrichtungssysteme GmbH
 #
 # This lists all the files that illumos-joyent delivers as part of a build.
 # Keep this sorted as by LC_ALL=C sort -u -k2.
 #
 s bin=usr/bin
-d boot 0755 root bin
-d boot/acpi 0755 root bin
-d boot/acpi/tables 0755 root bin
+d boot 0755 root sys
+d boot/acpi 0755 root sys
+d boot/acpi/tables 0755 root sys
+f boot/cdboot 0444 root bin
+d boot/conf.d 0755 root bin
 d boot/defaults 0755 root bin
 f boot/defaults/loader.conf 0444 root bin
-d boot/conf.d 0755 root bin
-f boot/pxeboot 0444 root bin
-f boot/solaris.xpm 0644 root bin
-f boot/loader.help 0444 root bin
-d boot/grub 0755 root bin
-f boot/grub/default 0444 root bin
-f boot/grub/splash.xpm.gz 0644 root bin
-f boot/grub/ufs2_stage1_5 0644 root bin
-f boot/grub/xfs_stage1_5 0644 root bin
-f boot/grub/reiserfs_stage1_5 0644 root bin
-f boot/grub/e2fs_stage1_5 0644 root bin
-f boot/grub/stage1 0644 root bin
-f boot/grub/capability 0444 root bin
-f boot/grub/minix_stage1_5 0644 root bin
-f boot/grub/stage2_eltorito 0644 root bin
-f boot/grub/zfs_stage1_5 0644 root bin
-f boot/grub/menu.lst 0644 root bin
-f boot/grub/stage2 0644 root bin
-f boot/grub/fat_stage1_5 0644 root bin
-f boot/grub/iso9660_stage1_5 0644 root bin
-f boot/grub/ffs_stage1_5 0644 root bin
-f boot/grub/pxegrub 0644 root bin
-d boot/grub/bin 0755 root bin
-f boot/grub/bin/grub 0555 root bin
-f boot/grub/vstafs_stage1_5 0644 root bin
-f boot/grub/jfs_stage1_5 0644 root bin
-f boot/grub/ufs_stage1_5 0644 root bin
-f boot/grub/nbgrub 0644 root bin
-f boot/grub/install_menu 0644 root bin
-f boot/gptzfsboot 0444 root bin
-f boot/loader.rc 0444 root bin
-d boot/solaris 0755 root bin
-d boot/solaris/devicedb 0755 root bin
-f boot/solaris/devicedb/master 0644 root bin
-d boot/solaris/bin 0755 root bin
-f boot/solaris/bin/update_grub 0555 root bin
-f boot/solaris/bin/mbr 0555 root bin
-f boot/solaris/bin/create_diskmap 0555 root bin
-f boot/solaris/bin/create_ramdisk 0555 root bin
-f boot/solaris/bin/symdef 0555 root bin
-f boot/solaris/bin/extract_boot_filelist 0555 root bin
-f boot/solaris/bootenv.rc 0644 root bin
-f boot/solaris/filelist.safe 0644 root bin
-f boot/solaris/filelist.ramdisk 0644 root bin
+d boot/fonts 0755 root sys
+f boot/fonts/10x18.fnt 0444 root bin
+f boot/fonts/10x20.fnt 0444 root bin
+f boot/fonts/11x22.fnt 0444 root bin
+f boot/fonts/12x24.fnt 0444 root bin
+f boot/fonts/14x28.fnt 0444 root bin
+f boot/fonts/16x32.fnt 0444 root bin
+f boot/fonts/6x12.fnt 0444 root bin
+f boot/fonts/8x14.fnt 0444 root bin
+f boot/fonts/8x16.fnt 0444 root bin
+f boot/fonts/Gallant19.fnt 0444 root bin
+f boot/fonts/fonts.dir 0444 root bin
 d boot/forth 0755 root bin
-f boot/forth/logo-orbbw.4th 0444 root bin
-f boot/forth/logo-orb.4th 0444 root bin
-f boot/forth/support.4th 0444 root bin
-f boot/forth/beastie.4th 0444 root bin
-f boot/forth/pcibios.4th 0444 root bin
-f boot/forth/menu.4th 0444 root bin
-f boot/forth/color.4th 0444 root bin
-f boot/forth/brand.4th 0444 root bin
-f boot/forth/frames.4th 0444 root bin
-f boot/forth/shortcuts.4th 0444 root bin
-f boot/forth/loader.4th 0444 root bin
-f boot/forth/delay.4th 0444 root bin
-f boot/forth/screen.4th 0444 root bin
-f boot/forth/logo-beastiebw.4th 0444 root bin
-f boot/forth/logo-fbsdbw.4th 0444 root bin
-f boot/forth/menu-commands.4th 0444 root bin
-f boot/forth/menu.rc 0444 root bin
 f boot/forth/beadm.4th 0444 root bin
-f boot/forth/menusets.4th 0444 root bin
-f boot/forth/version.4th 0444 root bin
-f boot/forth/logo-beastie.4th 0444 root bin
+f boot/forth/beastie.4th 0444 root bin
 f boot/forth/brand-danubecloud.4th 0444 root bin
 f boot/forth/brand-illumos.4th 0444 root bin
+f boot/forth/brand.4th 0444 root bin
 f boot/forth/check-password.4th 0444 root bin
+f boot/forth/color.4th 0444 root bin
+f boot/forth/delay.4th 0444 root bin
+f boot/forth/frames.4th 0444 root bin
+f boot/forth/loader.4th 0444 root bin
+f boot/forth/logo-beastie.4th 0444 root bin
+f boot/forth/logo-beastiebw.4th 0444 root bin
+f boot/forth/logo-fbsdbw.4th 0444 root bin
 f boot/forth/logo-illumos.4th 0444 root bin
+f boot/forth/logo-orb.4th 0444 root bin
+f boot/forth/logo-orbbw.4th 0444 root bin
+f boot/forth/menu-commands.4th 0444 root bin
+f boot/forth/menu.4th 0444 root bin
+f boot/forth/menu.rc 0444 root bin
+f boot/forth/menusets.4th 0444 root bin
+f boot/forth/pcibios.4th 0444 root bin
+f boot/forth/screen.4th 0444 root bin
+f boot/forth/shortcuts.4th 0444 root bin
+f boot/forth/support.4th 0444 root bin
+f boot/forth/version.4th 0444 root bin
+f boot/gptzfsboot 0444 root bin
+d boot/grub 0755 root bin
+d boot/grub/bin 0755 root bin
+f boot/grub/bin/grub 0555 root bin
+f boot/grub/capability 0444 root bin
+f boot/grub/default 0444 root bin
+f boot/grub/e2fs_stage1_5 0644 root bin
+f boot/grub/fat_stage1_5 0644 root bin
+f boot/grub/ffs_stage1_5 0644 root bin
+f boot/grub/install_menu 0644 root bin
+f boot/grub/iso9660_stage1_5 0644 root bin
+f boot/grub/jfs_stage1_5 0644 root bin
+f boot/grub/menu.lst 0644 root bin
+f boot/grub/minix_stage1_5 0644 root bin
+f boot/grub/nbgrub 0644 root bin
+f boot/grub/pxegrub 0644 root bin
+f boot/grub/reiserfs_stage1_5 0644 root bin
+f boot/grub/splash.xpm.gz 0644 root bin
+f boot/grub/stage1 0644 root bin
+f boot/grub/stage2 0644 root bin
+f boot/grub/stage2_eltorito 0644 root bin
+f boot/grub/ufs2_stage1_5 0644 root bin
+f boot/grub/ufs_stage1_5 0644 root bin
+f boot/grub/vstafs_stage1_5 0644 root bin
+f boot/grub/xfs_stage1_5 0644 root bin
+f boot/grub/zfs_stage1_5 0644 root bin
+f boot/loader.help 0444 root bin
+f boot/loader.rc 0444 root bin
 f boot/pmbr 0444 root bin
-f boot/cdboot 0444 root bin
-f boot/zfsloader 0444 root bin
+f boot/pxeboot 0444 root bin
+d boot/solaris 0755 root sys
+f boot/solaris.xpm 0644 root bin
+d boot/solaris/bin 0755 root bin
+f boot/solaris/bin/create_diskmap 0555 root bin
+f boot/solaris/bin/create_ramdisk 0555 root bin
+f boot/solaris/bin/extract_boot_filelist 0555 root bin
+f boot/solaris/bin/mbr 0555 root bin
+f boot/solaris/bin/symdef 0555 root bin
+f boot/solaris/bin/update_grub 0555 root bin
+f boot/solaris/bootenv.rc 0644 root bin
+d boot/solaris/devicedb 0755 root sys
+f boot/solaris/devicedb/master 0644 root sys
+f boot/solaris/filelist.safe 0644 root bin
+f boot/solaris/filelist.ramdisk 0644 root bin
 f boot/splashimage.xpm 0644 root bin
+f boot/zfsloader 0444 root bin
+
 d dev 0755 root sys
 s dev/allkmem=../devices/pseudo/mm@0:allkmem
 s dev/arp=../devices/pseudo/arp@0:arp
@@ -2097,7 +2111,6 @@ f usr/bin/bdiff 0755 root bin
 h usr/bin/bg=usr/bin/alias
 f usr/bin/busstat 0555 root bin
 f usr/bin/cal 0555 root bin
-f usr/bin/calendar 0555 root bin
 f usr/bin/captoinfo 0555 root bin
 f usr/bin/cat 0555 root bin
 h usr/bin/catman=usr/bin/man
@@ -2498,6 +2511,7 @@ f usr/bin/vfsstat 0555 root bin
 f usr/bin/vgrind 0555 root bin
 f usr/bin/vmstat 0555 root bin
 f usr/bin/vndstat 0555 root bin
+f usr/bin/vtfontcvt 0555 root bin
 h usr/bin/w=usr/lib/isaexec
 h usr/bin/wait=usr/bin/alias
 h usr/bin/wc=usr/bin/alias
@@ -4783,7 +4797,7 @@ f usr/lib/amd64/crt1.o 0644 root bin
 f usr/lib/amd64/crti.o 0644 root bin
 f usr/lib/amd64/crtn.o 0644 root bin
 f usr/lib/amd64/libficl-sys.so.4.1.0 0755 root bin
-f usr/lib/amd64/gcrt1.o 0644 root bin
+h usr/lib/amd64/gcrt1.o=usr/lib/amd64/crt1.o
 d usr/lib/amd64/gss 0755 root bin
 f usr/lib/amd64/gss/dh1024-0.so.1 0755 root bin
 s usr/lib/amd64/gss/dh1024-0.so=dh1024-0.so.1
@@ -5043,6 +5057,7 @@ s usr/lib/amd64/libsecdb.so.1=../../../lib/amd64/libsecdb.so.1
 s usr/lib/amd64/libsecdb.so=../../../lib/amd64/libsecdb.so.1
 s usr/lib/amd64/libsendfile.so.1=../../../lib/amd64/libsendfile.so.1
 s usr/lib/amd64/libsendfile.so=../../../lib/amd64/libsendfile.so.1
+f usr/lib/amd64/libsff.so.1 0755 root bin
 f usr/lib/amd64/libshare.so.1 0755 root bin
 s usr/lib/amd64/libshare.so=libshare.so.1
 f usr/lib/amd64/libshell.so.1 0755 root bin
@@ -5179,9 +5194,10 @@ f usr/lib/brand/lx/ld/64/ld.config 0755 root root
 f usr/lib/brand/lx/ltp_skiplist 0444 root root
 f usr/lib/brand/lx/ltp_tests 0444 root root
 f usr/lib/brand/lx/lx_boot 0755 root root
+f usr/lib/brand/lx/lx_boot_zone_busybox 0755 root root
 f usr/lib/brand/lx/lx_boot_zone_debian 0755 root root
 f usr/lib/brand/lx/lx_boot_zone_redhat 0755 root root
-f usr/lib/brand/lx/lx_boot_zone_busybox 0755 root root
+f usr/lib/brand/lx/lx_boot_zone_suse 0755 root root
 f usr/lib/brand/lx/lx_boot_zone_ubuntu 0755 root root
 f usr/lib/brand/lx/lxinit 0755 root root
 f usr/lib/brand/lx/lx_librtld_db.so.1 0755 root root
@@ -5195,7 +5211,6 @@ f usr/lib/brand/shared/common.ksh 0444 root bin
 f usr/lib/brand/shared/query 0755 root bin
 f usr/lib/brand/shared/uninstall.ksh 0444 root bin
 f usr/lib/bridged 0555 root bin
-f usr/lib/calprog 0555 root bin
 d usr/lib/cfgadm 0755 root bin
 d usr/lib/cfgadm/amd64 0755 root bin
 f usr/lib/cfgadm/amd64/fp.so.1 0755 root bin
@@ -5486,6 +5501,7 @@ f usr/lib/fm/topo/plugins/disk.so 0555 root bin
 f usr/lib/fm/topo/plugins/fac_prov_ipmi.so 0555 root bin
 f usr/lib/fm/topo/plugins/fac_prov_mptsas.so 0555 root bin
 f usr/lib/fm/topo/plugins/ipmi.so 0555 root bin
+f usr/lib/fm/topo/plugins/nic.so 0555 root bin
 f usr/lib/fm/topo/plugins/ses.so 0555 root bin
 f usr/lib/fm/topo/plugins/xfp.so 0555 root bin
 d usr/lib/fs 0755 root sys
@@ -5614,7 +5630,7 @@ f usr/lib/fwflash/verify/ses-SUN.so 0755 root bin
 s usr/lib/fwflash/verify/sgen-LSILOGIC.so=ses-SUN.so
 s usr/lib/fwflash/verify/sgen-SUN.so=ses-SUN.so
 f usr/lib/fwflash/verify/tavor-MELLANOX.so 0755 root bin
-f usr/lib/gcrt1.o 0644 root bin
+h usr/lib/gcrt1.o=usr/lib/crt1.o
 f usr/lib/getoptcvt 0555 root bin
 f usr/lib/gmsgfmt 0555 root bin
 d usr/lib/gss 0755 root bin
@@ -5686,9 +5702,6 @@ f usr/lib/help/auths/locale/C/LabelHeader.html 0444 root bin
 f usr/lib/help/auths/locale/C/LabelPrint.html 0444 root bin
 f usr/lib/help/auths/locale/C/LabelRange.html 0444 root bin
 f usr/lib/help/auths/locale/C/LabelServer.html 0444 root bin
-f usr/lib/help/auths/locale/C/LabelWinDowngrade.html 0444 root bin
-f usr/lib/help/auths/locale/C/LabelWinNoView.html 0444 root bin
-f usr/lib/help/auths/locale/C/LabelWinUpgrade.html 0444 root bin
 f usr/lib/help/auths/locale/C/LinkSecurity.html 0444 root bin
 f usr/lib/help/auths/locale/C/LoginEnable.html 0444 root bin
 f usr/lib/help/auths/locale/C/LoginHeader.html 0444 root bin
@@ -5817,9 +5830,6 @@ f usr/lib/help/auths/locale/LabelHeader.html 0444 root bin
 f usr/lib/help/auths/locale/LabelPrint.html 0444 root bin
 f usr/lib/help/auths/locale/LabelRange.html 0444 root bin
 f usr/lib/help/auths/locale/LabelServer.html 0444 root bin
-f usr/lib/help/auths/locale/LabelWinDowngrade.html 0444 root bin
-f usr/lib/help/auths/locale/LabelWinNoView.html 0444 root bin
-f usr/lib/help/auths/locale/LabelWinUpgrade.html 0444 root bin
 f usr/lib/help/auths/locale/LinkSecurity.html 0444 root bin
 f usr/lib/help/auths/locale/LoginEnable.html 0444 root bin
 f usr/lib/help/auths/locale/LoginHeader.html 0444 root bin
@@ -6488,6 +6498,7 @@ s usr/lib/libsecdb.so.1=../../lib/libsecdb.so.1
 s usr/lib/libsecdb.so=../../lib/libsecdb.so.1
 s usr/lib/libsendfile.so.1=../../lib/libsendfile.so.1
 s usr/lib/libsendfile.so=../../lib/libsendfile.so.1
+f usr/lib/libsff.so.1 0755 root bin
 f usr/lib/libshare.so.1 0755 root bin
 s usr/lib/libshare.so=libshare.so.1
 f usr/lib/libshell.so.1 0755 root bin
@@ -10288,6 +10299,7 @@ f usr/platform/i86pc/lib/fm/eft/intel.eft 0444 root sys
 d usr/platform/i86pc/lib/fm/topo 0755 root sys
 d usr/platform/i86pc/lib/fm/topo/maps 0755 root sys
 f usr/platform/i86pc/lib/fm/topo/maps/Joyent-Compute-Platform-1101-disk-hc-topology.xml 0444 root sys
+f usr/platform/i86pc/lib/fm/topo/maps/Joyent-Compute-Platform-3101-disk-hc-topology.xml 0444 root sys
 f usr/platform/i86pc/lib/fm/topo/maps/chassis-hc-topology.xml 0444 root sys
 f usr/platform/i86pc/lib/fm/topo/maps/chip-hc-topology.xml 0444 root sys
 f usr/platform/i86pc/lib/fm/topo/maps/fan-hc-topology.xml 0444 root sys
@@ -10562,6 +10574,7 @@ f usr/sbin/nfsref 0555 root bin
 f usr/sbin/nlsadmin 0755 root adm
 f usr/sbin/nltest 0555 root bin
 f usr/sbin/nscd 0555 root bin
+f usr/sbin/nvmeadm 0555 root bin
 f usr/sbin/nwamadm 0555 root bin
 f usr/sbin/nwamcfg 0555 root bin
 h usr/sbin/pbind=usr/lib/isaexec
@@ -10693,6 +10706,7 @@ f usr/share/hwdata/pci.ids 0444 root bin
 d usr/share/lib 0755 root sys
 d usr/share/lib/dict 0755 root bin
 f usr/share/lib/dict/words 0444 root bin
+s usr/share/lib/fonts=../../../boot/fonts
 d usr/share/lib/idn 0755 root sys
 d usr/share/lib/java 0755 root sys
 d usr/share/lib/keytables 0755 root bin
@@ -11576,7 +11590,6 @@ f usr/share/man/man1/bc.1 0444 root bin
 f usr/share/man/man1/bdiff.1 0444 root bin
 s usr/share/man/man1/bg.1=jobs.1
 f usr/share/man/man1/cal.1 0444 root bin
-f usr/share/man/man1/calendar.1 0444 root bin
 f usr/share/man/man1/cat.1 0444 root bin
 f usr/share/man/man1/cd.1 0444 root bin
 s usr/share/man/man1/checkeq.1=eqn.1
@@ -11947,6 +11960,7 @@ s usr/share/man/man1/valuid.1=ckuid.1
 s usr/share/man/man1/valyorn.1=ckyorn.1
 s usr/share/man/man1/vedit.1=../../../has/man/man1has/vi.1has
 f usr/share/man/man1/vgrind.1 0444 root bin
+f usr/share/man/man1/vtfontcvt.1 0444 root bin
 f usr/share/man/man1/w.1 0444 root bin
 f usr/share/man/man1/wait.1 0444 root bin
 f usr/share/man/man1/wc.1 0444 root bin
@@ -11992,6 +12006,7 @@ f usr/share/man/man1m/auditd.1m 0444 root bin
 f usr/share/man/man1m/auditrecord.1m 0444 root bin
 f usr/share/man/man1m/auditreduce.1m 0444 root bin
 f usr/share/man/man1m/auditstat.1m 0444 root bin
+s usr/share/man/man1m/audlinks.1m=devfsadm.1m
 f usr/share/man/man1m/automount.1m 0444 root bin
 f usr/share/man/man1m/automountd.1m 0444 root bin
 f usr/share/man/man1m/autopush.1m 0444 root bin
@@ -12212,6 +12227,7 @@ f usr/share/man/man1m/nfsmapid.1m 0444 root bin
 f usr/share/man/man1m/nfsstat.1m 0444 root bin
 f usr/share/man/man1m/nlsadmin.1m 0444 root bin
 f usr/share/man/man1m/nscd.1m 0444 root bin
+f usr/share/man/man1m/nvmeadm.1m 0444 root bin
 f usr/share/man/man1m/nwamd.1m 0444 root bin
 f usr/share/man/man1m/passmgmt.1m 0444 root bin
 f usr/share/man/man1m/pbind.1m 0444 root bin
@@ -12364,6 +12380,7 @@ f usr/share/man/man1m/ypset.1m 0444 root bin
 f usr/share/man/man1m/zdb.1m 0444 root bin
 f usr/share/man/man1m/zdump.1m 0444 root bin
 f usr/share/man/man1m/zfs.1m 0444 root bin
+f usr/share/man/man1m/zfs-program.1m 0444 root bin
 f usr/share/man/man1m/zic.1m 0444 root bin
 f usr/share/man/man1m/zoneadm.1m 0444 root bin
 f usr/share/man/man1m/zoneadmd.1m 0444 root bin
@@ -13061,6 +13078,7 @@ f usr/share/man/man3c/fputws.3c 0444 root bin
 f usr/share/man/man3c/fread.3c 0444 root bin
 s usr/share/man/man3c/free.3c=malloc.3c
 s usr/share/man/man3c/freelocale.3c=newlocale.3c
+s usr/share/man/man3c/freezero.3c=malloc.3c
 f usr/share/man/man3c/freopen.3c 0444 root bin
 s usr/share/man/man3c/fscanf.3c=scanf.3c
 f usr/share/man/man3c/fseek.3c 0444 root bin
@@ -13601,6 +13619,7 @@ f usr/share/man/man3c/raise.3c 0444 root bin
 f usr/share/man/man3c/rand.3c 0444 root bin
 s usr/share/man/man3c/rand_r.3c=rand.3c
 f usr/share/man/man3c/random.3c 0444 root bin
+s usr/share/man/man3c/recallocarray.3c=malloc.3c
 f usr/share/man/man3c/rctl_walk.3c 0444 root bin
 s usr/share/man/man3c/rctlblk_get_enforced_value.3c=rctlblk_set_value.3c
 s usr/share/man/man3c/rctlblk_get_firing_time.3c=rctlblk_set_value.3c
@@ -15999,7 +16018,10 @@ f usr/share/man/man3m/fegetexceptflag.3m 0444 root bin
 f usr/share/man/man3m/fegetround.3m 0444 root bin
 f usr/share/man/man3m/feholdexcept.3m 0444 root bin
 f usr/share/man/man3m/feraiseexcept.3m 0444 root bin
+s usr/share/man/man3m/fesetenv.3m=fegetenv.3m
+s usr/share/man/man3m/fesetexceptflag.3m=fegetexceptflag.3m
 f usr/share/man/man3m/fesetprec.3m 0444 root bin
+s usr/share/man/man3m/fesetround.3m=fegetround.3m
 f usr/share/man/man3m/fetestexcept.3m 0444 root bin
 f usr/share/man/man3m/feupdateenv.3m 0444 root bin
 f usr/share/man/man3m/fex_merge_flags.3m 0444 root bin
@@ -16347,6 +16369,7 @@ s usr/share/man/man3nsl/svc_run.3nsl=rpc_svc_calls.3nsl
 s usr/share/man/man3nsl/svc_sendreply.3nsl=rpc_svc_calls.3nsl
 s usr/share/man/man3nsl/svc_tli_create.3nsl=rpc_svc_create.3nsl
 s usr/share/man/man3nsl/svc_tp_create.3nsl=rpc_svc_create.3nsl
+s usr/share/man/man3nsl/svc_tp_create_addr.3nsl=rpc_svc_create.3nsl
 s usr/share/man/man3nsl/svc_unreg.3nsl=rpc_svc_reg.3nsl
 s usr/share/man/man3nsl/svc_unregister.3nsl=rpc_soc.3nsl
 s usr/share/man/man3nsl/svc_vc_create.3nsl=rpc_svc_create.3nsl
@@ -18609,7 +18632,6 @@ f usr/share/man/man4/rt_dptbl.4 0444 root bin
 f usr/share/man/man4/sasl_appname.conf.4 0444 root bin
 f usr/share/man/man4/scsi.4 0444 root bin
 f usr/share/man/man4/securenets.4 0444 root bin
-f usr/share/man/man4/sel_config.4 0444 root bin
 f usr/share/man/man4/sendmail.4 0444 root bin
 s usr/share/man/man4/sendmail.cf.4=sendmail.4
 f usr/share/man/man4/service_bundle.4 0444 root bin
@@ -18812,6 +18834,7 @@ f usr/share/man/man7/FSS.7 0444 root bin
 f usr/share/man/man7/Intro.7 0444 root bin
 f usr/share/man/man7/cpr.7 0444 root bin
 s usr/share/man/man7/intro.7=Intro.7
+f usr/share/man/man7/swap.7 0444 root bin
 d usr/share/man/man7d 0755 root bin
 s usr/share/man/man7d/1394.7d=ieee1394.7d
 f usr/share/man/man7d/aac.7d 0444 root bin
@@ -19524,7 +19547,9 @@ f usr/share/man/man9f/ddi_driver_name.9f 0444 root bin
 f usr/share/man/man9f/ddi_enter_critical.9f 0444 root bin
 s usr/share/man/man9f/ddi_exit_critical.9f=ddi_enter_critical.9f
 f usr/share/man/man9f/ddi_ffs.9f 0444 root bin
+s usr/share/man/man9f/ddi_ffsll.9f=ddi_ffs.9f
 s usr/share/man/man9f/ddi_fls.9f=ddi_ffs.9f
+s usr/share/man/man9f/ddi_flsll.9f=ddi_ffs.9f
 f usr/share/man/man9f/ddi_fm_acc_err_clear.9f 0444 root bin
 f usr/share/man/man9f/ddi_fm_acc_err_get.9f 0444 root bin
 s usr/share/man/man9f/ddi_fm_capable.9f=ddi_fm_init.9f

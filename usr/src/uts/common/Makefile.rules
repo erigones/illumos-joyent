@@ -23,8 +23,9 @@
 # Copyright (c) 1991, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright 2016 Garrett D'Amore <garrett@damore.org>
 # Copyright 2013 Saso Kiselkov. All rights reserved.
-# Copyright 2016 Joyent, Inc.
+# Copyright 2017 Joyent, Inc.
 # Copyright 2016 Nexenta Systems, Inc.
+# Copyright (c) 2016 by Delphix. All rights reserved.
 #
 
 #
@@ -362,6 +363,10 @@ $(OBJS_DIR)/%.o:		$(UTSBASE)/common/fs/zfs/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
 
+$(OBJS_DIR)/%.o:		$(UTSBASE)/common/fs/zfs/lua/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
 $(OBJS_DIR)/%.o:		$(UTSBASE)/common/fs/zut/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
@@ -388,7 +393,7 @@ $(OBJS_DIR)/%.o:		$(COMMONBASE)/fsreparse/%.c
 
 KMECHKRB5_BASE=$(UTSBASE)/common/gssapi/mechs/krb5
 
-KGSSDFLAGS=-I $(UTSBASE)/common/gssapi/include 
+KGSSDFLAGS=-I $(UTSBASE)/common/gssapi/include
 
 # Note, KRB5_DEFS can be assigned various preprocessor flags,
 # typically -D defines on the make invocation.  The standard compiler
@@ -674,10 +679,6 @@ $(OBJS_DIR)/%.o:		$(UTSBASE)/common/io/audio/drv/audiots/%.c
 	$(CTFCONVERT_O)
 
 $(OBJS_DIR)/%.o:		$(UTSBASE)/common/io/audio/drv/audiovia823x/%.c
-	$(COMPILE.c) -o $@ $<
-	$(CTFCONVERT_O)
-
-$(OBJS_DIR)/%.o:		$(UTSBASE)/common/io/audio/drv/audiovia97/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
 
@@ -1943,6 +1944,9 @@ $(LINTS_DIR)/%.ln:		$(UTSBASE)/common/io/vscan/%.c
 $(LINTS_DIR)/%.ln:		$(UTSBASE)/common/fs/zfs/%.c
 	@($(LHEAD) $(LINT.c) $< $(LTAIL))
 
+$(LINTS_DIR)/%.ln:		$(UTSBASE)/common/fs/zfs/lua/%.c
+	@($(LHEAD) $(LINT.c) $< $(LTAIL))
+
 $(LINTS_DIR)/%.ln:		$(UTSBASE)/common/fs/zut/%.c
 	@($(LHEAD) $(LINT.c) $< $(LTAIL))
 
@@ -2139,9 +2143,6 @@ $(LINTS_DIR)/%.ln:		$(UTSBASE)/common/io/audio/drv/audiots/%.c
 	@($(LHEAD) $(LINT.c) $< $(LTAIL))
 
 $(LINTS_DIR)/%.ln:		$(UTSBASE)/common/io/audio/drv/audiovia823x/%.c
-	@($(LHEAD) $(LINT.c) $< $(LTAIL))
-
-$(LINTS_DIR)/%.ln:		$(UTSBASE)/common/io/audio/drv/audiovia97/%.c
 	@($(LHEAD) $(LINT.c) $< $(LTAIL))
 
 $(LINTS_DIR)/%.ln:		$(UTSBASE)/common/io/bfe/%.c
@@ -2510,6 +2511,9 @@ $(LINTS_DIR)/%.ln:		$(UTSBASE)/common/io/sdcard/impl/%.c
 $(LINTS_DIR)/%.ln:		$(UTSBASE)/common/io/sdcard/targets/sdcard/%.c
 	@($(LHEAD) $(LINT.c) $< $(LTAIL))
 
+$(LINTS_DIR)/%.ln:              $(UTSBASE)/common/io/gsqueue/%.c
+	@($(LHEAD) $(LINT.c) $< $(LTAIL))
+
 $(LINTS_DIR)/%.ln:              $(UTSBASE)/common/io/sfe/%.c
 	@($(LHEAD) $(LINT.c) $< $(LTAIL))
 
@@ -2517,6 +2521,9 @@ $(LINTS_DIR)/%.ln:		$(UTSBASE)/common/io/simnet/%.c
 	@($(LHEAD) $(LINT.c) $< $(LTAIL))
 
 $(LINTS_DIR)/%.ln:		$(UTSBASE)/common/io/softmac/%.c
+	@($(LHEAD) $(LINT.c) $< $(LTAIL))
+
+$(LINTS_DIR)/%.ln:		$(UTSBASE)/common/io/vnd/%.c
 	@($(LHEAD) $(LINT.c) $< $(LTAIL))
 
 $(LINTS_DIR)/%.ln:		$(UTSBASE)/common/io/uath/%.c

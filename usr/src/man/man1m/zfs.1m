@@ -26,7 +26,7 @@
 .\" Copyright (c) 2015, Joyent, Inc. All rights reserved.
 .\" Copyright (c) 2014 by Adam Stevko. All rights reserved.
 .\" Copyright (c) 2014 Integros [integros.com]
-.\" Copyright 2016 Nexenta Systems, Inc.
+.\" Copyright 2017 Nexenta Systems, Inc.
 .\"
 .Dd September 16, 2016
 .Dt ZFS 1M
@@ -265,6 +265,12 @@
 .Cm diff
 .Op Fl FHt
 .Ar snapshot Ar snapshot Ns | Ns Ar filesystem
+.Nm
+.Cm program
+.Op Fl t Ar timeout
+.Op Fl m Ar memory_limit
+.Ar pool script
+.Op Ar arg1 No ...
 .Sh DESCRIPTION
 The
 .Nm
@@ -335,7 +341,7 @@ intervals.
 The visibility of the
 .Pa .zfs
 directory can be controlled by the
-snapdir
+.Sy snapdir
 property.
 .Ss Clones
 A clone is a writable volume or file system whose initial contents are the same
@@ -1352,7 +1358,7 @@ bytes in the dataset.
 This property can also be referred to by its shortened column name,
 .Sy refreserv .
 .It Sy reservation Ns = Ns Em size Ns | Ns Sy none
-The minimum amount of space guaranteed to a dataset and its descendents.
+The minimum amount of space guaranteed to a dataset and its descendants.
 When the amount of space used is below this value, the dataset is treated as if
 it were taking up the amount of space specified by its reservation.
 Reservations are accounted for in the parent datasets' space used, and count
@@ -1404,7 +1410,7 @@ command is invoked with options equivalent to the contents of this property.
 Because SMB shares requires a resource name, a unique resource name is
 constructed from the dataset name.
 The constructed name is a copy of the dataset name except that the characters in
-the dataset name, which would be illegal in the resource name, are replaced with
+the dataset name, which would be invalid in the resource name, are replaced with
 underscore
 .Pq Sy _
 characters.
@@ -1709,7 +1715,7 @@ dataset.
 The
 .Sy nosuid
 option is an alias for
-.Sy nodevices Ns , Ns Sy nosetuid .
+.Sy nodevices Ns \&, Ns Sy nosetuid .
 These properties are reported as
 .Qq temporary
 by the
@@ -1738,7 +1744,7 @@ and underscore
 .Pq Qq Sy _ .
 The expected convention is that the property name is divided into two portions
 such as
-.Em module Ns : Ns Em property ,
+.Em module Ns \&: Ns Em property ,
 but this namespace is not enforced by ZFS.
 User property names can be at most 256 characters, and cannot begin with a dash
 .Pq Qq Sy - .
@@ -2110,7 +2116,8 @@ subcommand can be used to rename any conflicting snapshots.
 .Op Fl f
 .Ar filesystem Ns | Ns Ar volume Ns | Ns Ar snapshot
 .Ar filesystem Ns | Ns Ar volume Ns | Ns Ar snapshot
-.br
+.Xc
+.It Xo
 .Nm
 .Cm rename
 .Op Fl fp
@@ -2165,7 +2172,7 @@ property is
 .Sy off
 .Pc .
 The following fields are displayed,
-.Sy name Ns , Ns Sy used Ns , Ns Sy available Ns , Ns Sy referenced Ns , Ns
+.Sy name Ns \&, Ns Sy used Ns \&, Ns Sy available Ns \&, Ns Sy referenced Ns \&, Ns
 .Sy mountpoint .
 .Bl -tag -width "-H"
 .It Fl H
@@ -2203,9 +2210,9 @@ The value
 .Sy space
 to display space usage properties on file systems and volumes.
 This is a shortcut for specifying
-.Fl o Sy name Ns , Ns Sy avail Ns , Ns Sy used Ns , Ns Sy usedsnap Ns , Ns
-.Sy usedds Ns , Ns Sy usedrefreserv Ns , Ns Sy usedchild Fl t
-.Sy filesystem Ns , Ns Sy volume
+.Fl o Sy name Ns \&, Ns Sy avail Ns \&, Ns Sy used Ns \&, Ns Sy usedsnap Ns \&, Ns
+.Sy usedds Ns \&, Ns Sy usedrefreserv Ns \&, Ns Sy usedchild Fl t
+.Sy filesystem Ns \&, Ns Sy volume
 syntax.
 .El
 .It Fl p
@@ -2327,7 +2334,7 @@ A depth of
 will display only the dataset and its direct children.
 .It Fl o Ar field
 A comma-separated list of columns to display.
-.Sy name Ns , Ns Sy property Ns , Ns Sy value Ns , Ns Sy source
+.Sy name Ns \&, Ns Sy property Ns \&, Ns Sy value Ns \&, Ns Sy source
 is the default value.
 .It Fl p
 Display numbers in parsable
@@ -2509,7 +2516,7 @@ Print only the specified types from the following set:
 .Sy posixgroup ,
 .Sy smbgroup .
 The default is
-.Fl t Sy posixuser Ns , Ns Sy smbuser .
+.Fl t Sy posixuser Ns \&, Ns Sy smbuser .
 The default can be changed to include group types.
 .El
 .It Xo
@@ -2527,7 +2534,7 @@ filesystem or snapshot.
 This subcommand is identical to
 .Nm zfs Cm userspace ,
 except that the default types to display are
-.Fl t Sy posixgroup Ns , Ns Sy smbgroup .
+.Fl t Sy posixgroup Ns \&, Ns Sy smbgroup .
 .It Xo
 .Nm
 .Cm mount
@@ -2667,7 +2674,7 @@ snapshot to the second snapshot.
 For example,
 .Fl I Em @a Em fs@d
 is similar to
-.Fl i Em @a Em fs@b Ns ; Fl i Em @b Em fs@c Ns ; Fl i Em @c Em fs@d .
+.Fl i Em @a Em fs@b Ns \&; Fl i Em @b Em fs@c Ns \&; Fl i Em @c Em fs@d .
 The incremental source may be specified as with the
 .Fl i
 option.
@@ -2903,7 +2910,8 @@ for more details.
 .Op Fl Fnsuv
 .Op Fl o Sy origin Ns = Ns Ar snapshot
 .Ar filesystem Ns | Ns Ar volume Ns | Ns Ar snapshot
-.br
+.Xc
+.It Xo
 .Nm
 .Cm receive
 .Op Fl Fnsuv
@@ -3139,31 +3147,35 @@ property.
 The following permissions are available:
 .Bd -literal
 NAME             TYPE           NOTES
-allow            subcommand     Must also have the permission that is being
-                                allowed
-clone            subcommand     Must also have the 'create' ability and 'mount'
-                                ability in the origin file system
+allow            subcommand     Must also have the permission that is
+                                being allowed
+clone            subcommand     Must also have the 'create' ability and
+                                'mount' ability in the origin file system
 create           subcommand     Must also have the 'mount' ability
 destroy          subcommand     Must also have the 'mount' ability
 diff             subcommand     Allows lookup of paths within a dataset
-                                given an object number, and the ability to
-                                create snapshots necessary to 'zfs diff'.
+                                given an object number, and the ability
+                                to create snapshots necessary to
+                                'zfs diff'.
 mount            subcommand     Allows mount/umount of ZFS datasets
-promote          subcommand     Must also have the 'mount'
-                                and 'promote' ability in the origin file system
-receive          subcommand     Must also have the 'mount' and 'create' ability
+promote          subcommand     Must also have the 'mount' and 'promote'
+                                ability in the origin file system
+receive          subcommand     Must also have the 'mount' and 'create'
+                                ability
 rename           subcommand     Must also have the 'mount' and 'create'
                                 ability in the new parent
 rollback         subcommand     Must also have the 'mount' ability
 send             subcommand
-share            subcommand     Allows sharing file systems over NFS or SMB
-                                protocols
+share            subcommand     Allows sharing file systems over NFS
+                                or SMB protocols
 snapshot         subcommand     Must also have the 'mount' ability
 
-groupquota       other          Allows accessing any groupquota@... property
+groupquota       other          Allows accessing any groupquota@...
+                                property
 groupused        other          Allows reading any groupused@... property
 userprop         other          Allows changing any user property
-userquota        other          Allows accessing any userquota@... property
+userquota        other          Allows accessing any userquota@...
+                                property
 userused         other          Allows reading any userused@... property
 
 aclinherit       property
@@ -3392,6 +3404,47 @@ Give more parsable tab-separated output, without header lines and without
 arrows.
 .It Fl t
 Display the path's inode change time as the first column of output.
+.El
+.It Xo
+.Nm
+.Cm program
+.Op Fl t Ar timeout
+.Op Fl m Ar memory_limit
+.Ar pool script
+.Op Ar arg1 No ...
+.Xc
+Executes
+.Ar script
+as a ZFS channel program on
+.Ar pool .
+The ZFS channel
+program interface allows ZFS administrative operations to be run
+programmatically via a Lua script.
+The entire script is executed atomically, with no other administrative
+operations taking effect concurrently.
+A library of ZFS calls is made available to channel program scripts.
+Channel programs may only be run with root privileges.
+.sp
+For full documentation of the ZFS channel program interface, see the manual
+page for
+.Xr zfs-program 1M .
+.Bl -tag -width ""
+.It Fl t Ar timeout
+Execution time limit, in milliseconds.
+If a channel program executes for longer than the provided timeout, it will
+be stopped and an error will be returned.
+The default timeout is 1000 ms, and can be set to a maximum of 10000 ms.
+.It Fl m Ar memory-limit
+Memory limit, in bytes.
+If a channel program attempts to allocate more memory than the given limit,
+it will be stopped and an error returned.
+The default memory limit is 10 MB, and can be set to a maximum of 100 MB.
+.sp
+All remaining argument strings are passed directly to the channel program as
+arguments.
+See
+.Xr zfs-program 1M
+for more information.
 .El
 .El
 .Sh EXIT STATUS

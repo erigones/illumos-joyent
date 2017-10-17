@@ -12,8 +12,11 @@
 #
 # Copyright 2011, Richard Lowe
 # Copyright 2016 Joyent, Inc.
+# Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+# Copyright (c) 2013, 2016 by Delphix. All rights reserved.
 # Copyright 2016 Toomas Soome <tsoome@me.com>
 # Copyright 2017 Nexenta Systems, Inc.
+# Copyright (c) 2017, Chris Fraire <cfraire@me.com>.
 #
 
 include	$(SRC)//Makefile.master
@@ -548,6 +551,7 @@ _MANFILES=	6to4relay.1m		\
 		zdb.1m			\
 		zdump.1m		\
 		zfs.1m			\
+		zfs-program.1m		\
 		zic.1m			\
 		zoneadm.1m		\
 		zoneadmd.1m		\
@@ -557,7 +561,8 @@ _MANFILES=	6to4relay.1m		\
 
 i386_MANFILES=				\
 		acpidump.1m		\
-		acpixtract.1m
+		acpixtract.1m		\
+		nvmeadm.1m
 
 sparc_MANFILES=	cvcd.1m			\
 		dcs.1m			\
@@ -580,6 +585,7 @@ MANLINKS=	acctcon1.1m			\
 		acctprc1.1m			\
 		acctprc2.1m			\
 		acctwtmp.1m			\
+		audlinks.1m			\
 		bootparamd.1m			\
 		chargefee.1m			\
 		ckpacct.1m			\
@@ -680,6 +686,7 @@ turnacct.1m			:= LINKSRC = acctsh.1m
 
 dcopy.1m			:= LINKSRC = clri.1m
 
+audlinks.1m			:= LINKSRC = devfsadm.1m
 devfsadmd.1m			:= LINKSRC = devfsadm.1m
 
 fcadm.1m			:= LINKSRC = fcinfo.1m

@@ -20,7 +20,7 @@ include ../Makefile.cmd
 ROOTCMDDIR = $(ROOTLIB)/dl
 CFLAGS += $(CCVERBOSE)
 
-dltraninfo :=	LDLIBS += -ldladm
+dltraninfo :=	LDLIBS += -ldladm -lsff -lnvpair
 dlled :=	LDLIBS += -ldladm
 dlsend :=	LDLIBS += -ldlpi -lsocket -lmd
 dlrecv :=	LDLIBS += -ldlpi

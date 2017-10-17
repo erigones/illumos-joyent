@@ -28,7 +28,7 @@
  */
 
 /*
- * Copyright 2015, Joyent, Inc.
+ * Copyright 2017, Joyent, Inc.
  * Copyright (c) 2017 by Delphix. All rights reserved.
  */
 
@@ -103,10 +103,6 @@ static int fifo_setsecattr(struct vnode *, vsecattr_t *, int, struct cred *,
 	caller_context_t *);
 static int fifo_getsecattr(struct vnode *, vsecattr_t *, int, struct cred *,
 	caller_context_t *);
-
-/* functions local to this file */
-static boolean_t fifo_stayfast_enter(fifonode_t *);
-static void fifo_stayfast_exit(fifonode_t *);
 
 /*
  * Define the data structures external to this file.
@@ -645,7 +641,7 @@ fifo_close(vnode_t *vp, int flag, int count, offset_t offset, cred_t *crp,
  *    (3) write-only FIFO with no data
  *    (4) no data and FNDELAY flag is set.
  * Otherwise return
- *	EAGAIN if FNONBLOCK is set and no data to read
+ *	EAGAIN if FNONBLOCK is set and no data to read or FIFORDBLOCK is set
  *	EINTR if signal received while waiting for data
  *
  * While there is no data to read....
@@ -681,7 +677,7 @@ fifo_read(struct vnode *vp, struct uio *uiop, int ioflag, struct cred *crp,
 	 * Check for data on our input queue
 	 */
 
-	while (fnp->fn_count == 0) {
+	while (fnp->fn_count == 0 || (fnp->fn_flag & FIFORDBLOCK) != 0) {
 		/*
 		 * No data on first attempt and no writer, then EOF
 		 */
@@ -731,6 +727,7 @@ fifo_read(struct vnode *vp, struct uio *uiop, int ioflag, struct cred *crp,
 	}
 
 	ASSERT(fnp->fn_mp != NULL);
+	VERIFY((fnp->fn_flag & FIFORDBLOCK) == 0);
 
 	/* For pipes copy should not bypass cache */
 	uiop->uio_extflg |= UIO_COPY_CACHED;
@@ -772,6 +769,18 @@ fifo_read(struct vnode *vp, struct uio *uiop, int ioflag, struct cred *crp,
 				    &fn_lock->flk_lock))
 					goto trywake;
 
+				/*
+				 * If another thread snuck in and started to
+				 * consume data using read-blocking out of
+				 * the pipe while we were blocked in the
+				 * cv_wait, then since we have already consumed
+				 * some of the data out of the pipe we need
+				 * to return with a short read.
+				 */
+				if ((fnp->fn_flag & FIFORDBLOCK) != 0) {
+					goto trywake;
+				}
+
 				if (!(fnp->fn_flag & FIFOFAST))
 					goto stream_mode;
 			}
@@ -787,11 +796,11 @@ trywake:
 	/*
 	 * wake up any blocked writers, processes
 	 * sleeping on POLLWRNORM, or processes waiting for SIGPOLL
-	 * Note: checking for fn_count < Fifohiwat emulates
+	 * Note: checking for fn_count < fn_hiwat emulates
 	 * STREAMS functionality when low water mark is 0
 	 */
 	if (fn_dest->fn_flag & (FIFOWANTW | FIFOHIWATW) &&
-	    fnp->fn_count < Fifohiwat) {
+	    fnp->fn_count < fn_dest->fn_hiwat) {
 		fifo_wakewriter(fn_dest, fn_lock);
 	}
 	goto done;
@@ -904,7 +913,7 @@ fifo_write(vnode_t *vp, uio_t *uiop, int ioflag, cred_t *crp,
 		/*
 		 * check to make sure we are not over high water mark
 		 */
-		while (fn_dest->fn_count >= Fifohiwat) {
+		while (fn_dest->fn_count >= fn_dest->fn_hiwat) {
 			/*
 			 * Indicate that we have gone over high
 			 * water mark
@@ -962,7 +971,7 @@ fifo_write(vnode_t *vp, uio_t *uiop, int ioflag, cred_t *crp,
 		 * then we must break the message up into PIPE_BUF
 		 * chunks to stay compliant with STREAMS
 		 */
-		if (uiop->uio_resid + fn_dest->fn_count > Fifohiwat)
+		if (uiop->uio_resid + fn_dest->fn_count > fn_dest->fn_hiwat)
 			size = MIN(uiop->uio_resid, PIPE_BUF);
 		else
 			size = uiop->uio_resid;
@@ -1198,7 +1207,8 @@ fifo_fastioctl(vnode_t *vp, int cmd, intptr_t arg, int mode, cred_t *cr,
 		if (arg != 0) {
 			goto turn_fastoff;
 		}
-		*rvalp = (fnp->fn_dest->fn_count < Fifohiwat) ? 1 : 0;
+		*rvalp = (fnp->fn_dest->fn_count < fnp->fn_dest->fn_hiwat) ?
+		    1 : 0;
 		mutex_exit(&fn_lock->flk_lock);
 		return (0);
 
@@ -1817,7 +1827,7 @@ fifo_poll(vnode_t *vp, short events, int anyyet, short *reventsp,
 			retevents = POLLHUP;
 	} else if (events & (POLLWRNORM | POLLWRBAND)) {
 		if (events & POLLWRNORM) {
-			if (fn_dest->fn_count < Fifohiwat)
+			if (fn_dest->fn_count < fn_dest->fn_hiwat)
 				retevents = POLLWRNORM;
 			else
 				fnp->fn_flag |= FIFOHIWATW;
@@ -1986,7 +1996,7 @@ fifo_getsecattr(struct vnode *vp, vsecattr_t *vsap, int flag, struct cred *crp,
  * the lock.
  * If the fifo switches into stream mode while we are waiting, return failure.
  */
-static boolean_t
+boolean_t
 fifo_stayfast_enter(fifonode_t *fnp)
 {
 	ASSERT(MUTEX_HELD(&fnp->fn_lock->flk_lock));
@@ -2008,7 +2018,7 @@ fifo_stayfast_enter(fifonode_t *fnp)
  *	- threads wanting to turn into stream mode waiting in fifo_fastoff(),
  *	- other writers threads waiting in fifo_stayfast_enter().
  */
-static void
+void
 fifo_stayfast_exit(fifonode_t *fnp)
 {
 	fifonode_t *fn_dest = fnp->fn_dest;

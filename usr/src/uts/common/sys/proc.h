@@ -25,7 +25,7 @@
  */
 
 /*	Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T	*/
-/*	  All Rights Reserved  	*/
+/*	  All Rights Reserved	*/
 
 #ifndef _SYS_PROC_H
 #define	_SYS_PROC_H
@@ -251,8 +251,15 @@ typedef struct	proc {
 	kmutex_t p_maplock;		/* lock for pr_mappage() */
 	struct	proc  *p_rlink;		/* linked list for server */
 	kcondvar_t p_srwchan_cv;
-	size_t	p_stksize;		/* process stack size in bytes */
-	uint_t	p_stkpageszc;		/* preferred stack max page size code */
+
+	/*
+	 * Stack sizing and guard information.
+	 * Generally protected by as_rangelock()
+	 */
+	size_t		p_stksize;	/* process stack size in bytes */
+	uint_t		p_stkpageszc;	/* preferred stack max page size code */
+	uintptr_t	p_stkg_start;	/* start of stack guard */
+	uintptr_t	p_stkg_end;	/* end of stack guard */
 
 	/*
 	 * Microstate accounting, resource usage, and real-time profiling

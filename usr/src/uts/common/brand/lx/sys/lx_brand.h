@@ -622,6 +622,7 @@ typedef struct lx_zone_data {
 	dev_t lxzd_zfs_dev;			/* major num for zfs */
 	uint_t lxzd_aio_nr;			/* see lx_aio.c */
 	uint_t lxzd_pipe_max_sz;		/* pipe-max-size sysctl val */
+	boolean_t lxzd_swap_disabled;		/* no fake swap in zone? */
 } lx_zone_data_t;
 
 /* LWP br_lwp_flags values */
@@ -710,6 +711,7 @@ extern int lx_lpid_lock(pid_t, zone_t *, lx_pid_flag_t, proc_t **,
 extern pid_t lx_lwp_ppid(klwp_t *, pid_t *, id_t *);
 extern void lx_pid_init(void);
 extern void lx_pid_fini(void);
+extern void lx_acct_out(vnode_t *, int);
 
 extern uint_t lx_pipe_max_limit;
 extern uint_t lx_pipe_max_default;

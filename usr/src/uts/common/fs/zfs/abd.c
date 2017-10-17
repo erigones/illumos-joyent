@@ -146,7 +146,10 @@ boolean_t zfs_abd_scatter_enabled = B_TRUE;
  * it at runtime would cause ABD iteration to work incorrectly for ABDs which
  * were allocated with the old size, so a safeguard has been put in place which
  * will cause the machine to panic if you change it and try to access the data
- * within a scattered ABD.
+ * within a scattered ABD. Note that tuning this value to be smaller than the
+ * page size can induce heavy fragmentation in the slab layer, which may itself
+ * result in more memory waste than is saved by the smaller chunk size -- and
+ * will induces more computational work in the slab layer. Tune with caution!
  */
 size_t zfs_abd_chunk_size = 4096;
 
@@ -156,6 +159,13 @@ extern vmem_t *zio_alloc_arena;
 
 kmem_cache_t *abd_chunk_cache;
 static kstat_t *abd_ksp;
+
+extern inline boolean_t abd_is_linear(abd_t *abd);
+extern inline void abd_copy(abd_t *dabd, abd_t *sabd, size_t size);
+extern inline void abd_copy_from_buf(abd_t *abd, const void *buf, size_t size);
+extern inline void abd_copy_to_buf(void* buf, abd_t *abd, size_t size);
+extern inline int abd_cmp_buf(abd_t *abd, const void *buf, size_t size);
+extern inline void abd_zero(abd_t *abd, size_t size);
 
 static void *
 abd_alloc_chunk()

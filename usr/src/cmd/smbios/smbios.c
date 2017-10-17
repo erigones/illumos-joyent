@@ -21,7 +21,7 @@
 
 /*
  * Copyright 2015 OmniTI Computer Consulting, Inc.  All rights reserved.
- * Copyright 2016 Joyent, Inc.
+ * Copyright (c) 2017, Joyent, Inc.
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
@@ -54,6 +54,24 @@ static int opt_O;
 static int opt_s;
 static int opt_t = -1;
 static int opt_x;
+
+/*PRINTFLIKE2*/
+static void
+smbios_warn(smbios_hdl_t *shp, const char *format, ...)
+{
+	va_list ap;
+
+	va_start(ap, format);
+	(void) vfprintf(stderr, format, ap);
+	va_end(ap);
+
+	if (shp != NULL) {
+		(void) fprintf(stderr, ": %s",
+		    smbios_errmsg(smbios_errno(shp)));
+	}
+
+	(void) fprintf(stderr, "\n");
+}
 
 /*PRINTFLIKE2*/
 static void
@@ -526,9 +544,9 @@ print_processor(smbios_hdl_t *shp, id_t id, FILE *fp)
 	else
 		oprintf(fp, "  Current Speed: Unknown\n");
 
-	id_printf(fp, "	 L1 Cache: ", p.smbp_l1cache);
-	id_printf(fp, "	 L2 Cache: ", p.smbp_l2cache);
-	id_printf(fp, "	 L3 Cache: ", p.smbp_l3cache);
+	id_printf(fp, "  L1 Cache Handle: ", p.smbp_l1cache);
+	id_printf(fp, "  L2 Cache Handle: ", p.smbp_l2cache);
+	id_printf(fp, "  L3 Cache Handle: ", p.smbp_l3cache);
 }
 
 static void
@@ -768,11 +786,11 @@ print_bytes(const uint8_t *data, size_t size, FILE *fp)
 	char buf[17];
 	uint8_t x;
 
-	oprintf(fp, "\n	 offset:   0 1 2 3  4 5 6 7  8 9 a b  c d e f  "
+	oprintf(fp, "\n  offset:   0 1 2 3  4 5 6 7  8 9 a b  c d e f  "
 	    "0123456789abcdef\n");
 
 	for (row = 0; row < rows; row++) {
-		oprintf(fp, "	 %#4lx: ", (ulong_t)row * 16);
+		oprintf(fp, "  %#6lx: ", (ulong_t)row * 16);
 		cols = MIN(size - row * 16, 16);
 
 		for (col = 0; col < cols; col++) {
@@ -814,7 +832,7 @@ print_memarray(smbios_hdl_t *shp, id_t id, FILE *fp)
 	    fp, "  ECC: %u", ma.smbma_ecc);
 
 	oprintf(fp, "  Number of Slots/Sockets: %u\n", ma.smbma_ndevs);
-	id_printf(fp, "	 Memory Error Data: ", ma.smbma_err);
+	id_printf(fp, "  Memory Error Data: ", ma.smbma_err);
 	oprintf(fp, "  Max Capacity: %llu bytes\n",
 	    (u_longlong_t)ma.smbma_size);
 }
@@ -826,8 +844,8 @@ print_memdevice(smbios_hdl_t *shp, id_t id, FILE *fp)
 
 	(void) smbios_info_memdevice(shp, id, &md);
 
-	id_printf(fp, "	 Physical Memory Array: ", md.smbmd_array);
-	id_printf(fp, "	 Memory Error Data: ", md.smbmd_error);
+	id_printf(fp, "  Physical Memory Array: ", md.smbmd_array);
+	id_printf(fp, "  Memory Error Data: ", md.smbmd_error);
 
 	if (md.smbmd_twidth != -1u)
 		oprintf(fp, "  Total Width: %u bits\n", md.smbmd_twidth);
@@ -916,7 +934,7 @@ print_memarrmap(smbios_hdl_t *shp, id_t id, FILE *fp)
 
 	(void) smbios_info_memarrmap(shp, id, &ma);
 
-	id_printf(fp, "	 Physical Memory Array: ", ma.smbmam_array);
+	id_printf(fp, "  Physical Memory Array: ", ma.smbmam_array);
 	oprintf(fp, "  Devices per Row: %u\n", ma.smbmam_width);
 
 	oprintf(fp, "  Physical Address: 0x%llx\n  Size: %llu bytes\n",
@@ -930,8 +948,8 @@ print_memdevmap(smbios_hdl_t *shp, id_t id, FILE *fp)
 
 	(void) smbios_info_memdevmap(shp, id, &md);
 
-	id_printf(fp, "	 Memory Device: ", md.smbmdm_device);
-	id_printf(fp, "	 Memory Array Mapped Address: ", md.smbmdm_arrmap);
+	id_printf(fp, "  Memory Device: ", md.smbmdm_device);
+	id_printf(fp, "  Memory Array Mapped Address: ", md.smbmdm_arrmap);
 
 	oprintf(fp, "  Physical Address: 0x%llx\n  Size: %llu bytes\n",
 	    (u_longlong_t)md.smbmdm_addr, (u_longlong_t)md.smbmdm_size);
@@ -995,6 +1013,47 @@ print_ipmi(smbios_hdl_t *shp, FILE *fp)
 
 	flag_printf(fp, "Flags", i.smbip_flags, sizeof (i.smbip_flags) * NBBY,
 	    smbios_ipmi_flag_name, smbios_ipmi_flag_desc);
+}
+
+static void
+print_powersup(smbios_hdl_t *shp, id_t id, FILE *fp)
+{
+	smbios_powersup_t p;
+
+	if (smbios_info_powersup(shp, id, &p) != 0) {
+		smbios_warn(shp, "failed to read power supply information");
+		return;
+	}
+
+	oprintf(fp, "  Power Supply Group: %u\n", p.smbps_group);
+	if (p.smbps_maxout != 0x8000) {
+		oprintf(fp, "  Maximum Output: %llu mW\n", p.smbps_maxout);
+	} else {
+		oprintf(fp, "  Maximum Output: unknown\n");
+	}
+
+	flag_printf(fp, "Characteristics", p.smbps_flags,
+	    sizeof (p.smbps_flags) * NBBY, smbios_powersup_flag_name,
+	    smbios_powersup_flag_desc);
+
+	desc_printf(smbios_powersup_input_desc(p.smbps_ivrs),
+	    fp, "  Input Voltage Range Switching: %u", p.smbps_ivrs);
+	desc_printf(smbios_powersup_status_desc(p.smbps_status),
+	    fp, "  Status: %u", p.smbps_status);
+	desc_printf(smbios_powersup_type_desc(p.smbps_pstype),
+	    fp, "  Type: %u", p.smbps_pstype);
+
+	if (p.smbps_vprobe != 0xffff) {
+		oprintf(fp, "  Voltage Probe Handle: %lu\n", p.smbps_vprobe);
+	}
+
+	if (p.smbps_cooldev != 0xffff) {
+		oprintf(fp, "  Cooling Device Handle: %lu\n", p.smbps_cooldev);
+	}
+
+	if (p.smbps_iprobe != 0xffff) {
+		oprintf(fp, "  Current Probe Handle: %lu\n", p.smbps_iprobe);
+	}
 }
 
 static void
@@ -1203,6 +1262,10 @@ print_struct(smbios_hdl_t *shp, const smbios_struct_t *sp, void *fp)
 	case SMB_TYPE_IPMIDEV:
 		oprintf(fp, "\n");
 		print_ipmi(shp, fp);
+		break;
+	case SMB_TYPE_POWERSUP:
+		oprintf(fp, "\n");
+		print_powersup(shp, sp->smbstr_id, fp);
 		break;
 	case SMB_TYPE_OBDEVEXT:
 		oprintf(fp, "\n");

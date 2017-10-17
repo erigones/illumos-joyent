@@ -24,7 +24,7 @@
  */
 
 /*	Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T	*/
-/*	  All Rights Reserved  	*/
+/*	  All Rights Reserved	*/
 
 /* Copyright (c) 2013, OmniTI Computer Consulting, Inc. All rights reserved. */
 /* Copyright 2017 Joyent, Inc. */
@@ -122,11 +122,6 @@ typedef struct fpollinfo {
 #ifdef _KERNEL
 
 /*
- * This is a flag that is set on f_flag2, but is never user-visible
- */
-#define	FEPOLLED	0x8000
-
-/*
  * Fake flags for driver ioctl calls to inform them of the originating
  * process' model.  See <sys/model.h>
  *
@@ -199,6 +194,7 @@ struct vnodeops;
 struct vattr;
 
 extern file_t *getf(int);
+extern file_t *getf_gen(int, uf_entry_gen_t *);
 extern void releasef(int);
 extern void areleasef(int, uf_info_t *);
 #ifndef	_BOOT

@@ -150,6 +150,7 @@
 #include <sys/lx_futex.h>
 #include <sys/lx_brand.h>
 #include <sys/lx_types.h>
+#include <sys/lx_userhz.h>
 #include <sys/param.h>
 #include <sys/termios.h>
 #include <sys/sunddi.h>
@@ -178,6 +179,7 @@
 #include <inet/udp_impl.h>
 
 int	lx_debug = 0;
+uint_t	lx_hz_scale = 0;
 
 void	lx_init_brand_data(zone_t *, kmutex_t *);
 void	lx_free_brand_data(zone_t *);
@@ -307,7 +309,8 @@ struct brand_ops lx_brops = {
 #endif
 	B_FALSE,			/* b_intp_parse_arg */
 	lx_clearbrand,			/* b_clearbrand */
-	lx_upcall_statd			/* b_rpc_statd */
+	lx_upcall_statd,		/* b_rpc_statd */
+	lx_acct_out			/* b_acct_out */
 };
 
 struct brand_mach_ops lx_mops = {
@@ -2434,7 +2437,8 @@ lx_elfexec(struct vnode *vp, struct execa *uap, struct uarg *args,
 
 	/*
 	 * We try to keep /proc's view of the aux vector consistent with
-	 * what's on the process stack.
+	 * what's on the process stack. See the comment on the lx_times
+	 * syscall for an explanation of the hardcoded LX_USERHZ.
 	 */
 	if (args->to_model == DATAMODEL_NATIVE) {
 		auxv_t phdr_auxv[4] = {
@@ -2445,7 +2449,7 @@ lx_elfexec(struct vnode *vp, struct execa *uap, struct uarg *args,
 		};
 		phdr_auxv[0].a_un.a_val = edp.ed_phdr;
 		phdr_auxv[1].a_un.a_val = ldaddr;
-		phdr_auxv[2].a_un.a_val = hz;
+		phdr_auxv[2].a_un.a_val = LX_USERHZ;
 		phdr_auxv[3].a_un.a_val = lxpd->l_vdso;
 
 		if (copyout(&phdr_auxv, args->auxp_brand,
@@ -2571,6 +2575,10 @@ int
 _init(void)
 {
 	int err = 0;
+
+	/* Initialize USER_HZ scaling factor */
+	ASSERT(hz >= LX_USERHZ);
+	lx_hz_scale = hz / LX_USERHZ;
 
 	lx_syscall_init();
 	lx_pid_init();

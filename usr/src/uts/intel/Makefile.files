@@ -300,6 +300,7 @@ SN1_BRAND_OBJS	=	sn1_brand.o sn1_brand_asm.o
 S10_BRAND_OBJS	=	s10_brand.o s10_brand_asm.o
 LX_BRAND_OBJS  =		\
 	lx_access.o		\
+	lx_acct.o		\
 	lx_acl.o		\
 	lx_aio.o		\
 	lx_archdep.o		\
@@ -352,11 +353,13 @@ LX_BRAND_OBJS  =		\
 	lx_signal.o		\
 	lx_signum.o		\
 	lx_socket.o		\
+	lx_splice.o		\
 	lx_stat.o		\
 	lx_sync.o		\
 	lx_syscall.o		\
 	lx_sysinfo.o		\
 	lx_thread_area.o	\
+	lx_time.o		\
 	lx_timer.o		\
 	lx_umask.o		\
 	lx_uname.o		\

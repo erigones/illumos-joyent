@@ -579,19 +579,58 @@ typedef struct lx_hd_geom {
 	unsigned long start;
 } lx_hd_geom_t;
 
-static lx_virt_disk_t *
-lx_lookup_zvol(lx_zone_data_t *lxzd, dev_t dev)
+/*
+ * Return the volsize and blksize for the correct virtual "disk" for the zone.
+ * Only these two values are returned in 'vdp' within this code.
+ *
+ * A virtual "disk" can be a zvol visible within the zone, but most zones are
+ * not configured with a delegated dataset necessary to make zvols visible.
+ *
+ * To make various applications happy, lx also pretends that our root filesystem
+ * (normally within the zone's dataset) lives on a virtual disk. We have a
+ * /dev/zfsds0 symlink which points at /dev/zfs. This appears in various places
+ * to give the illusion of root's disk. For example, see:
+ *    /proc/partitions
+ *    /sys/block/zfsds0
+ *    /sys/devices/zfs/zfsds0
+ * If an application issues the various LX_HDIO_GETGEO, LX_BLKGETSIZE*, or
+ * LX_BLKSSZGET ioctls on /dev/zfs (that is, minor number 0), we want to return
+ * something sane. In this case, we return the total size (which is normally
+ * limited by a quota) of the dataset that the zone root lives on.
+ */
+static boolean_t
+lx_lookup_zdsk_info(lx_zone_data_t *lxzd, dev_t dev, lx_virt_disk_t *vdp)
 {
 	lx_virt_disk_t *vd;
 
+	/* Handle /dev/zfs */
+	if (getminor(dev) == 0) {
+		struct statvfs64 sv;
+
+		if (VFS_STATVFS(curzone->zone_rootvp->v_vfsp, &sv) == 0) {
+			vdp->lxvd_volsize = sv.f_blocks * sv.f_frsize;
+			vdp->lxvd_blksize = sv.f_frsize;
+		} else {
+			vdp->lxvd_volsize = 0;
+			/* always set to prevent potential divide-by-zero */
+			vdp->lxvd_blksize = 512;
+		}
+
+		return (B_TRUE);
+	}
+
 	vd = list_head(lxzd->lxzd_vdisks);
 	while (vd != NULL) {
-		if (vd->lxvd_type == LXVD_ZVOL && vd->lxvd_real_dev == dev)
-			return (vd);
+		if (vd->lxvd_type == LXVD_ZVOL && vd->lxvd_real_dev == dev) {
+			bzero(vdp, sizeof (*vdp));
+			vdp->lxvd_volsize = vd->lxvd_volsize;
+			vdp->lxvd_blksize = vd->lxvd_blksize;
+			return (B_TRUE);
+		}
 		vd = list_next(lxzd->lxzd_vdisks, vd);
 	}
 
-	return (NULL);
+	return (B_FALSE);
 }
 
 /*
@@ -613,25 +652,46 @@ ict_hdgetgeo(file_t *fp, int cmd, intptr_t arg, int lxcmd)
 	ASSERT(lxzd->lxzd_vdisks != NULL);
 
 	if (getmajor(fp->f_vnode->v_rdev) == getmajor(lxzd->lxzd_zfs_dev)) {
-		lx_virt_disk_t *vd;
+		lx_virt_disk_t vd;
 
-		vd = lx_lookup_zvol(lxzd, fp->f_vnode->v_rdev);
-		if (vd == NULL) {
+		if (!lx_lookup_zdsk_info(lxzd, fp->f_vnode->v_rdev, &vd) ||
+		    vd.lxvd_volsize == 0 || vd.lxvd_blksize == 0) {
 			/* should only happen if new zvol */
 			bzero(&lx_geom, sizeof (lx_geom));
 		} else {
-			diskaddr_t tot;
-
-			tot = vd->lxvd_volsize / vd->lxvd_blksize;
+			const diskaddr_t blks =
+			    MAX(1, vd.lxvd_volsize / vd.lxvd_blksize);
 
 			/*
-			 * Since the 'sectors' value is only one byte we make
-			 * up heads/cylinder values to get things to fit.
-			 * We roundup the number of heads to ensure we don't
-			 * overflow the sectors due to truncation.
+			 * Attempt to conjure up a Cylinder-Head-Sector
+			 * geometry for the given virtual disk size.
 			 */
-			lx_geom.heads = lx_geom.cylinders = (tot / 0xff) + 1;
-			lx_geom.sectors = tot / lx_geom.heads;
+			if (blks <= (63*16*65535)) {
+				/*
+				 * Use traditional BIOS-style geometry for
+				 * adequately small disks.
+				 */
+				lx_geom.sectors	= 63;
+				lx_geom.heads	= 16;
+				lx_geom.cylinders = MAX(1, (blks / (63 * 16)));
+			} else if (blks <= (64*32*65535)) {
+				/* 1MB per cylinder for 512-byte sectors */
+				lx_geom.sectors	= 64;
+				lx_geom.heads	= 32;
+				lx_geom.cylinders = (blks / (64 * 32));
+			} else {
+				/*
+				 * Max out the geometry sizing for large disks.
+				 * This may not be adequate for truely huge
+				 * volumes (maxing out at a little under 2TB
+				 * for those with a 512-byte blocksize), but it
+				 * is the best we can do with the given struct.
+				 */
+				lx_geom.sectors	= 255;
+				lx_geom.heads	= 255;
+				lx_geom.cylinders = MIN(65535,
+				    (blks / (255*255)));
+			}
 			lx_geom.start = 0;
 		}
 	} else {
@@ -673,14 +733,13 @@ ict_blkgetsize(file_t *fp, int cmd, intptr_t arg, int lxcmd)
 	ASSERT(lxzd->lxzd_vdisks != NULL);
 
 	if (getmajor(fp->f_vnode->v_rdev) == getmajor(lxzd->lxzd_zfs_dev)) {
-		lx_virt_disk_t *vd;
+		lx_virt_disk_t vd;
 
-		vd = lx_lookup_zvol(lxzd, fp->f_vnode->v_rdev);
-		if (vd == NULL) {
+		if (!lx_lookup_zdsk_info(lxzd, fp->f_vnode->v_rdev, &vd)) {
 			/* should only happen if new zvol */
 			tot = 0;
 		} else {
-			tot = vd->lxvd_volsize / 512;
+			tot = vd.lxvd_volsize / 512;
 		}
 	} else {
 		int res, rv;
@@ -722,14 +781,13 @@ ict_blkgetssize(file_t *fp, int cmd, intptr_t arg, int lxcmd)
 	ASSERT(lxzd->lxzd_vdisks != NULL);
 
 	if (getmajor(fp->f_vnode->v_rdev) == getmajor(lxzd->lxzd_zfs_dev)) {
-		lx_virt_disk_t *vd;
+		lx_virt_disk_t vd;
 
-		vd = lx_lookup_zvol(lxzd, fp->f_vnode->v_rdev);
-		if (vd == NULL) {
+		if (!lx_lookup_zdsk_info(lxzd, fp->f_vnode->v_rdev, &vd)) {
 			/* should only happen if new zvol */
 			bsize = 0;
 		} else {
-			bsize = (uint_t)vd->lxvd_blksize;
+			bsize = (uint_t)vd.lxvd_blksize;
 		}
 	} else {
 		int res, rv;
@@ -766,14 +824,13 @@ ict_blkgetsize64(file_t *fp, int cmd, intptr_t arg, int lxcmd)
 	ASSERT(lxzd->lxzd_vdisks != NULL);
 
 	if (getmajor(fp->f_vnode->v_rdev) == getmajor(lxzd->lxzd_zfs_dev)) {
-		lx_virt_disk_t *vd;
+		lx_virt_disk_t vd;
 
-		vd = lx_lookup_zvol(lxzd, fp->f_vnode->v_rdev);
-		if (vd == NULL) {
+		if (!lx_lookup_zdsk_info(lxzd, fp->f_vnode->v_rdev, &vd)) {
 			/* should only happen if new zvol */
 			tot = 0;
 		} else {
-			tot = vd->lxvd_volsize;
+			tot = vd.lxvd_volsize;
 		}
 	} else {
 		int res, rv;

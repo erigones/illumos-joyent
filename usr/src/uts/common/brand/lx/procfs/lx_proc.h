@@ -216,6 +216,8 @@ typedef enum lxpr_nodetype {
 	LXPR_SYS_KERNEL_CAPLCAP,	/* /proc/sys/kernel/cap_last_cap */
 	LXPR_SYS_KERNEL_COREPATT,	/* /proc/sys/kernel/core_pattern */
 	LXPR_SYS_KERNEL_HOSTNAME,	/* /proc/sys/kernel/hostname */
+	LXPR_SYS_KERNEL_MSGMAX,	/* /proc/sys/kernel/msgmax */
+	LXPR_SYS_KERNEL_MSGMNB,	/* /proc/sys/kernel/msgmnb */
 	LXPR_SYS_KERNEL_MSGMNI,	/* /proc/sys/kernel/msgmni */
 	LXPR_SYS_KERNEL_NGROUPS_MAX,	/* /proc/sys/kernel/ngroups_max */
 	LXPR_SYS_KERNEL_OSREL,	/* /proc/sys/kernel/osrelease */
@@ -232,16 +234,26 @@ typedef enum lxpr_nodetype {
 	LXPR_SYS_NET_COREDIR,		/* /proc/sys/net/core		*/
 	LXPR_SYS_NET_CORE_SOMAXCON,	/* /proc/sys/net/core/somaxconn	*/
 	LXPR_SYS_NET_IPV4DIR,		/* /proc/sys/net/ipv4		*/
+	LXPR_SYS_NET_IPV4_ICMP_EIB,	/* .../icmp_echo_ignore_broadcasts */
+	LXPR_SYS_NET_IPV4_IP_FORWARD,	/* .../net/ipv4/ip_forward */
 	LXPR_SYS_NET_IPV4_IP_LPORT_RANGE, /* .../net/ipv4/ip_local_port_range */
 	LXPR_SYS_NET_IPV4_TCP_FIN_TO,	/* /proc/sys/net/ipv4/tcp_fin_timeout */
 	LXPR_SYS_NET_IPV4_TCP_KA_INT,	/* .../net/ipv4/tcp_keepalive_intvl */
 	LXPR_SYS_NET_IPV4_TCP_KA_TIM,	/* .../net/ipv4/tcp_keepalive_time */
 	LXPR_SYS_NET_IPV4_TCP_MAX_SYN_BL, /* .../net/ipv4/tcp_max_syn_backlog */
+	LXPR_SYS_NET_IPV4_TCP_RETRY2,	/* /proc/sys/net/ipv4/tcp_retries2 */
 	LXPR_SYS_NET_IPV4_TCP_RMEM,	/* /proc/sys/net/ipv4/tcp_rmem */
 	LXPR_SYS_NET_IPV4_TCP_SACK,	/* /proc/sys/net/ipv4/tcp_sack */
 	LXPR_SYS_NET_IPV4_TCP_WINSCALE,	/* .../net/ipv4/tcp_window_scaling */
 	LXPR_SYS_NET_IPV4_TCP_WMEM,	/* /proc/sys/net/ipv4/tcp_wmem */
 	LXPR_SYS_VMDIR,			/* /proc/sys/vm			*/
+	LXPR_SYS_VM_DIRTY_BG_BYTES,	/* .../vm/dirty_background_bytes */
+	LXPR_SYS_VM_DIRTY_BG_RATIO,	/* .../vm/dirty_background_ratio */
+	LXPR_SYS_VM_DIRTY_BYTES,	/* /proc/sys/vm/dirty_bytes */
+	LXPR_SYS_VM_DIRTY_EXP_CS,	/* .../vm/dirty_expire_centisecs */
+	LXPR_SYS_VM_DIRTY_RATIO,	/* /proc/sys/vm/dirty_ratio */
+	LXPR_SYS_VM_DIRTYTIME_EXP_SEC,	/* .../vm/dirtytime_expire_seconds */
+	LXPR_SYS_VM_DIRTY_WB_CS,	/* .../vm/dirty_writeback_centisecs */
 	LXPR_SYS_VM_MAX_MAP_CNT,	/* /proc/sys/vm/max_map_count	*/
 	LXPR_SYS_VM_MINFR_KB,		/* /proc/sys/vm/min_free_kbytes	*/
 	LXPR_SYS_VM_NHUGEP,		/* /proc/sys/vm/nr_hugepages	*/

@@ -3,7 +3,7 @@
 .\" The contents of this file are subject to the terms of the Common Development and Distribution License (the "License").  You may not use this file except in compliance with the License. You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE or http://www.opensolaris.org/os/licensing.
 .\"  See the License for the specific language governing permissions and limitations under the License. When distributing Covered Code, include this CDDL HEADER in each file and include the License file at usr/src/OPENSOLARIS.LICENSE.  If applicable, add the following below this CDDL HEADER, with
 .\" the fields enclosed by brackets "[]" replaced with your own identifying information: Portions Copyright [yyyy] [name of copyright owner]
-.Dd October 4, 2016
+.Dd May 13, 2017
 .Dt USBA 7D
 .Os
 .Sh NAME
@@ -34,8 +34,7 @@ For a complete list of USBA interfaces, see
 or
 .Xr Intro 9S .
 .Pp
-Devices without a driver may be able to leverage
-.Xr libusb 3LIB .
+Devices without a driver may be able to leverage libusb.
 .Sh FILES
 Listed below are drivers and modules which either utilize or are utilized by
 USBA.
@@ -48,74 +47,42 @@ or
 .Pa kernel/drv/amd64
 are 64 bit drivers.
 .Bl -column -offset indent ".Pa kernel/drv/[sparcv9|amd64/]usbser_edge" "Edgeport USB to serial port"
-.It Em Client Driver
-.Ta Em Function/Device
-.It
-.Ta
-.It Pa kernel/drv/[sparcv9|amd64/]hid
-.Ta HID class
-.It Pa kernel/drv/[sparcv9|amd64/]hubd
-.Ta hub class
-.It Pa kernel/drv/[sparcv9|amd64/]scsa2usb
-.Ta mass storage class
-.It Pa kernel/drv/[sparcv9|amd64/]usbprn
-.Ta printer class
-.It Pa kernel/drv/[sparcv9|amd64/]usb_as
-.Ta audio streaming class
-.It Pa kernel/drv/[sparcv9|amd64/]usb_ac
-.Ta audio control class
-.It Pa kernel/drv/[sparcv9|amd64/]usbvc
-.Ta video class
-.It Pa kernel/drv/[sparcv9|amd64/]usb_mid
-.Ta multi-interface device
-.It Pa kernel/drv/[sparcv9|amd64/]usb_ia
-.Ta interface-association driver
-.It Pa kernel/drv/[sparcv9|amd64/]usbser_edge
-.Ta Edgeport USB to serial port
-.It Pa kernel/drv/[sparcv9|amd64/]usbsksp
-.Ta Keyspan USB to serial port
-.It Pa kernel/drv/[sparcv9|amd64/]usbsprl
-.Ta pl2303 USB to serial port
-.It Pa kernel/drv/[sparcv9|amd64/]usbsacm
-.Ta CDC ACM class to serial port
-.It Pa kernel/drv/[sparcv9|amd64/]ugen
-.Ta generic USB driver
-.It Pa kernel/drv/[sparcv9|amd64/]ohci
-.Ta open host controller driver
-.It Pa kernel/drv/[sparcv9|amd64/]uhci
-.Ta universal host controller driver
-.It Pa kernel/drv/[sparcv9|amd64/]ehci
-.Ta enhanced host controller driver
-.It Pa kernel/drv/[sparcv9|amd64/]xhci
-.Ta extensible host controller driver
+.It Em Client Driver Ta Em Function/Device
+.It Ta
+.It Pa kernel/drv/[sparcv9|amd64/]hid Ta HID class
+.It Pa kernel/drv/[sparcv9|amd64/]hubd Ta hub class
+.It Pa kernel/drv/[sparcv9|amd64/]scsa2usb Ta mass storage class
+.It Pa kernel/drv/[sparcv9|amd64/]usbprn Ta printer class
+.It Pa kernel/drv/[sparcv9|amd64/]usb_as Ta audio streaming class
+.It Pa kernel/drv/[sparcv9|amd64/]usb_ac Ta audio control class
+.It Pa kernel/drv/[sparcv9|amd64/]usbvc Ta video class
+.It Pa kernel/drv/[sparcv9|amd64/]usb_mid Ta multi-interface device
+.It Pa kernel/drv/[sparcv9|amd64/]usb_ia Ta interface-association driver
+.It Pa kernel/drv/[sparcv9|amd64/]usbser_edge Ta Edgeport USB to serial port
+.It Pa kernel/drv/[sparcv9|amd64/]usbsksp Ta Keyspan USB to serial port
+.It Pa kernel/drv/[sparcv9|amd64/]usbsprl Ta pl2303 USB to serial port
+.It Pa kernel/drv/[sparcv9|amd64/]usbsacm Ta CDC ACM class to serial port
+.It Pa kernel/drv/[sparcv9|amd64/]ugen Ta generic USB driver
+.It Pa kernel/drv/[sparcv9|amd64/]ohci Ta open host controller driver
+.It Pa kernel/drv/[sparcv9|amd64/]uhci Ta universal host controller driver
+.It Pa kernel/drv/[sparcv9|amd64/]ehci Ta enhanced host controller driver
+.It Pa kernel/drv/[sparcv9|amd64/]xhci Ta extensible host controller driver
 .El
 .Bl -column -offset indent ".Pa /kernel/strmod/[sparcv9|amd64/]usb_ah" "Function/Device"
-.It
-.Ta
-.It Em Client Streams Modules
-.Ta Em Function/Device
-.It
-.Ta
-.It Pa /kernel/strmod/[sparcv9|amd64/]usbkbm
-.Ta Keyboad
-.It Pa /kernel/strmod/[sparcv9|amd64/]usbms
-.Ta Mouse
-.It Pa /kernel/strmod/[sparcv9|amd64/]usb_ah
-.Ta Audio HID
+.It Ta
+.It Em Client Streams Modules Ta Em Function/Device
+.It Ta
+.It Pa /kernel/strmod/[sparcv9|amd64/]usbkbm Ta Keyboad
+.It Pa /kernel/strmod/[sparcv9|amd64/]usbms Ta Mouse
+.It Pa /kernel/strmod/[sparcv9|amd64/]usb_ah Ta Audio HID
 .El
 .Bl -column -offset indent ".Em Host Controller Interface Drivers" "Extensible HCI"
-.It Em Host Controller Interface Drivers
-.Ta Em Device
-.It
-.Ta
-.It Pa /kernel/drv/[amd64/]xhci
-.Ta Extensible HCI
-.It Pa /kernel/drv/[sparcv9|amd64/]ehci
-.Ta Enhanced HCI
-.It Pa /kernel/drv/[sparcv9|amd64/]ohci
-.Ta Open HCI
-.It Pa /kernel/drv/[sparcv|amd64/]uhci
-.Ta Universal HCI
+.It Em Host Controller Interface Drivers Ta Em Device
+.It Ta
+.It Pa /kernel/drv/[amd64/]xhci Ta Extensible HCI
+.It Pa /kernel/drv/[sparcv9|amd64/]ehci Ta Enhanced HCI
+.It Pa /kernel/drv/[sparcv9|amd64/]ohci Ta Open HCI
+.It Pa /kernel/drv/[sparcv|amd64/]uhci Ta Universal HCI
 .El
 .Sh DIAGNOSTICS
 The messages described below may appear on the system console as well as being
@@ -148,7 +115,6 @@ Driver is incompatible with USBA framework.
 .El
 .Sh SEE ALSO
 .Xr cfgadm_usb 1M ,
-.Xr libusb 3LIB ,
 .Xr attributes 5 ,
 .Xr ehci 7D ,
 .Xr hid 7D ,

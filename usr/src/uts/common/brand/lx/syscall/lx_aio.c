@@ -221,7 +221,7 @@ typedef struct lx_io_elem {
 	int64_t		lxioelem_offset;	/* offset in file */
 	uint64_t	lxioelem_data;
 	ssize_t		lxioelem_res;
-	lx_iocb_t	*lxioelem_cbp;
+	void		*lxioelem_cbp;		/* ptr to iocb in userspace */
 } lx_io_elem_t;
 
 /* From lx_rw.c */
@@ -424,6 +424,57 @@ lx_io_do_op(lx_io_elem_t *ep)
 }
 
 /*
+ * The operation has either completed or been cancelled. Finalize the handling
+ * and move the operation onto the "done" queue.
+ */
+static void
+lx_io_finish_op(lx_io_ctx_t *cp, lx_io_elem_t *ep, boolean_t do_event)
+{
+	boolean_t do_resfd;
+	int resfd = 0;
+	file_t *resfp = NULL;
+
+	if (ep->lxioelem_flags & LX_IOCB_FLAG_RESFD) {
+		do_resfd = B_TRUE;
+		resfd = ep->lxioelem_resfd;
+		resfp = ep->lxioelem_resfp;
+	} else {
+		do_resfd = B_FALSE;
+	}
+
+	ep->lxioelem_flags = 0;
+	ep->lxioelem_resfd = 0;
+	ep->lxioelem_resfp = NULL;
+
+	mutex_enter(&cp->lxioctx_d_lock);
+	list_insert_tail(&cp->lxioctx_done, ep);
+	cp->lxioctx_done_cnt++;
+	cv_signal(&cp->lxioctx_done_cv);
+	mutex_exit(&cp->lxioctx_d_lock);
+
+	/* Update the eventfd if necessary */
+	if (do_resfd) {
+		vnode_t *vp = resfp->f_vnode;
+		uint64_t val = 1;
+
+		set_active_fd(resfd);
+
+		if (do_event) {
+			/*
+			 * Eventfd notifications from AIO are special in that
+			 * they are not expected to block. This interface allows
+			 * the eventfd value to reach (but not cross) the
+			 * overflow value.
+			 */
+			(void) VOP_IOCTL(vp, EVENTFDIOC_POST, (intptr_t)&val,
+			    FKIOCTL, resfp->f_cred, NULL, NULL);
+		}
+
+		releasef(resfd);
+	}
+}
+
+/*
  * First check if this worker needs to quit due to shutdown or exit. Return
  * true in this case.
  *
@@ -501,49 +552,9 @@ lx_io_worker(void *a)
 		mutex_exit(&cp->lxioctx_p_lock);
 
 		while (ep != NULL) {
-			boolean_t do_resfd;
-			int resfd = 0;
-			file_t *resfp = NULL;
-
 			lx_io_do_op(ep);
 
-			if (ep->lxioelem_flags & LX_IOCB_FLAG_RESFD) {
-				do_resfd = B_TRUE;
-				resfd = ep->lxioelem_resfd;
-				resfp = ep->lxioelem_resfp;
-			} else {
-				do_resfd = B_FALSE;
-			}
-
-			ep->lxioelem_flags = 0;
-			ep->lxioelem_resfd = 0;
-			ep->lxioelem_resfp = NULL;
-
-			mutex_enter(&cp->lxioctx_d_lock);
-			list_insert_tail(&cp->lxioctx_done, ep);
-			cp->lxioctx_done_cnt++;
-			cv_signal(&cp->lxioctx_done_cv);
-			mutex_exit(&cp->lxioctx_d_lock);
-
-			/* Update the eventfd if necessary */
-			if (do_resfd) {
-				vnode_t *vp = resfp->f_vnode;
-				uint64_t val = 1;
-
-				set_active_fd(resfd);
-
-				/*
-				 * Eventfd notifications from AIO are special
-				 * in that they are not expected to block.
-				 * This interface allows the eventfd value to
-				 * reach (but not cross) the overflow value.
-				 */
-				(void) VOP_IOCTL(vp, EVENTFDIOC_POST,
-				    (intptr_t)&val, FKIOCTL, resfp->f_cred,
-				    NULL, NULL);
-
-				releasef(resfd);
-			}
+			lx_io_finish_op(cp, ep, B_TRUE);
 
 			if (lx_io_worker_chk_status(cp, B_FALSE))
 				break;
@@ -577,6 +588,15 @@ lx_io_setup(uint_t nr_events, void *ctxp)
 	uint_t nworkers;
 	k_sigset_t hold_set;
 
+#ifdef _SYSCALL32_IMPL
+	if (get_udatamodel() != DATAMODEL_NATIVE) {
+		uintptr32_t cid32;
+
+		if (copyin(ctxp, &cid32, sizeof (cid32)) != 0)
+			return (set_errno(EFAULT));
+		cid = (uintptr_t)cid32;
+	} else
+#endif
 	if (copyin(ctxp, &cid, sizeof (cid)) != 0)
 		return (set_errno(EFAULT));
 
@@ -767,6 +787,17 @@ lx_io_setup(uint_t nr_events, void *ctxp)
 	/* Release our hold, worker thread refs keep ctx alive. */
 	lx_io_cp_rele(cp);
 
+#ifdef _SYSCALL32_IMPL
+	if (get_udatamodel() != DATAMODEL_NATIVE) {
+		uintptr32_t cid32 = (uintptr32_t)cid;
+
+		if (copyout(&cid32, ctxp, sizeof (cid32)) != 0) {
+			/* Since we did a copyin above, this shouldn't fail */
+			(void) lx_io_destroy(cid);
+			return (set_errno(EFAULT));
+		}
+	} else
+#endif
 	if (copyout(&cid, ctxp, sizeof (cid)) != 0) {
 		/* Since we did a copyin above, this shouldn't fail */
 		(void) lx_io_destroy(cid);
@@ -779,7 +810,7 @@ lx_io_setup(uint_t nr_events, void *ctxp)
 long
 lx_io_submit(lx_aio_context_t cid, const long nr, uintptr_t **bpp)
 {
-	int i = 0;
+	uint_t i = 0;
 	int err = 0;
 	const size_t sz = nr * sizeof (uintptr_t);
 	lx_io_ctx_t *cp;
@@ -809,6 +840,29 @@ lx_io_submit(lx_aio_context_t cid, const long nr, uintptr_t **bpp)
 		iocbpp = (lx_iocb_t **)alloca(sz);
 	}
 
+#ifdef _SYSCALL32_IMPL
+	if (get_udatamodel() != DATAMODEL_NATIVE) {
+		uintptr32_t *iocbpp32;
+
+		if (copyin(bpp, iocbpp, nr * sizeof (uintptr32_t)) != 0) {
+			lx_io_cp_rele(cp);
+			err = EFAULT;
+			goto out;
+		}
+
+		/*
+		 * Zero-extend the 32-bit pointers to proper size.  This is
+		 * performed "in reverse" so it can be done in-place, rather
+		 * than with an additional translation copy.
+		 */
+		iocbpp32 = (uintptr32_t *)iocbpp;
+		i = nr;
+		do {
+			i--;
+			iocbpp[i] = (lx_iocb_t *)(uintptr_t)iocbpp32[i];
+		} while (i != 0);
+	} else
+#endif
 	if (copyin(bpp, iocbpp, nr * sizeof (uintptr_t)) != 0) {
 		lx_io_cp_rele(cp);
 		err = EFAULT;
@@ -873,12 +927,12 @@ lx_io_submit(lx_aio_context_t cid, const long nr, uintptr_t **bpp)
 
 		if (cb.lxiocb_op == LX_IOCB_CMD_PREAD &&
 		    (fp->f_flag & FREAD) == 0) {
-			err = EINVAL;
+			err = EBADF;
 			releasef(cb.lxiocb_fd);
 			break;
 		} else if (cb.lxiocb_op == LX_IOCB_CMD_PWRITE &&
 		    (fp->f_flag & FWRITE) == 0) {
-			err = EINVAL;
+			err = EBADF;
 			releasef(cb.lxiocb_fd);
 			break;
 		}
@@ -1146,12 +1200,21 @@ lx_io_getevents(lx_aio_context_t cid, long min_nr, const long nr,
 	return (i);
 }
 
+/*
+ * Linux never returns 0 from io_cancel. A successful cancellation will return
+ * EINPROGRESS and the result for the cancelled operation will be available via
+ * a normal io_getevents call. The third parameter (the "result") to this
+ * syscall is unused. Note that currently the Linux man pages are incorrect
+ * about this behavior. Also note that in Linux, only the USB driver currently
+ * support aio cancellation, so callers will almost always get EINVAL when they
+ * attempt to cancel an IO on Linux.
+ */
+/*ARGSUSED*/
 long
 lx_io_cancel(lx_aio_context_t cid, lx_iocb_t *iocbp, lx_io_event_t *result)
 {
 	lx_io_ctx_t *cp;
 	lx_io_elem_t *ep;
-	lx_io_event_t ev;
 	uint32_t buf;
 
 	/*
@@ -1188,33 +1251,12 @@ lx_io_cancel(lx_aio_context_t cid, lx_iocb_t *iocbp, lx_io_event_t *result)
 	releasef(ep->lxioelem_fd);
 	ep->lxioelem_fd = 0;
 	ep->lxioelem_fp = NULL;
+	ep->lxioelem_res = -lx_errno(EINTR, EINTR);
 
-	if (ep->lxioelem_flags & LX_IOCB_FLAG_RESFD) {
-		set_active_fd(ep->lxioelem_resfd);
-		releasef(ep->lxioelem_resfd);
-		ep->lxioelem_flags = 0;
-		ep->lxioelem_resfd = 0;
-		ep->lxioelem_resfp = NULL;
-	}
-
-	ev.lxioe_data = ep->lxioelem_cbp->lxiocb_data;
-	ev.lxioe_object = (uint64_t)(uintptr_t)ep->lxioelem_cbp;
-	ev.lxioe_res = 0;
-	ev.lxioe_res2 = 0;
-
-	/* Put it back on the free list */
-	ep->lxioelem_cbp = NULL;
-	ep->lxioelem_res = 0;
-	mutex_enter(&cp->lxioctx_f_lock);
-	list_insert_head(&cp->lxioctx_free, ep);
-	cp->lxioctx_free_cnt++;
-	mutex_exit(&cp->lxioctx_f_lock);
+	lx_io_finish_op(cp, ep, B_FALSE);
 	lx_io_cp_rele(cp);
 
-	if (copyout(&ev, result, sizeof (lx_io_event_t)) != 0)
-		return (set_errno(EFAULT));
-
-	return (0);
+	return (set_errno(EINPROGRESS));
 }
 
 long

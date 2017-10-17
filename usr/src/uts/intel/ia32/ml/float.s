@@ -277,6 +277,7 @@ void
 xsave_ctxt(void *arg)
 {}
 
+/*ARGSUSED*/
 void
 xsaveopt_ctxt(void *arg)
 {}

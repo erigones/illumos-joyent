@@ -64,16 +64,13 @@ extern U8 MR_BuildRaidContext(struct mrsas_instance *, struct IO_REQUEST_INFO *,
 /* Local static prototypes. */
 static struct mrsas_cmd *mrsas_tbolt_build_cmd(struct mrsas_instance *,
     struct scsi_address *, struct scsi_pkt *, uchar_t *);
-static void mrsas_tbolt_set_pd_lba(U8 cdb[], uint8_t *cdb_len_ptr,
-    U64 start_blk, U32 num_blocks);
+static void mrsas_tbolt_set_pd_lba(U8 *, size_t, uint8_t *, U64, U32);
 static int mrsas_tbolt_check_map_info(struct mrsas_instance *);
 static int mrsas_tbolt_sync_map_info(struct mrsas_instance *);
 static int mrsas_tbolt_prepare_pkt(struct scsa_cmd *);
 static int mrsas_tbolt_ioc_init(struct mrsas_instance *, dma_obj_t *);
-#ifdef PDSUPPORT
 static void mrsas_tbolt_get_pd_info(struct mrsas_instance *,
     struct mrsas_tbolt_pd_info *, int);
-#endif /* PDSUPPORT */
 
 static int mrsas_debug_tbolt_fw_faults_after_ocr = 0;
 
@@ -1658,6 +1655,7 @@ mrsas_tbolt_build_cmd(struct mrsas_instance *instance, struct scsi_address *ap,
 				    &io_info, scsi_raid_io, start_lba_lo);
 			} else {
 				mrsas_tbolt_set_pd_lba(scsi_raid_io->CDB.CDB32,
+				    sizeof (scsi_raid_io->CDB.CDB32),
 				    (uint8_t *)&pd_cmd_cdblen,
 				    io_info.pdBlock, io_info.numBlocks);
 				ddi_put16(acc_handle,
@@ -1801,7 +1799,6 @@ mrsas_tbolt_build_cmd(struct mrsas_instance *instance, struct scsi_address *ap,
 			break;
 		}
 	} else { /* Physical */
-#ifdef PDSUPPORT
 		/* Pass-through command to physical drive */
 
 		/* Acquire SYNC MAP UPDATE lock */
@@ -1852,10 +1849,6 @@ mrsas_tbolt_build_cmd(struct mrsas_instance *instance, struct scsi_address *ap,
 
 		/* Release SYNC MAP UPDATE lock */
 		mutex_exit(&instance->sync_map_mtx);
-#else
-		/* If no PD support, return here. */
-		return (cmd);
-#endif
 	}
 
 	/* Set sense buffer physical address/length in scsi_io_request. */
@@ -2389,11 +2382,9 @@ tbolt_complete_cmd(struct mrsas_instance *instance,
 				if (acmd->islogical &&
 				    (status == MFI_STAT_OK)) {
 					display_scsi_inquiry((caddr_t)inq);
-#ifdef PDSUPPORT
 				} else if ((status == MFI_STAT_OK) &&
 				    inq->inq_dtype == DTYPE_DIRECT) {
 					display_scsi_inquiry((caddr_t)inq);
-#endif
 				} else {
 					/* for physical disk */
 					status = MFI_STAT_DEVICE_NOT_FOUND;
@@ -2978,14 +2969,16 @@ mrsas_tbolt_prepare_cdb(struct mrsas_instance *instance, U8 cdb[],
 /*
  * mrsas_tbolt_set_pd_lba -	Sets PD LBA
  * @cdb:		CDB
- * @cdb_len:		cdb length
+ * @cdb_size:		CDB size
+ * @cdb_len_ptr:	cdb length
  * @start_blk:		Start block of IO
+ * @num_blocks:		Number of blocks
  *
  * Used to set the PD LBA in CDB for FP IOs
  */
 static void
-mrsas_tbolt_set_pd_lba(U8 cdb[], uint8_t *cdb_len_ptr, U64 start_blk,
-    U32 num_blocks)
+mrsas_tbolt_set_pd_lba(U8 *cdb, size_t cdb_size, uint8_t *cdb_len_ptr,
+    U64 start_blk, U32 num_blocks)
 {
 	U8 cdb_len = *cdb_len_ptr;
 	U8 flagvals = 0, opcode = 0, groupnum = 0, control = 0;
@@ -3009,7 +3002,7 @@ mrsas_tbolt_set_pd_lba(U8 cdb[], uint8_t *cdb_len_ptr, U64 start_blk,
 			control = cdb[11];
 		}
 
-		bzero(cdb, sizeof (cdb));
+		bzero(cdb, cdb_size);
 
 		cdb[0] = opcode;
 		cdb[1] = flagvals;
@@ -3042,7 +3035,7 @@ mrsas_tbolt_set_pd_lba(U8 cdb[], uint8_t *cdb_len_ptr, U64 start_blk,
 			break;
 		}
 
-		bzero(cdb, sizeof (cdb));
+		bzero(cdb, cdb_size);
 
 		cdb[0] = opcode;
 		cdb[1] = flagvals;
@@ -3062,7 +3055,7 @@ mrsas_tbolt_set_pd_lba(U8 cdb[], uint8_t *cdb_len_ptr, U64 start_blk,
 		opcode = cdb[0] == READ_6 ? READ_10 : WRITE_10;
 		control = cdb[5];
 
-		bzero(cdb, sizeof (cdb));
+		bzero(cdb, cdb_size);
 		cdb[0] = opcode;
 		cdb[9] = control;
 
@@ -3526,8 +3519,6 @@ abort_syncmap_cmd(struct mrsas_instance *instance,
 	return (ret);
 }
 
-
-#ifdef PDSUPPORT
 /*
  * Even though these functions were originally intended for 2208 only, it
  * turns out they're useful for "Skinny" support as well.  In a perfect world,
@@ -3684,4 +3675,3 @@ mrsas_tbolt_get_pd_info(struct mrsas_instance *instance,
 	else
 		mrsas_return_mfi_pkt(instance, cmd);
 }
-#endif
