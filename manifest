@@ -102,6 +102,7 @@ f boot/loader.rc 0444 root bin
 f boot/pmbr 0444 root bin
 f boot/pxeboot 0444 root bin
 d boot/solaris 0755 root sys
+f boot/solaris/bootenv.rc 0644 root root
 f boot/solaris.xpm 0644 root bin
 d boot/solaris/bin 0755 root bin
 f boot/solaris/bin/create_diskmap 0555 root bin
@@ -110,7 +111,6 @@ f boot/solaris/bin/extract_boot_filelist 0555 root bin
 f boot/solaris/bin/mbr 0555 root bin
 f boot/solaris/bin/symdef 0555 root bin
 f boot/solaris/bin/update_grub 0555 root bin
-f boot/solaris/bootenv.rc 0644 root bin
 d boot/solaris/devicedb 0755 root sys
 f boot/solaris/devicedb/master 0644 root sys
 f boot/solaris/filelist.safe 0644 root bin
