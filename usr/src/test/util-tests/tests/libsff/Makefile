@@ -33,15 +33,19 @@ DIFF_PROGS = \
 	libsff_opts \
 	libsff_wave
 
-PROGS = $(DIFF_PROGS) \
+ERR_PROGS = \
 	libsff_efault \
-	libsff_einval \
+	libsff_einval
+
+PROGS = $(DIFF_PROGS) \
+	$(ERR_PROGS) \
 	libsff_strings
+
+LINTS = $(PROGS:%=%.ln)
 
 SCRIPTS = libsff
 
 include $(SRC)/cmd/Makefile.cmd
-include $(SRC)/cmd/Makefile.ctf
 include $(SRC)/test/Makefile.com
 
 CMDS = $(PROGS:%=$(TESTDIR)/%) $(SCRIPTS:%=$(TESTDIR)/%)
@@ -50,16 +54,29 @@ $(CMDS) := FILEMODE = 0555
 $(OUTFILES) := FILEMODE = 0444
 
 CPPFLAGS += -I$(SRC)/lib/libsff/common
-LDLIBS += -lsff -lnvpair
+
+#
+# Different tests require different sets of libraries. If we try and use
+# the same set, we'll get guidance errors from ld.
+#
+$(ERR_PROGS)	:= LDLIBS += -lsff
+$(DIFF_PROGS)	:= LDLIBS += -lsff -lnvpair
+libsff_strings	:= LDLIBS += -lsff -lnvpair
+$(ERR_PROGS).ln	:= LDLIBS += -lsff
+$(DIFF_PROGS).ln	:= LDLIBS += -lsff -lnvpair
+libsff_strings.ln	:= LDLIBS += -lsff -lnvpair
 
 all: $(PROGS)
 
 install: all $(CMDS) $(OUTFILES)
 
-lint: lint_SRCS
+lint: $(LINTS)
+
+%.ln: %.c
+	$(LINT.c) -erroff=E_NAME_USED_NOT_DEF2 $< $(LDLIBS)
 
 clobber: clean
-	-$(RM) $(PROGS)
+	-$(RM) $(PROGS) $(LINTS)
 
 clean:
 
@@ -76,6 +93,4 @@ $(TESTDIR)/%: %.ksh
 
 %: %.c
 	$(LINK.c) -o $@ $< $(LDLIBS)
-	$(POST_PROCESS_O)
-
-
+	$(POST_PROCESS)
