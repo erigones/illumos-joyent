@@ -10301,7 +10301,11 @@ f usr/platform/i86pc/lib/fm/eft/intel.eft 0444 root sys
 d usr/platform/i86pc/lib/fm/topo 0755 root sys
 d usr/platform/i86pc/lib/fm/topo/maps 0755 root sys
 f usr/platform/i86pc/lib/fm/topo/maps/Joyent-Compute-Platform-1101-disk-hc-topology.xml 0444 root sys
-f usr/platform/i86pc/lib/fm/topo/maps/Joyent-Compute-Platform-3101-disk-hc-topology.xml 0444 root sys
+s usr/platform/i86pc/lib/fm/topo/maps/Joyent-Compute-Platform-3101-hc-topology.xml=./SSG-2028R-ACR24L-hc-topology.xml
+s usr/platform/i86pc/lib/fm/topo/maps/Joyent-Compute-Platform-3102-hc-topology.xml=./SSG-2028R-ACR24L-hc-topology.xml 
+f usr/platform/i86pc/lib/fm/topo/maps/SSG-2028R-ACR24L-hc-topology.xml 0444 root sys
+f usr/platform/i86pc/lib/fm/topo/maps/SSG-2028R-ACR24L-chassis-hc-topology.xml 0444 root sys
+f usr/platform/i86pc/lib/fm/topo/maps/SSG-2028R-ACR24L-disk-hc-topology.xml 0444 root sys
 f usr/platform/i86pc/lib/fm/topo/maps/chassis-hc-topology.xml 0444 root sys
 f usr/platform/i86pc/lib/fm/topo/maps/chip-hc-topology.xml 0444 root sys
 f usr/platform/i86pc/lib/fm/topo/maps/fan-hc-topology.xml 0444 root sys
@@ -12442,7 +12446,6 @@ s usr/share/man/man2/fchown.2=chown.2
 s usr/share/man/man2/fchownat.2=chown.2
 s usr/share/man/man2/fchroot.2=chroot.2
 f usr/share/man/man2/fcntl.2 0444 root bin
-s usr/share/man/man2/fgetlabel.2=getlabel.2
 f usr/share/man/man2/fork.2 0444 root bin
 s usr/share/man/man2/fork1.2=fork.2
 s usr/share/man/man2/forkall.2=fork.2
@@ -12466,7 +12469,6 @@ s usr/share/man/man2/getgid.2=getuid.2
 f usr/share/man/man2/getgroups.2 0444 root bin
 f usr/share/man/man2/getisax.2 0444 root bin
 f usr/share/man/man2/getitimer.2 0444 root bin
-f usr/share/man/man2/getlabel.2 0444 root bin
 f usr/share/man/man2/getmsg.2 0444 root bin
 f usr/share/man/man2/getpflags.2 0444 root bin
 s usr/share/man/man2/getpgid.2=getpid.2
