@@ -23,6 +23,7 @@
  * Copyright (c) 2017, Joyent, Inc.
  * Copyright (c) 2012, 2017 by Delphix. All rights reserved.
  * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018, Joyent, Inc.
  */
 
 /*
@@ -1059,8 +1060,6 @@ static vmem_t		*kmem_va_arena;
 static vmem_t		*kmem_default_arena;
 static vmem_t		*kmem_firewall_va_arena;
 static vmem_t		*kmem_firewall_arena;
-
-static int		kmem_zerosized;		/* # of zero-sized allocs */
 
 /*
  * kmem slab consolidator thresholds (tunables)

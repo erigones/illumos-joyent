@@ -87,7 +87,8 @@ typedef enum dmu_objset_type {
  * the property table in usr/src/common/zfs/zfs_prop.c.
  */
 typedef enum {
-	ZFS_PROP_BAD = -1,
+	ZPROP_CONT = -2,
+	ZPROP_INVAL = -1,
 	ZFS_PROP_TYPE = 0,
 	ZFS_PROP_CREATION,
 	ZFS_PROP_USED,
@@ -160,6 +161,7 @@ typedef enum {
 	ZFS_PROP_REDUNDANT_METADATA,
 	ZFS_PROP_PREV_SNAP,
 	ZFS_PROP_RECEIVE_RESUME_TOKEN,
+	ZFS_PROP_REMAPTXG,		/* not exposed to the user */
 	ZFS_NUM_PROPS
 } zfs_prop_t;
 
@@ -180,6 +182,7 @@ extern const char *zfs_userquota_prop_prefixes[ZFS_NUM_USERQUOTA_PROPS];
  * the property table in usr/src/common/zfs/zpool_prop.c.
  */
 typedef enum {
+	ZPOOL_PROP_INVAL = -1,
 	ZPOOL_PROP_NAME,
 	ZPOOL_PROP_SIZE,
 	ZPOOL_PROP_CAPACITY,
@@ -211,9 +214,6 @@ typedef enum {
 
 /* Small enough to not hog a whole line of printout in zpool(1M). */
 #define	ZPROP_MAX_COMMENT	32
-
-#define	ZPROP_CONT		-2
-#define	ZPROP_INVAL		-1
 
 #define	ZPROP_VALUE		"value"
 #define	ZPROP_SOURCE		"source"
@@ -508,7 +508,9 @@ typedef struct zpool_rewind_policy {
 
 /*
  * The following are configuration names used in the nvlist describing a pool's
- * configuration.
+ * configuration.  New on-disk names should be prefixed with "<reverse-DNS>:"
+ * (e.g. "org.open-zfs:") to avoid conflicting names being developed
+ * independently.
  */
 #define	ZPOOL_CONFIG_VERSION		"version"
 #define	ZPOOL_CONFIG_POOL_NAME		"name"
@@ -522,6 +524,9 @@ typedef struct zpool_rewind_policy {
 #define	ZPOOL_CONFIG_CHILDREN		"children"
 #define	ZPOOL_CONFIG_ID			"id"
 #define	ZPOOL_CONFIG_GUID		"guid"
+#define	ZPOOL_CONFIG_INDIRECT_OBJECT	"com.delphix:indirect_object"
+#define	ZPOOL_CONFIG_INDIRECT_BIRTHS	"com.delphix:indirect_births"
+#define	ZPOOL_CONFIG_PREV_INDIRECT_VDEV	"com.delphix:prev_indirect_vdev"
 #define	ZPOOL_CONFIG_PATH		"path"
 #define	ZPOOL_CONFIG_DEVID		"devid"
 #define	ZPOOL_CONFIG_METASLAB_ARRAY	"metaslab_array"
@@ -530,7 +535,9 @@ typedef struct zpool_rewind_policy {
 #define	ZPOOL_CONFIG_ASIZE		"asize"
 #define	ZPOOL_CONFIG_DTL		"DTL"
 #define	ZPOOL_CONFIG_SCAN_STATS		"scan_stats"	/* not stored on disk */
+#define	ZPOOL_CONFIG_REMOVAL_STATS	"removal_stats"	/* not stored on disk */
 #define	ZPOOL_CONFIG_VDEV_STATS		"vdev_stats"	/* not stored on disk */
+#define	ZPOOL_CONFIG_INDIRECT_SIZE	"indirect_size"	/* not stored on disk */
 #define	ZPOOL_CONFIG_WHOLE_DISK		"whole_disk"
 #define	ZPOOL_CONFIG_ERRCOUNT		"error_count"
 #define	ZPOOL_CONFIG_NOT_PRESENT	"not_present"
@@ -571,6 +578,7 @@ typedef struct zpool_rewind_policy {
 #define	ZPOOL_CONFIG_VDEV_TOP_ZAP	"com.delphix:vdev_zap_top"
 #define	ZPOOL_CONFIG_VDEV_LEAF_ZAP	"com.delphix:vdev_zap_leaf"
 #define	ZPOOL_CONFIG_HAS_PER_VDEV_ZAPS	"com.delphix:has_per_vdev_zaps"
+#define	ZPOOL_CONFIG_CACHEFILE		"cachefile"	/* not stored on disk */
 /*
  * The persistent vdev state is stored as separate values rather than a single
  * 'vdev_state' entry.  This is because a device can be in multiple states, such
@@ -606,6 +614,13 @@ typedef struct zpool_rewind_policy {
 #define	VDEV_TYPE_SPARE			"spare"
 #define	VDEV_TYPE_LOG			"log"
 #define	VDEV_TYPE_L2CACHE		"l2cache"
+#define	VDEV_TYPE_INDIRECT		"indirect"
+
+/* VDEV_TOP_ZAP_* are used in top-level vdev ZAP objects. */
+#define	VDEV_TOP_ZAP_INDIRECT_OBSOLETE_SM \
+	"com.delphix:indirect_obsolete_sm"
+#define	VDEV_TOP_ZAP_OBSOLETE_COUNTS_ARE_PRECISE \
+	"com.delphix:obsolete_counts_are_precise"
 
 /*
  * This is needed in userland to report the minimum necessary device size.
@@ -664,7 +679,8 @@ typedef enum vdev_aux {
 	VDEV_AUX_IO_FAILURE,	/* experienced I/O failure		*/
 	VDEV_AUX_BAD_LOG,	/* cannot read log chain(s)		*/
 	VDEV_AUX_EXTERNAL,	/* external diagnosis			*/
-	VDEV_AUX_SPLIT_POOL	/* vdev was split off into another pool	*/
+	VDEV_AUX_SPLIT_POOL,	/* vdev was split off into another pool	*/
+	VDEV_AUX_CHILDREN_OFFLINE /* all children are offline		*/
 } vdev_aux_t;
 
 /*
@@ -740,6 +756,20 @@ typedef struct pool_scan_stat {
 	/* cumulative time scrub spent paused, needed for rate calculation */
 	uint64_t	pss_pass_scrub_spent_paused;
 } pool_scan_stat_t;
+
+typedef struct pool_removal_stat {
+	uint64_t prs_state; /* dsl_scan_state_t */
+	uint64_t prs_removing_vdev;
+	uint64_t prs_start_time;
+	uint64_t prs_end_time;
+	uint64_t prs_to_copy; /* bytes that need to be copied */
+	uint64_t prs_copied; /* bytes copied so far */
+	/*
+	 * bytes of memory used for indirect mappings.
+	 * This includes all removed vdevs.
+	 */
+	uint64_t prs_mapping_memory;
+} pool_removal_stat_t;
 
 typedef enum dsl_scan_state {
 	DSS_NONE,
@@ -895,6 +925,7 @@ typedef enum zfs_ioc {
 	ZFS_IOC_GET_BOOKMARKS,
 	ZFS_IOC_DESTROY_BOOKMARKS,
 	ZFS_IOC_CHANNEL_PROGRAM,
+	ZFS_IOC_REMAP,
 	ZFS_IOC_LAST
 } zfs_ioc_t;
 

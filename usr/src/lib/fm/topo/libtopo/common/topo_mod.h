@@ -23,7 +23,7 @@
  * Copyright (c) 2006, 2010, Oracle and/or its affiliates. All rights reserved.
  */
 /*
- * Copyright (c) 2013, Joyent, Inc. All rights reserved.
+ * Copyright (c) 2018, Joyent, Inc. All rights reserved.
  */
 
 #ifndef _TOPO_MOD_H
@@ -35,6 +35,7 @@
 #include <libnvpair.h>
 #include <libdevinfo.h>
 #include <smbios.h>
+#include <pcidb.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -127,6 +128,7 @@ extern di_node_t topo_mod_devinfo(topo_mod_t *);
 extern ipmi_handle_t *topo_mod_ipmi_hold(topo_mod_t *);
 extern void topo_mod_ipmi_rele(topo_mod_t *);
 extern smbios_hdl_t *topo_mod_smbios(topo_mod_t *);
+extern pcidb_hdl_t *topo_mod_pcidb(topo_mod_t *);
 extern di_prom_handle_t topo_mod_prominfo(topo_mod_t *);
 extern nvlist_t *topo_mod_auth(topo_mod_t *, tnode_t *);
 
@@ -228,6 +230,7 @@ extern void topo_mod_setdebug(topo_mod_t *);
 extern void topo_mod_dprintf(topo_mod_t *, const char *, ...);
 extern const char *topo_mod_errmsg(topo_mod_t *);
 extern int topo_mod_errno(topo_mod_t *);
+extern char *topo_mod_clean_str(topo_mod_t *, const char *);
 
 /*
  * Topo node utilities: callable from module enumeration, topo_mod_enumerate()

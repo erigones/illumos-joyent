@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2006, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, Joyent, Inc.
  */
 
 /*
@@ -90,6 +91,7 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <ctype.h>
+#include <pcidb.h>
 #include <sys/param.h>
 #include <sys/utsname.h>
 #include <sys/smbios.h>
@@ -456,7 +458,7 @@ topo_mod_cpufmri(topo_mod_t *mod, int version, uint32_t cpu_id, uint8_t cpumask,
 
 nvlist_t *
 topo_mod_memfmri(topo_mod_t *mod, int version, uint64_t pa, uint64_t offset,
-	const char *unum, int flags)
+    const char *unum, int flags)
 {
 	int err;
 	nvlist_t *args = NULL, *fmri = NULL;
@@ -732,6 +734,17 @@ topo_mod_prominfo(topo_mod_t *mod)
 	return (topo_hdl_prominfo(mod->tm_hdl));
 }
 
+pcidb_hdl_t *
+topo_mod_pcidb(topo_mod_t *mod)
+{
+	topo_hdl_t *thp = mod->tm_hdl;
+
+	if (thp->th_pcidb == NULL)
+		thp->th_pcidb = pcidb_open(PCIDB_VERSION);
+
+	return (thp->th_pcidb);
+}
+
 void
 topo_mod_clrdebug(topo_mod_t *mod)
 {
@@ -895,4 +908,13 @@ topo_mod_walk_init(topo_mod_t *mod, tnode_t *node, topo_mod_walk_cb_t cb_f,
 		return (NULL);
 
 	return (wp);
+}
+
+char *
+topo_mod_clean_str(topo_mod_t *mod, const char *str)
+{
+	if (str == NULL)
+		return (NULL);
+
+	return (topo_cleanup_auth_str(mod->tm_hdl, str));
 }

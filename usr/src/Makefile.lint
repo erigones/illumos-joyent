@@ -83,7 +83,6 @@ COMMON_SUBDIRS = \
 	cmd/cmd-inet/usr.lib/slpd \
 	cmd/cmd-inet/usr.lib/vrrpd \
 	cmd/cmd-inet/usr.lib/wpad \
-	cmd/cmd-inet/usr.lib/wanboot \
 	cmd/cmd-inet/usr.sadm \
 	cmd/cmd-inet/usr.sbin \
 	cmd/cmd-inet/usr.sbin/ilbadm \
@@ -129,7 +128,6 @@ COMMON_SUBDIRS = \
 	cmd/fdetach \
 	cmd/fdformat \
 	cmd/fdisk \
-	cmd/fgrep \
 	cmd/file \
 	cmd/find \
 	cmd/fmthard \
@@ -157,7 +155,6 @@ COMMON_SUBDIRS = \
 	cmd/getopt \
 	cmd/gettext \
 	cmd/grep \
-	cmd/grep_xpg4 \
 	cmd/groups \
 	cmd/halt \
 	cmd/head \
@@ -445,8 +442,6 @@ COMMON_SUBDIRS = \
 	lib/libuuid \
 	lib/libuutil \
 	lib/libvrrpadm \
-	lib/libwanboot \
-	lib/libwanbootutil \
 	lib/libxnet \
 	lib/libzfs \
 	lib/libzfs_jni \

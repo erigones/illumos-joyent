@@ -27,8 +27,9 @@
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
 # Copyright (c) 2015 Gary Mills
 # Copyright 2016 Toomas Soome <tsoome@me.com>
-# Copyright 2017 Nexenta Systems, Inc.
+# Copyright 2018 Nexenta Systems, Inc.
 # Copyright (c) 2016, Chris Fraire <cfraire@me.com>.
+# Copyright 2017 RackTop Systems.
 #
 
 include ../Makefile.master
@@ -239,8 +240,6 @@ SUBDIRS +=				\
 	libvrrpadm	\
 	libvscan	\
 	libw		\
-	libwanboot	\
-	libwanbootutil	\
 	libwrap		\
 	libxcurses	\
 	libxcurses2	\
@@ -354,8 +353,6 @@ MSGSUBDIRS=		\
 	libuutil	\
 	libvrrpadm	\
 	libvscan	\
-	libwanboot	\
-	libwanbootutil	\
 	libzfs		\
 	libzonecfg	\
 	libzdoor	\
@@ -491,8 +488,6 @@ HDRSUBDIRS=				\
 	libvolmgt	\
 	libvrrpadm	\
 	libvscan	\
-	libwanboot	\
-	libwanbootutil	\
 	libwrap		\
 	libxcurses2	\
 	libzfs		\
@@ -589,7 +584,7 @@ auditd_plugins: libbsm libsecdb libgss libmtmalloc
 brand:		libzonecfg libmapmalloc libipadm libcmdutils libproc librpcsvc
 cfgadm_plugins:	libdevice libdevinfo libhotplug librcm hbaapi libkstat libscf
 fm:		libexacct libipmi libzfs scsi libdevinfo libdevid libcfgadm \
-		libcontract libsysevent ../cmd/sgs/libelf libdladm
+		libcontract libsysevent ../cmd/sgs/libelf libdladm libsff
 $(SPARC_BLD)fm:	libpri
 gss_mechs/mech_dh: libgss
 gss_mechs/mech_dummy: libgss
@@ -650,7 +645,7 @@ libnisdb:	libldap5
 libnwam:	libscf libbsm libdladm libipadm
 libpcp:		libumem libdevinfo
 libpctx:	libproc
-libpkg:		libwanboot libscf libadm
+libpkg:		libscf libadm
 libpool:	libscf libexacct
 libpp:		libast
 libproc:	../cmd/sgs/librtld_db ../cmd/sgs/libelf libctf
@@ -690,15 +685,14 @@ libv12n:	libds libuuid
 libvolmgt:	libadm
 libvrrpadm:	libdladm libscf
 libvscan:	libscf libsecdb
-libwanboot:	libresolv2 libdevinfo libinetutil libdhcputil
 libzdoor:	libc libzonecfg libcontract
 libzfs:		libdevid libgen libuutil libadm libavl libefi libidmap \
-		libumem libtsol libzfs_core
+		libumem libtsol libzfs_core libcmdutils
 libzfs_jni:	libdiskmgt libzfs
 libzonecfg:	libuuid libsysevent libsec libbrand libpool libscf libproc \
 		libuutil libbsm libsecdb
 libzonestat:	libcmdutils libumem
-libzpool:	libavl libumem libcmdutils libsysevent
+libzpool:	libavl libumem libcmdutils libsysevent libfakekernel
 madv:		libgen
 mpapi:		libpthread libdevinfo libsysevent
 mpss:		libgen
