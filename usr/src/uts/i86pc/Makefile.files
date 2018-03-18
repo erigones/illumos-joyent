@@ -23,7 +23,7 @@
 # Copyright (c) 1992, 2010, Oracle and/or its affiliates. All rights reserved.
 #
 # Copyright (c) 2010, Intel Corporation.
-# Copyright 2017 Joyent, Inc.
+# Copyright 2018 Joyent, Inc.
 #
 #	This Makefile defines file modules in the directory uts/i86pc
 #	and its children. These are the source files which are i86pc
@@ -75,7 +75,6 @@ CORE_OBJS +=			\
 	instr_size.o		\
 	intr.o			\
 	kboot_mmu.o		\
-	kdi_subr.o		\
 	kdi_idt.o		\
 	kdi_idthdl.o		\
 	kdi_asm.o		\
@@ -112,6 +111,7 @@ CORE_OBJS +=			\
 	pmem.o			\
 	ppage.o			\
 	pwrnow.o		\
+	seg_vmm.o		\
 	speedstep.o		\
 	ssp.o			\
 	startup.o		\
@@ -159,7 +159,8 @@ SPECIAL_OBJS_64 +=		\
 	locore.o		\
 	fast_trap_asm.o		\
 	interrupt.o		\
-	syscall_asm_amd64.o
+	syscall_asm_amd64.o	\
+	kpti_trampolines.o
 
 SPECIAL_OBJS += $(SPECIAL_OBJS_$(CLASS))
 
@@ -236,6 +237,44 @@ UPPC_OBJS += uppc.o psm_common.o
 XSVC_OBJS += xsvc.o
 AMD_IOMMU_OBJS +=	amd_iommu.o amd_iommu_impl.o amd_iommu_acpi.o \
 			amd_iommu_cmd.o amd_iommu_log.o amd_iommu_page_tables.o
+VMM_OBJS += vmm.o \
+	vmm_sol_dev.o \
+	vmm_host.o \
+	vmm_instruction_emul.o \
+	vmm_ioport.o \
+	vmm_lapic.o \
+	vmm_mem.o \
+	vmm_stat.o \
+	vmm_util.o \
+	x86.o \
+	iommu.o \
+	vdev.o \
+	vatpic.o \
+	vatpit.o \
+	vhpet.o \
+	vioapic.o \
+	vlapic.o \
+	vrtc.o \
+	vpmtmr.o \
+	ept.o \
+	vmcs.o \
+	vmx_msr.o \
+	vmx.o \
+	vmx_support.o \
+	vtd.o \
+	svm.o \
+	svm_msr.o \
+	npt.o \
+	vmcb.o \
+	svm_support.o \
+	amdv.o \
+	vmm_sol_vm.o \
+	vmm_sol_glue.o \
+	vmm_zsd.o
+
+VIONA_OBJS += viona.o
+
+PPT_OBJS += ppt.o
 
 #
 #	Build up defines and paths.
@@ -268,10 +307,9 @@ ASSYM_DEPS      += 		\
 	swtch.o			\
 	syscall_asm.o		\
 	syscall_asm_amd64.o	\
+	kpti_trampolines.o	\
 	cpr_wakecode.o
 
 CPR_IMPL_OBJS	= cpr_impl.o	cpr_wakecode.o
 
 $(KDI_ASSYM_DEPS:%=$(OBJS_DIR)/%):	$(DSF_DIR)/$(OBJS_DIR)/kdi_assym.h
-
-ASSYM_DEPS += kdi_asm.o

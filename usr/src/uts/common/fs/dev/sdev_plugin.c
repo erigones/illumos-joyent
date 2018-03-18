@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright (c) 2014, Joyent, Inc. All rights reserved.
+ * Copyright (c) 2018, Joyent, Inc.
  */
 
 /*
@@ -145,6 +145,22 @@ sdev_ctx_name(sdev_ctx_t ctx)
 	return (sdp->sdev_name);
 }
 
+int
+sdev_ctx_minor(sdev_ctx_t ctx, minor_t *minorp)
+{
+	sdev_node_t *sdp = (sdev_node_t *)ctx;
+
+	ASSERT(RW_LOCK_HELD(&sdp->sdev_contents));
+	ASSERT(minorp != NULL);
+	if (sdp->sdev_vnode->v_type == VCHR ||
+	    sdp->sdev_vnode->v_type == VBLK) {
+		*minorp = getminor(sdp->sdev_vnode->v_rdev);
+		return (0);
+	}
+
+	return (ENODEV);
+}
+
 /*
  * Currently we only support psasing through a single flag -- SDEV_IS_GLOBAL.
  */
@@ -155,30 +171,6 @@ sdev_ctx_flags(sdev_ctx_t ctx)
 
 	ASSERT(RW_LOCK_HELD(&sdp->sdev_contents));
 	return (sdp->sdev_flags & SDEV_GLOBAL);
-}
-
-/*
- * Return some amount of private data specific to the vtype. In the case of a
- * character or block device this is the device number.
- */
-const void *
-sdev_ctx_vtype_data(sdev_ctx_t ctx)
-{
-	sdev_node_t *sdp = (sdev_node_t *)ctx;
-	void *ret;
-
-	ASSERT(RW_LOCK_HELD(&sdp->sdev_contents));
-	switch (sdp->sdev_vnode->v_type) {
-	case VCHR:
-	case VBLK:
-		ret = (void *)(uintptr_t)(sdp->sdev_vnode->v_rdev);
-		break;
-	default:
-		ret = NULL;
-		break;
-	}
-
-	return (ret);
 }
 
 /*
@@ -256,28 +248,50 @@ sdev_plugin_mknod(sdev_ctx_t ctx, char *name, mode_t mode, dev_t dev)
 	sdev_node_t *sdvp;
 	timestruc_t now;
 	struct vattr vap;
+	mode_t type = mode & S_IFMT;
+	mode_t access = mode & S_IAMB;
 
 	if (sdev_plugin_name_isvalid(name, SDEV_PLUGIN_NAMELEN) == 0)
 		return (EINVAL);
 
 	sdvp = (sdev_node_t *)ctx;
 	ASSERT(RW_WRITE_HELD(&sdvp->sdev_contents));
-	if (mode != S_IFCHR && mode != S_IFBLK)
+
+	/*
+	 * Ensure only type and user/group/other permission bits are present.
+	 * Do not allow setuid, setgid, etc.
+	 */
+	if ((mode & ~(S_IFMT | S_IAMB)) != 0)
 		return (EINVAL);
+
+	/* Disallow types other than character and block devices */
+	if (type != S_IFCHR && type != S_IFBLK)
+		return (EINVAL);
+
+	/* Disallow execute bits */
+	if ((access & (S_IXUSR | S_IXGRP | S_IXOTH)) != 0)
+		return (EINVAL);
+
+	/* No bits other than 0666 in access */
+	ASSERT((access &
+	    ~(S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH)) == 0);
+
+	/* Default to relatively safe access bits if none specified. */
+	if (access == 0)
+		access = 0600;
 
 	ASSERT(sdvp->sdev_private != NULL);
 
-	vap = *sdev_getdefault_attr(mode == S_IFCHR ? VCHR : VBLK);
+	vap = *sdev_getdefault_attr(type == S_IFCHR ? VCHR : VBLK);
 	gethrestime(&now);
 	vap.va_atime = now;
 	vap.va_mtime = now;
 	vap.va_ctime = now;
 	vap.va_rdev = dev;
-	vap.va_mode = mode | 0666;
+	vap.va_mode = type | access;
 
 	/* Despite the similar name, this is in fact a different function */
 	return (sdev_plugin_mknode(sdvp->sdev_private, sdvp, name, &vap));
-
 }
 
 static int
@@ -534,12 +548,14 @@ sdev_free_vtab(fs_operation_def_t *new)
 sdev_plugin_hdl_t
 sdev_plugin_register(const char *name, sdev_plugin_ops_t *ops, int *errp)
 {
-	int ret, err;
+	char buf[sizeof ("dev")] = "";
+	struct pathname pn = { 0 };
 	sdev_plugin_t *spp, *iter;
 	vnode_t *vp, *nvp;
 	sdev_node_t *sdp, *slp;
 	timestruc_t now;
 	struct vattr vap;
+	int ret, err;
 
 	/*
 	 * Some consumers don't care about why they failed. To keep the code
@@ -584,14 +600,22 @@ sdev_plugin_register(const char *name, sdev_plugin_ops_t *ops, int *errp)
 	spp->sp_nnodes = 0;
 
 	/*
-	 * Make sure it's unique, nothing exists with this name already, and add
-	 * it to the list. We also need to go through and grab the sdev
-	 * root node as we cannot grab any sdev node locks once we've grabbed
-	 * the sdev_plugin_lock. We effectively assert that if a directory is
-	 * not present in the GZ's /dev, then it doesn't exist in any of the
-	 * local zones.
+	 * Make sure our /dev entry is unique and install it.  We also need to
+	 * go through and grab the sdev root node as we cannot grab any sdev
+	 * node locks once we've grabbed the sdev_plugin_lock. We effectively
+	 * assert that if a directory is not present in the GZ's /dev, then it
+	 * doesn't exist in any of the local zones.
+	 *
+	 * Note that we may be in NGZ context: during a prof_filldir(".../dev/")
+	 * enumeration, for example. So we have to dig as deep as lookuppnvp()
+	 * to make sure we really get to the global /dev (i.e.  escape both
+	 * CRED() and ->u_rdir).
 	 */
-	ret = vn_openat("/dev", UIO_SYSSPACE, FREAD, 0, &vp, 0, 0, rootdir, -1);
+	pn_get_buf("dev", UIO_SYSSPACE, &pn, buf, sizeof (buf));
+	VN_HOLD(rootdir);
+	ret = lookuppnvp(&pn, NULL, NO_FOLLOW, NULLVPP,
+	    &vp, rootdir, rootdir, kcred);
+
 	if (ret != 0) {
 		*errp = ret;
 		kmem_cache_free(sdev_plugin_cache, spp);
@@ -646,6 +670,8 @@ sdev_plugin_register(const char *name, sdev_plugin_ops_t *ops, int *errp)
 
 	rw_exit(&sdp->sdev_contents);
 	VN_RELE(vp);
+
+	*errp = 0;
 
 	return ((sdev_plugin_hdl_t)spp);
 }

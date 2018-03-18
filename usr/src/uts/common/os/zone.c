@@ -23,6 +23,7 @@
  * Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2018, Joyent Inc.
  * Copyright (c) 2016 by Delphix. All rights reserved.
+ * Copyright 2018 OmniOS Community Edition (OmniOSce) Association.
  */
 
 /*
@@ -2787,6 +2788,7 @@ zone_init(void)
 	mutex_exit(&p0.p_lock);
 	zone0.zone_restart_init = B_TRUE;
 	zone0.zone_reboot_on_init_exit = B_FALSE;
+	zone0.zone_restart_init_0 = B_FALSE;
 	zone0.zone_init_status = -1;
 	zone0.zone_brand = &native_brand;
 	rctl_prealloc_destroy(gp);
@@ -5063,6 +5065,7 @@ zone_create(const char *zone_name, const char *zone_root,
 	zone->zone_ncpus_online = 0;
 	zone->zone_restart_init = B_TRUE;
 	zone->zone_reboot_on_init_exit = B_FALSE;
+	zone->zone_restart_init_0 = B_FALSE;
 	zone->zone_init_status = -1;
 	zone->zone_brand = &native_brand;
 	zone->zone_initname = NULL;
@@ -6270,6 +6273,8 @@ zone_getattr(zoneid_t zoneid, int attr, void *buf, size_t bufsize)
 			error = EFAULT;
 		break;
 	case ZONE_ATTR_NETWORK:
+		bufsize = MIN(bufsize, PIPE_BUF + sizeof (zone_net_data_t));
+		size = bufsize;
 		zbuf = kmem_alloc(bufsize, KM_SLEEP);
 		if (copyin(buf, zbuf, bufsize) != 0) {
 			error = EFAULT;
@@ -6358,6 +6363,14 @@ zone_setattr(zoneid_t zoneid, int attr, void *buf, size_t bufsize)
 		break;
 	case ZONE_ATTR_INITNORESTART:
 		zone->zone_restart_init = B_FALSE;
+		err = 0;
+		break;
+	case ZONE_ATTR_INITRESTART0:
+		zone->zone_restart_init_0 = B_TRUE;
+		err = 0;
+		break;
+	case ZONE_ATTR_INITREBOOT:
+		zone->zone_reboot_on_init_exit = B_TRUE;
 		err = 0;
 		break;
 	case ZONE_ATTR_BOOTARGS:

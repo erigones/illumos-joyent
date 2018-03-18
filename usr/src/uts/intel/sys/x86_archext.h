@@ -21,17 +21,17 @@
 /*
  * Copyright (c) 1995, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011 by Delphix. All rights reserved.
- * Copyright 2012 Nexenta Systems, Inc. All rights reserved.
  */
 /*
  * Copyright (c) 2010, Intel Corporation.
  * All rights reserved.
  */
 /*
- * Copyright 2017 Joyent, Inc.
+ * Copyright 2018 Joyent, Inc.
  * Copyright 2012 Jens Elkner <jel+illumos@cs.uni-magdeburg.de>
  * Copyright 2012 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
  * Copyright 2014 Josef 'Jeff' Sipek <jeffpc@josefsipek.net>
+ * Copyright 2018 Nexenta Systems, Inc.
  */
 
 #ifndef _SYS_X86_ARCHEXT_H
@@ -210,6 +210,7 @@ extern "C" {
 #define	CPUID_INTC_EBX_7_0_AVX2		0x00000020	/* AVX2 supported */
 #define	CPUID_INTC_EBX_7_0_SMEP		0x00000080	/* SMEP in CR4 */
 #define	CPUID_INTC_EBX_7_0_BMI2		0x00000100	/* BMI2 instrs */
+#define	CPUID_INTC_EBX_7_0_INVPCID	0x00000400	/* invpcid instr */
 #define	CPUID_INTC_EBX_7_0_MPX		0x00004000	/* Mem. Prot. Ext. */
 #define	CPUID_INTC_EBX_7_0_AVX512F	0x00010000	/* AVX512 foundation */
 #define	CPUID_INTC_EBX_7_0_AVX512DQ	0x00020000	/* AVX512DQ */
@@ -255,26 +256,7 @@ extern "C" {
 #define	CPUID_INTC_EAX_D_1_XSAVEC	0x00000002	/* xsavec inst. */
 #define	CPUID_INTC_EAX_D_1_XSAVES	0x00000008	/* xsaves inst. */
 
-#define	P5_MCHADDR	0x0
-#define	P5_CESR		0x11
-#define	P5_CTR0		0x12
-#define	P5_CTR1		0x13
-
-#define	K5_MCHADDR	0x0
-#define	K5_MCHTYPE	0x01
-#define	K5_TSC		0x10
-#define	K5_TR12		0x12
-
-#define	REG_PAT		0x277
-
-#define	REG_MC0_CTL		0x400
-#define	REG_MC5_MISC		0x417
-#define	REG_PERFCTR0		0xc1
-#define	REG_PERFCTR1		0xc2
-
-#define	REG_PERFEVNT0		0x186
-#define	REG_PERFEVNT1		0x187
-
+#define	REG_PAT			0x277
 #define	REG_TSC			0x10	/* timestamp counter */
 #define	REG_APIC_BASE_MSR	0x1b
 #define	REG_X2APIC_BASE_MSR	0x800	/* The MSR address offset of x2APIC */
@@ -452,6 +434,8 @@ extern "C" {
 #define	X86FSET_UMIP		66
 #define	X86FSET_PKU		67
 #define	X86FSET_OSPKE		68
+#define	X86FSET_PCID		69
+#define	X86FSET_INVPCID		70
 
 /*
  * Intel Deep C-State invariant TSC in leaf 0x80000007.
@@ -710,7 +694,7 @@ extern "C" {
 
 #if defined(_KERNEL) || defined(_KMEMUSER)
 
-#define	NUM_X86_FEATURES	69
+#define	NUM_X86_FEATURES	71
 extern uchar_t x86_featureset[];
 
 extern void free_x86_featureset(void *featureset);
@@ -743,6 +727,9 @@ struct cpuid_regs {
 	uint32_t	cp_ecx;
 	uint32_t	cp_edx;
 };
+
+extern int x86_use_pcid;
+extern int x86_use_invpcid;
 
 /*
  * Utility functions to get/set extended control registers (XCR)
@@ -888,6 +875,8 @@ extern void determine_platform(void);
 #endif
 extern int get_hwenv(void);
 extern int is_controldom(void);
+
+extern void enable_pcid(void);
 
 extern void xsave_setup_msr(struct cpu *);
 

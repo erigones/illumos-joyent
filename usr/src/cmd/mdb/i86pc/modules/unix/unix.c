@@ -432,6 +432,9 @@ ttrace_dumpregs(trap_trace_rec_t *rec)
 	mdb_printf(THREEREGS, DUMP(gs), "trp", regs->r_trapno, DUMP(err));
 	mdb_printf(THREEREGS, DUMP(rip), DUMP(cs), DUMP(rfl));
 	mdb_printf(THREEREGS, DUMP(rsp), DUMP(ss), "cr2", rec->ttr_cr2);
+	mdb_printf("         %3s: %16lx %3s: %16lx\n",
+	    "fsb", regs->__r_fsbase,
+	    "gsb", regs->__r_gsbase);
 	mdb_printf("\n");
 }
 
@@ -753,7 +756,38 @@ ptable_help(void)
 	    "Given a PFN holding a page table, print its contents, and\n"
 	    "the address of the corresponding htable structure.\n"
 	    "\n"
-	    "-m Interpret the PFN as an MFN (machine frame number)\n");
+	    "-m Interpret the PFN as an MFN (machine frame number)\n"
+	    "-l force page table level (3 is top)\n");
+}
+
+static void
+ptmap_help(void)
+{
+	mdb_printf(
+	    "Report all mappings represented by the page table hierarchy\n"
+	    "rooted at the given cr3 value / physical address.\n"
+	    "\n"
+	    "-w run ::whatis on mapping start addresses\n");
+}
+
+static const char *const scalehrtime_desc =
+	"Scales a timestamp from ticks to nanoseconds. Unscaled timestamps\n"
+	"are used as both a quick way of accumulating relative time (as for\n"
+	"usage) and as a quick way of getting the absolute current time.\n"
+	"These uses require slightly different scaling algorithms. By\n"
+	"default, if a specified time is greater than half of the unscaled\n"
+	"time at the last tick (that is, if the unscaled time represents\n"
+	"more than half the time since boot), the timestamp is assumed to\n"
+	"be absolute, and the scaling algorithm used mimics that which the\n"
+	"kernel uses in gethrtime(). Otherwise, the timestamp is assumed to\n"
+	"be relative, and the algorithm mimics scalehrtime(). This behavior\n"
+	"can be overridden by forcing the unscaled time to be interpreted\n"
+	"as relative (via -r) or absolute (via -a).\n";
+
+static void
+scalehrtime_help(void)
+{
+	mdb_printf("%s", scalehrtime_desc);
 }
 
 /*
@@ -771,22 +805,31 @@ static int
 scalehrtime_cmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 {
 	uint32_t nsec_scale;
-	hrtime_t tsc = addr, hrt;
+	hrtime_t tsc = addr, hrt, tsc_last, base, mult = 1;
 	unsigned int *tscp = (unsigned int *)&tsc;
 	uintptr_t scalehrtimef;
 	uint64_t scale;
 	GElf_Sym sym;
+	int expected = !(flags & DCMD_ADDRSPEC);
+	uint_t absolute = FALSE, relative = FALSE;
 
-	if (!(flags & DCMD_ADDRSPEC)) {
-		if (argc != 1)
-			return (DCMD_USAGE);
+	if (mdb_getopts(argc, argv,
+	    'a', MDB_OPT_SETBITS, TRUE, &absolute,
+	    'r', MDB_OPT_SETBITS, TRUE, &relative, NULL) != argc - expected)
+		return (DCMD_USAGE);
 
-		switch (argv[0].a_type) {
+	if (absolute && relative) {
+		mdb_warn("can't specify both -a and -r\n");
+		return (DCMD_USAGE);
+	}
+
+	if (expected == 1) {
+		switch (argv[argc - 1].a_type) {
 		case MDB_TYPE_STRING:
-			tsc = mdb_strtoull(argv[0].a_un.a_str);
+			tsc = mdb_strtoull(argv[argc - 1].a_un.a_str);
 			break;
 		case MDB_TYPE_IMMEDIATE:
-			tsc = argv[0].a_un.a_val;
+			tsc = argv[argc - 1].a_un.a_val;
 			break;
 		default:
 			return (DCMD_USAGE);
@@ -815,12 +858,40 @@ scalehrtime_cmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 		return (DCMD_ERR);
 	}
 
+	if (mdb_readsym(&tsc_last, sizeof (tsc_last), "tsc_last") == -1) {
+		mdb_warn("couldn't read 'tsc_last'");
+		return (DCMD_ERR);
+	}
+
+	if (mdb_readsym(&base, sizeof (base), "tsc_hrtime_base") == -1) {
+		mdb_warn("couldn't read 'tsc_hrtime_base'");
+		return (DCMD_ERR);
+	}
+
+	/*
+	 * If our time is greater than half of tsc_last, we will take our
+	 * delta against tsc_last, convert it, and add that to (or subtract it
+	 * from) tsc_hrtime_base.  This mimics what the kernel actually does
+	 * in gethrtime() (modulo the tsc_sync_tick_delta) and gets us a much
+	 * higher precision result than trying to convert a large tsc value.
+	 */
+	if (absolute || (tsc > (tsc_last >> 1) && !relative)) {
+		if (tsc > tsc_last) {
+			tsc = tsc - tsc_last;
+		} else {
+			tsc = tsc_last - tsc;
+			mult = -1;
+		}
+	} else {
+		base = 0;
+	}
+
 	scale = (uint64_t)nsec_scale;
 
 	hrt = ((uint64_t)tscp[1] * scale) << NSEC_SHIFT;
 	hrt += ((uint64_t)tscp[0] * scale) >> (32 - NSEC_SHIFT);
 
-	mdb_printf("0x%llx\n", hrt);
+	mdb_printf("0x%llx\n", base + (hrt * mult));
 
 	return (DCMD_OK);
 }
@@ -939,18 +1010,18 @@ crregs_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 	cr2 = kmdb_unix_getcr2();
 	cr3 = kmdb_unix_getcr3();
 	cr4 = kmdb_unix_getcr4();
-	mdb_printf("%%cr0 = 0x%08x <%b>\n", cr0, cr0, cr0_flag_bits);
-	mdb_printf("%%cr2 = 0x%08x <%a>\n", cr2, cr2);
+	mdb_printf("%%cr0 = 0x%lx <%b>\n", cr0, cr0, cr0_flag_bits);
+	mdb_printf("%%cr2 = 0x%lx <%a>\n", cr2, cr2);
 
 	if ((cr4 & CR4_PCIDE)) {
-		mdb_printf("%%cr3 = 0x%08x <pfn:%lu pcid:%u>\n",
+		mdb_printf("%%cr3 = 0x%lx <pfn:0x%lx pcid:%lu>\n", cr3,
 		    cr3 >> MMU_PAGESHIFT, cr3 & MMU_PAGEOFFSET);
 	} else {
-		mdb_printf("%%cr3 = 0x%08x <pfn:%lu flags:%b>\n", cr3,
+		mdb_printf("%%cr3 = 0x%lx <pfn:0x%lx flags:%b>\n", cr3,
 		    cr3 >> MMU_PAGESHIFT, cr3, cr3_flag_bits);
 	}
 
-	mdb_printf("%%cr4 = 0x%08x <%b>\n", cr4, cr4, cr4_flag_bits);
+	mdb_printf("%%cr4 = 0x%lx <%b>\n", cr4, cr4, cr4_flag_bits);
 
 	return (DCMD_OK);
 }
@@ -967,17 +1038,19 @@ static const mdb_dcmd_t dcmds[] = {
 	    report_maps_dcmd, report_maps_help },
 	{ "htables", "", "Given hat_t *, lists all its htable_t * values",
 	    htables_dcmd, htables_help },
-	{ "ptable", ":[-m]", "Given PFN, dump contents of a page table",
+	{ "ptable", ":[-lm]", "Given PFN, dump contents of a page table",
 	    ptable_dcmd, ptable_help },
-	{ "pte", ":[-p XXXXX] [-l N]", "print human readable page table entry",
+	{ "ptmap", ":", "Given a cr3 value, dump all mappings",
+	    ptmap_dcmd, ptmap_help },
+	{ "pte", ":[-l N]", "print human readable page table entry",
 	    pte_dcmd },
 	{ "pfntomfn", ":", "convert physical page to hypervisor machine page",
 	    pfntomfn_dcmd },
 	{ "mfntopfn", ":", "convert hypervisor machine page to physical page",
 	    mfntopfn_dcmd },
 	{ "memseg_list", ":", "show memseg list", memseg_list },
-	{ "scalehrtime", ":",
-	    "scale an unscaled high-res time", scalehrtime_cmd },
+	{ "scalehrtime", ":[-a|-r]", "scale an unscaled high-res time",
+	    scalehrtime_cmd, scalehrtime_help },
 	{ "x86_featureset", NULL, "dump the x86_featureset vector",
 		x86_featureset_cmd },
 #ifdef _KMDB
