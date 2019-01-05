@@ -22,7 +22,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2011 Nexenta Systems, Inc. All rights reserved.
- * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2018 by Delphix. All rights reserved.
  * Copyright 2017 Joyent, Inc.
  */
 
@@ -208,6 +208,7 @@ spa_write_cachefile(spa_t *target, boolean_t removing, boolean_t postsysevent)
 	nvlist_t *nvl;
 	boolean_t ccw_failure;
 	int error;
+	char *pool_name;
 
 	ASSERT(MUTEX_HELD(&spa_namespace_lock));
 
@@ -254,7 +255,14 @@ spa_write_cachefile(spa_t *target, boolean_t removing, boolean_t postsysevent)
 			if (nvl == NULL)
 				nvl = fnvlist_alloc();
 
-			fnvlist_add_nvlist(nvl, spa->spa_name,
+			if (spa->spa_import_flags & ZFS_IMPORT_TEMP_NAME) {
+				pool_name = fnvlist_lookup_string(
+				    spa->spa_config, ZPOOL_CONFIG_POOL_NAME);
+			} else {
+				pool_name = spa_name(spa);
+			}
+
+			fnvlist_add_nvlist(nvl, pool_name,
 			    spa->spa_config);
 			mutex_exit(&spa->spa_props_lock);
 		}
@@ -359,6 +367,7 @@ spa_config_generate(spa_t *spa, vdev_t *vd, uint64_t txg, int getstats)
 	unsigned long hostid = 0;
 	boolean_t locked = B_FALSE;
 	uint64_t split_guid;
+	char *pool_name;
 
 	if (vd == NULL) {
 		vd = rvd;
@@ -375,10 +384,27 @@ spa_config_generate(spa_t *spa, vdev_t *vd, uint64_t txg, int getstats)
 	if (txg == -1ULL)
 		txg = spa->spa_config_txg;
 
+	/*
+	 * Originally, users had to handle spa namespace collisions by either
+	 * exporting the already imported pool or by specifying a new name for
+	 * the pool with a conflicting name. In the case of root pools from
+	 * virtual guests, neither approach to collision resolution is
+	 * reasonable. This is addressed by extending the new name syntax with
+	 * an option to specify that the new name is temporary. When specified,
+	 * ZFS_IMPORT_TEMP_NAME will be set in spa->spa_import_flags to tell us
+	 * to use the previous name, which we do below.
+	 */
+	if (spa->spa_import_flags & ZFS_IMPORT_TEMP_NAME) {
+		pool_name = fnvlist_lookup_string(spa->spa_config,
+		    ZPOOL_CONFIG_POOL_NAME);
+	} else {
+		pool_name = spa_name(spa);
+	}
+
 	config = fnvlist_alloc();
 
 	fnvlist_add_uint64(config, ZPOOL_CONFIG_VERSION, spa_version(spa));
-	fnvlist_add_string(config, ZPOOL_CONFIG_POOL_NAME, spa_name(spa));
+	fnvlist_add_string(config, ZPOOL_CONFIG_POOL_NAME, pool_name);
 	fnvlist_add_uint64(config, ZPOOL_CONFIG_POOL_STATE, spa_state(spa));
 	fnvlist_add_uint64(config, ZPOOL_CONFIG_POOL_TXG, txg);
 	fnvlist_add_uint64(config, ZPOOL_CONFIG_POOL_GUID, spa_guid(spa));
@@ -510,6 +536,18 @@ spa_config_update(spa_t *spa, int what)
 		 */
 		for (c = 0; c < rvd->vdev_children; c++) {
 			vdev_t *tvd = rvd->vdev_child[c];
+
+			/*
+			 * Explicitly skip vdevs that are indirect or
+			 * log vdevs that are being removed. The reason
+			 * is that both of those can have vdev_ms_array
+			 * set to 0 and we wouldn't want to change their
+			 * metaslab size nor call vdev_expand() on them.
+			 */
+			if (!vdev_is_concrete(tvd) ||
+			    (tvd->vdev_islog && tvd->vdev_removing))
+				continue;
+
 			if (tvd->vdev_ms_array == 0)
 				vdev_metaslab_set_size(tvd);
 			vdev_expand(tvd, txg);

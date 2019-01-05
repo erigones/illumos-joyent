@@ -24,7 +24,7 @@
  * Use is subject to license terms.
  */
 /*
- * Copyright 2015 Joyent, Inc.
+ * Copyright (c) 2018, Joyent, Inc.
  */
 
 /*
@@ -37,6 +37,7 @@
 #include <mdb/mdb_proc.h>
 #include <mdb/mdb_kreg.h>
 #include <mdb/mdb_err.h>
+#include <mdb/mdb_isautil.h>
 #include <mdb/mdb_amd64util.h>
 #include <mdb/mdb.h>
 
@@ -74,9 +75,9 @@ const mdb_tgt_regdesc_t pt_regdesc[] = {
 	{ "r10w",	REG_R10,	MDB_TGT_R_EXPORT | MDB_TGT_R_16 },
 	{ "r10l",	REG_R10,	MDB_TGT_R_EXPORT | MDB_TGT_R_8L },
 	{ "r9",		REG_R9,		MDB_TGT_R_EXPORT },
-	{ "r9d",	REG_R8,		MDB_TGT_R_EXPORT | MDB_TGT_R_32 },
-	{ "r9w",	REG_R8,		MDB_TGT_R_EXPORT | MDB_TGT_R_16 },
-	{ "r9l",	REG_R8,		MDB_TGT_R_EXPORT | MDB_TGT_R_8L },
+	{ "r9d",	REG_R9,		MDB_TGT_R_EXPORT | MDB_TGT_R_32 },
+	{ "r9w",	REG_R9,		MDB_TGT_R_EXPORT | MDB_TGT_R_16 },
+	{ "r9l",	REG_R9,		MDB_TGT_R_EXPORT | MDB_TGT_R_8L },
 	{ "r8",		REG_R8,		MDB_TGT_R_EXPORT },
 	{ "r8d",	REG_R8,		MDB_TGT_R_EXPORT | MDB_TGT_R_32 },
 	{ "r8w",	REG_R8,		MDB_TGT_R_EXPORT | MDB_TGT_R_16 },
@@ -143,7 +144,8 @@ pt_read_instr(mdb_tgt_t *t)
 	const lwpstatus_t *psp = &Pstatus(t->t_pshandle)->pr_lwp;
 	uint8_t ret = 0;
 
-	(void) mdb_tgt_vread(t, &ret, sizeof (ret), psp->pr_reg[REG_RIP]);
+	(void) mdb_tgt_aread(t, MDB_TGT_AS_VIRT_I, &ret, sizeof (ret),
+	    psp->pr_reg[REG_RIP]);
 
 	return (ret);
 }

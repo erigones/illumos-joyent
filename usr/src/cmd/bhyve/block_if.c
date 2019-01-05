@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (c) 2013  Peter Grehan <grehan@freebsd.org>
  * All rights reserved.
  *
@@ -26,6 +28,10 @@
  * $FreeBSD$
  */
 
+/*
+ * Copyright 2018 Joyent, Inc.
+ */
+
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
 
@@ -40,6 +46,9 @@ __FBSDID("$FreeBSD$");
 #include <sys/disk.h>
 #include <sys/limits.h>
 #include <sys/uio.h>
+#ifndef __FreeBSD__
+#include <sys/dkio.h>
+#endif
 
 #include <assert.h>
 #include <err.h>
@@ -63,12 +72,21 @@ __FBSDID("$FreeBSD$");
 
 #define BLOCKIF_SIG	0xb109b109
 
+#ifdef __FreeBSD__
 #define BLOCKIF_NUMTHR	8
 #define BLOCKIF_MAXREQ	(64 + BLOCKIF_NUMTHR)
+#else
+/* Enlarge to keep pace with the virtio-block ring size */
+#define BLOCKIF_NUMTHR	16
+#define BLOCKIF_MAXREQ	(128 + BLOCKIF_NUMTHR)
+#endif
 
 enum blockop {
 	BOP_READ,
 	BOP_WRITE,
+#ifndef __FreeBSD__
+	BOP_WRITE_SYNC,
+#endif
 	BOP_FLUSH,
 	BOP_DELETE
 };
@@ -90,12 +108,23 @@ struct blockif_elem {
 	off_t		     be_block;
 };
 
+#ifndef __FreeBSD__
+enum blockif_wce {
+	WCE_NONE = 0,
+	WCE_IOCTL,
+	WCE_FCNTL
+};
+#endif
+
 struct blockif_ctxt {
 	int			bc_magic;
 	int			bc_fd;
 	int			bc_ischr;
 	int			bc_isgeom;
 	int			bc_candelete;
+#ifndef __FreeBSD__
+	enum blockif_wce	bc_wce;
+#endif
 	int			bc_rdonly;
 	off_t			bc_size;
 	int			bc_sectsz;
@@ -103,8 +132,8 @@ struct blockif_ctxt {
 	int			bc_psectoff;
 	int			bc_closing;
 	pthread_t		bc_btid[BLOCKIF_NUMTHR];
-        pthread_mutex_t		bc_mtx;
-        pthread_cond_t		bc_cond;
+	pthread_mutex_t		bc_mtx;
+	pthread_cond_t		bc_cond;
 
 	/* Request elements and free/pending/busy queues */
 	TAILQ_HEAD(, blockif_elem) bc_freeq;       
@@ -141,6 +170,9 @@ blockif_enqueue(struct blockif_ctxt *bc, struct blockif_req *breq,
 	switch (op) {
 	case BOP_READ:
 	case BOP_WRITE:
+#ifndef __FreeBSD__
+	case BOP_WRITE_SYNC:
+#endif
 	case BOP_DELETE:
 		off = breq->br_offset;
 		for (i = 0; i < breq->br_iovcnt; i++)
@@ -299,13 +331,22 @@ blockif_proc(struct blockif_ctxt *bc, struct blockif_elem *be, uint8_t *buf)
 		}
 		break;
 	case BOP_FLUSH:
-		if (bc->bc_ischr) {
 #ifdef	__FreeBSD__
+		if (bc->bc_ischr) {
 			if (ioctl(bc->bc_fd, DIOCGFLUSH))
 				err = errno;
-#endif
 		} else if (fsync(bc->bc_fd))
 			err = errno;
+#else
+		/*
+		 * This fsync() should be adequate to flush the cache of a file
+		 * or device.  In VFS, the VOP_SYNC operation is converted to
+		 * the appropriate ioctl in both sdev (for real devices) and
+		 * zfs (for zvols).
+		 */
+		if (fsync(bc->bc_fd))
+			err = errno;
+#endif
 		break;
 	case BOP_DELETE:
 		if (!bc->bc_candelete)
@@ -424,6 +465,8 @@ blockif_open(const char *optstr, const char *ident)
 	struct stat sbuf;
 #ifdef	__FreeBSD__
 	struct diocgattr_arg arg;
+#else
+	enum blockif_wce wce = WCE_NONE;
 #endif
 	off_t size, psectsz, psectoff;
 	int extra, fd, i, sectsz;
@@ -523,9 +566,66 @@ blockif_open(const char *optstr, const char *ident)
 			candelete = arg.value.i;
 		if (ioctl(fd, DIOCGPROVIDERNAME, name) == 0)
 			geom = 1;
-	} else
-#endif
+	} else {
 		psectsz = sbuf.st_blksize;
+	}
+#else
+	psectsz = sbuf.st_blksize;
+	if (S_ISCHR(sbuf.st_mode)) {
+		struct dk_minfo_ext dkmext;
+		int wce_val;
+
+		/* Look for a more accurate physical blocksize */
+		if (ioctl(fd, DKIOCGMEDIAINFOEXT, &dkmext) == 0) {
+			psectsz = dkmext.dki_pbsize;
+		}
+		/* See if a configurable write cache is present and working */
+		if (ioctl(fd, DKIOCGETWCE, &wce_val) == 0) {
+			/*
+			 * If WCE is already active, disable it until the
+			 * specific device driver calls for its return.  If it
+			 * is not active, toggle it on and off to verify that
+			 * such actions are possible.
+			 */
+			if (wce_val != 0) {
+				wce_val = 0;
+				/*
+				 * Inability to disable the cache is a threat
+				 * to data durability.
+				 */
+				assert(ioctl(fd, DKIOCSETWCE, &wce_val) == 0);
+				wce = WCE_IOCTL;
+			} else {
+				int r1, r2;
+
+				wce_val = 1;
+				r1 = ioctl(fd, DKIOCSETWCE, &wce_val);
+				wce_val = 0;
+				r2 = ioctl(fd, DKIOCSETWCE, &wce_val);
+
+				if (r1 == 0 && r2 == 0) {
+					wce = WCE_IOCTL;
+				} else {
+					/*
+					 * If the cache cache toggle was not
+					 * successful, ensure that the cache
+					 * was not left enabled.
+					 */
+					assert(r1 != 0);
+				}
+			}
+		}
+	} else {
+		int flags;
+
+		if ((flags = fcntl(fd, F_GETFL)) >= 0) {
+			flags |= O_DSYNC;
+			if (fcntl(fd, F_SETFL, flags) != -1) {
+				wce = WCE_FCNTL;
+			}
+		}
+	}
+#endif
 
 #ifndef WITHOUT_CAPSICUM
 	if (cap_ioctls_limit(fd, cmds, nitems(cmds)) == -1 && errno != ENOSYS)
@@ -572,6 +672,9 @@ blockif_open(const char *optstr, const char *ident)
 	bc->bc_ischr = S_ISCHR(sbuf.st_mode);
 	bc->bc_isgeom = geom;
 	bc->bc_candelete = candelete;
+#ifndef __FreeBSD__
+	bc->bc_wce = wce;
+#endif
 	bc->bc_rdonly = ro;
 	bc->bc_size = size;
 	bc->bc_sectsz = sectsz;
@@ -868,3 +971,46 @@ blockif_candelete(struct blockif_ctxt *bc)
 	assert(bc->bc_magic == BLOCKIF_SIG);
 	return (bc->bc_candelete);
 }
+
+#ifndef __FreeBSD__
+int
+blockif_set_wce(struct blockif_ctxt *bc, int wc_enable)
+{
+	int res = 0, flags;
+	int clean_val = (wc_enable != 0) ? 1 : 0;
+
+	(void) pthread_mutex_lock(&bc->bc_mtx);
+	switch (bc->bc_wce) {
+	case WCE_IOCTL:
+		res = ioctl(bc->bc_fd, DKIOCSETWCE, &clean_val);
+		break;
+	case WCE_FCNTL:
+		if ((flags = fcntl(bc->bc_fd, F_GETFL)) >= 0) {
+			if (wc_enable == 0) {
+				flags |= O_DSYNC;
+			} else {
+				flags &= ~O_DSYNC;
+			}
+			if (fcntl(bc->bc_fd, F_SETFL, flags) == -1) {
+				res = -1;
+			}
+		} else {
+			res = -1;
+		}
+		break;
+	default:
+		break;
+	}
+
+	/*
+	 * After a successful disable of the write cache, ensure that any
+	 * lingering data in the cache is synced out.
+	 */
+	if (res == 0 && wc_enable == 0) {
+		res = fsync(bc->bc_fd);
+	}
+	(void) pthread_mutex_unlock(&bc->bc_mtx);
+
+	return (res);
+}
+#endif /* __FreeBSD__ */

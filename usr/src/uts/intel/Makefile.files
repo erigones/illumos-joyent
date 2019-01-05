@@ -21,7 +21,7 @@
 
 #
 # Copyright (c) 1999, 2010, Oracle and/or its affiliates. All rights reserved.
-# Copyright 2017, Joyent, Inc.
+# Copyright 2018, Joyent, Inc.
 # Copyright 2018 Nexenta Systems, Inc.
 #
 
@@ -188,6 +188,7 @@ VGATEXT_OBJS += vgatext.o vgasubr.o
 KRTLD_OBJS +=		\
 	bootfsops.o	\
 	bootrd.o	\
+	bootrd_cpio.o	\
 	ufsops.o	\
 	hsfs.o		\
 	doreloc.o	\
@@ -208,6 +209,7 @@ ACPICA_OBJS	+= \
 		   dsargs.o dscontrol.o dsdebug.o dsfield.o dsinit.o \
 		   dsmethod.o dsmthdat.o dsobject.o dsopcode.o dsutils.o \
 		   dswexec.o dswload.o dswload2.o dswscope.o dswstate.o \
+		   dspkginit.o \
 		   \
 		   evevent.o evglock.o evgpe.o evgpeblk.o evgpeinit.o \
 		   evgpeutil.o evhandler.o evmisc.o evregion.o evrgnini.o \
@@ -244,7 +246,8 @@ ACPICA_OBJS	+= \
 		   utinit.o utlock.o utmath.o utmisc.o utmutex.o utnonansi.o \
 		   utobject.o utosi.o utownerid.o utpredef.o utresrc.o \
 		   utstate.o utstring.o uttrack.o utuuid.o utxface.o \
-		   utxferror.o utxfinit.o utxfmutex.o \
+		   utxferror.o utxfinit.o utxfmutex.o utresdecode.o \
+		   utstrsuppt.o utstrtoul64.o \
 		   \
 		   acpi_enum.o acpica_ec.o acpica.o ahids.o master_ops.o \
 		   osl_ml.o osl.o
@@ -299,6 +302,7 @@ LX_BRAND_OBJS  =		\
 	lx_acl.o		\
 	lx_aio.o		\
 	lx_archdep.o		\
+	lx_audit.o		\
 	lx_auxv.o		\
 	lx_brand.o		\
 	lx_brk.o		\
@@ -364,7 +368,7 @@ LX_BRAND_OBJS  =		\
 #
 #	special files
 #
-MODSTUB_OBJ +=	 	\
+MODSTUB_OBJ +=		\
 	modstubs.o
 
 BOOTDEV_OBJS +=		\

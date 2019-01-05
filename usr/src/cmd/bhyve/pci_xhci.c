@@ -1,5 +1,8 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (c) 2014 Leon Dang <ldang@nahannisys.com>
+ * Copyright 2018 Joyent, Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -1661,7 +1664,16 @@ pci_xhci_try_usb_xfer(struct pci_xhci_softc *sc,
 	do_intr = 0;
 
 	xfer = devep->ep_xfer;
+#ifdef __FreeBSD__
 	USB_DATA_XFER_LOCK(xfer);
+#else
+	/*
+	 * At least one caller needs to hold this lock across the call to this
+	 * function and other code.  To avoid deadlock from a recursive mutex
+	 * enter, we ensure that all callers hold this lock.
+	 */
+	assert(USB_DATA_XFER_LOCK_HELD(xfer));
+#endif
 
 	/* outstanding requests queued up */
 	if (dev->dev_ue->ue_data != NULL) {
@@ -1684,8 +1696,9 @@ pci_xhci_try_usb_xfer(struct pci_xhci_softc *sc,
 		}
 	}
 
+#ifdef __FreeBSD__
 	USB_DATA_XFER_UNLOCK(xfer);
-
+#endif
 
 	return (err);
 }
@@ -1917,7 +1930,13 @@ pci_xhci_device_doorbell(struct pci_xhci_softc *sc, uint32_t slot,
 
 	/* handle pending transfers */
 	if (devep->ep_xfer->ndata > 0) {
+#ifndef __FreeBSD__
+		USB_DATA_XFER_LOCK(devep->ep_xfer);
+#endif
 		pci_xhci_try_usb_xfer(sc, dev, devep, ep_ctx, slot, epid);
+#ifndef __FreeBSD__
+		USB_DATA_XFER_UNLOCK(devep->ep_xfer);
+#endif
 		return;
 	}
 
@@ -2210,12 +2229,12 @@ pci_xhci_write(struct vmctx *ctx, int vcpu, struct pci_devinst *pi,
 
 	sc = pi->pi_arg;
 
-        assert(baridx == 0);
+	assert(baridx == 0);
 
 
-        pthread_mutex_lock(&sc->mtx);
+	pthread_mutex_lock(&sc->mtx);
 	if (offset < XHCI_CAPLEN)	/* read only registers */
-                WPRINTF(("pci_xhci: write RO-CAPs offset %ld\r\n", offset));
+		WPRINTF(("pci_xhci: write RO-CAPs offset %ld\r\n", offset));
 	else if (offset < sc->dboff)
 		pci_xhci_hostop_write(sc, offset, value);
 	else if (offset < sc->rtsoff)
@@ -2223,9 +2242,9 @@ pci_xhci_write(struct vmctx *ctx, int vcpu, struct pci_devinst *pi,
 	else if (offset < sc->regsend)
 		pci_xhci_rtsregs_write(sc, offset, value);
 	else
-                WPRINTF(("pci_xhci: write invalid offset %ld\r\n", offset));
+		WPRINTF(("pci_xhci: write invalid offset %ld\r\n", offset));
 
-        pthread_mutex_unlock(&sc->mtx);
+	pthread_mutex_unlock(&sc->mtx);
 }
 
 static uint64_t
@@ -2433,9 +2452,9 @@ pci_xhci_read(struct vmctx *ctx, int vcpu, struct pci_devinst *pi, int baridx,
 
 	sc = pi->pi_arg;
 
-        assert(baridx == 0);
+	assert(baridx == 0);
 
-        pthread_mutex_lock(&sc->mtx);
+	pthread_mutex_lock(&sc->mtx);
 	if (offset < XHCI_CAPLEN)
 		value = pci_xhci_hostcap_read(sc, offset);
 	else if (offset < sc->dboff)
@@ -2448,10 +2467,10 @@ pci_xhci_read(struct vmctx *ctx, int vcpu, struct pci_devinst *pi, int baridx,
 		value = pci_xhci_xecp_read(sc, offset);
 	else {
 		value = 0;
-                WPRINTF(("pci_xhci: read invalid offset %ld\r\n", offset));
+		WPRINTF(("pci_xhci: read invalid offset %ld\r\n", offset));
 	}
 
-        pthread_mutex_unlock(&sc->mtx);
+	pthread_mutex_unlock(&sc->mtx);
 
 	switch (size) {
 	case 1:

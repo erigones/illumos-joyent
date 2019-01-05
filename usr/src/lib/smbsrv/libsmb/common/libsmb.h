@@ -44,17 +44,18 @@ extern "C" {
 #include <synch.h>
 #include <stdarg.h>
 
+#include <smb/nterror.h>
+#include <smb/ntstatus.h>
+#include <smb/wintypes.h>
+
 #include <smbsrv/string.h>
 #include <smbsrv/smb_idmap.h>
 #include <smbsrv/netbios.h>
 #include <smbsrv/smb_share.h>
-#include <smb/nterror.h>
-#include <smb/ntstatus.h>
 #include <smbsrv/smb_door.h>
 #include <smbsrv/alloc.h>
 #include <smbsrv/hash_table.h>
 #include <smbsrv/msgbuf.h>
-#include <smbsrv/wintypes.h>
 #include <smbsrv/smb_xdr.h>
 #include <smbsrv/smbinfo.h>
 #include <smbsrv/ntifs.h>
@@ -346,10 +347,10 @@ void libsmb_redirect_syslog(__FILE_TAG *fp, int priority);
  * 0x0004 The name is a W2K Domain name (a DNS name).
  */
 #define	SMBAUTH_NAME_TYPE_LIST_END		0x0000
-#define	SMBAUTH_NAME_TYPE_SERVER_NETBIOS 	0x0001
-#define	SMBAUTH_NAME_TYPE_DOMAIN_NETBIOS 	0x0002
+#define	SMBAUTH_NAME_TYPE_SERVER_NETBIOS	0x0001
+#define	SMBAUTH_NAME_TYPE_DOMAIN_NETBIOS	0x0002
 #define	SMBAUTH_NAME_TYPE_SERVER_DNS		0x0003
-#define	SMBAUTH_NAME_TYPE_DOMAIN_DNS 		0x0004
+#define	SMBAUTH_NAME_TYPE_DOMAIN_DNS		0x0004
 
 /*
  * smb_auth_name_entry_t
@@ -661,6 +662,7 @@ void smb_domain_set_dns_info(char *, char *, char *, char *, char *,
 void smb_domain_set_trust_info(char *, char *, char *,
     uint32_t, uint32_t, uint32_t, smb_domain_t *);
 void smb_domain_current_dc(smb_dcinfo_t *);
+void smb_domain_bad_dc(void);
 
 typedef struct smb_gsid {
 	smb_sid_t *gs_sid;

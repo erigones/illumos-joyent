@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
  * Copyright (c) 2011 NetApp, Inc.
  * All rights reserved.
  *
@@ -10,7 +12,7 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 4. Neither the name of the University nor the names of its contributors
+ * 3. Neither the name of the University nor the names of its contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -29,15 +31,21 @@
  * $FreeBSD$
  */
 /*
- * Copyright 2017 Joyent, Inc.
+ * Copyright 2018 Joyent, Inc.
  */
 
 #ifndef _VMM_STAT_H_
 #define	_VMM_STAT_H_
 
+#include <machine/vmm.h>
+
 struct vm;
 
-#define	MAX_VMM_STAT_ELEMS	64		/* arbitrary */
+#ifdef __FreeBSD__
+#define	MAX_VMM_STAT_ELEMS	64			/* arbitrary */
+#else
+#define	MAX_VMM_STAT_ELEMS	(64 + VM_MAXCPU)	/* arbitrary */
+#endif
 
 enum vmm_stat_scope {
 	VMM_STAT_SCOPE_ANY,

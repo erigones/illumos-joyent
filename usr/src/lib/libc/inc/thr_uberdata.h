@@ -22,8 +22,10 @@
 /*
  * Copyright (c) 1999, 2010, Oracle and/or its affiliates. All rights reserved.
  */
+
 /*
  * Copyright 2016 Joyent, Inc.
+ * Copyright 2018 Nexenta Systems, Inc.
  */
 
 #ifndef _THR_UBERDATA_H
@@ -55,6 +57,7 @@
 #include <sys/priocntl.h>
 #include <thread_db.h>
 #include <setjmp.h>
+#include <sys/thread.h>
 #include "libc_int.h"
 #include "tdb_agent.h"
 #include "thr_debug.h"
@@ -681,6 +684,7 @@ typedef struct ulwp {
 #endif
 	tumem_t		ul_tmem;	/* used only by umem */
 	uint_t		ul_ptinherit;	/* pthreads sched inherit value */
+	char		ul_ntoabuf[18];	/* thread-specific inet_ntoa buffer */
 } ulwp_t;
 
 #define	ul_cursig	ul_cp.s.cursig		/* deferred signal number */
@@ -863,7 +867,7 @@ typedef struct {
 typedef void (*_exithdlr_func_t) (void*);
 
 typedef struct _exthdlr {
-	struct _exthdlr 	*next;	/* next in handler list */
+	struct _exthdlr		*next;	/* next in handler list */
 	_exithdlr_func_t	hdlr;	/* handler itself */
 	void			*arg;	/* argument to handler */
 	void			*dso;	/* DSO associated with handler */
@@ -901,7 +905,7 @@ typedef struct {
 typedef void (*_quick_exithdlr_func_t)(void);
 
 typedef struct _qexthdlr {
-	struct _qexthdlr 	*next;	/* next in handler list */
+	struct _qexthdlr	*next;	/* next in handler list */
 	_quick_exithdlr_func_t	hdlr;	/* handler itself */
 } _qexthdlr_t;
 
@@ -1234,6 +1238,7 @@ typedef	struct	_thrattr {
 	int	policy;
 	int	inherit;
 	size_t	guardsize;
+	char	name[THREAD_NAME_MAX];
 } thrattr_t;
 
 typedef	struct	_rwlattr {
@@ -1494,7 +1499,7 @@ extern	int	rw_read_held(rwlock_t *);
 extern	int	rw_write_held(rwlock_t *);
 
 extern	int	_thrp_create(void *, size_t, void *(*)(void *), void *, long,
-			thread_t *, size_t);
+			thread_t *, size_t, const char *);
 extern	int	_thrp_suspend(thread_t, uchar_t);
 extern	int	_thrp_continue(thread_t, uchar_t);
 

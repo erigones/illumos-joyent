@@ -25,7 +25,7 @@
  */
 
 /*
- * Copyright 2017, Joyent, Inc.
+ * Copyright 2018 Joyent, Inc.
  */
 
 #ifndef	_SYS_THREAD_H
@@ -71,7 +71,8 @@ typedef struct ctxop {
 	void	(*exit_op)(void *);	/* invoked during {thread,lwp}_exit() */
 	void	(*free_op)(void *, int); /* function which frees the context */
 	void	*arg;		/* argument to above functions, ctx pointer */
-	struct ctxop *next;	/* next context ops */
+	struct ctxop *next;		/* next context ops */
+	struct ctxop *prev;		/* previous context ops */
 	hrtime_t save_ts;		/* timestamp of last save */
 	hrtime_t restore_ts;		/* timestamp of last restore */
 } ctxop_t;
@@ -353,6 +354,8 @@ typedef struct _kthread {
 	kmutex_t	t_wait_mutex;	/* used in CV wait functions */
 
 	char		*t_name;	/* thread name */
+
+	uint64_t	t_unsafe;	/* unsafe to run with HT VCPU thread */
 } kthread_t;
 
 /*
@@ -416,6 +419,7 @@ typedef struct _kthread {
 #define	TS_SIGNALLED	0x0010	/* thread was awakened by cv_signal() */
 #define	TS_PROJWAITQ	0x0020	/* thread is on its project's waitq */
 #define	TS_ZONEWAITQ	0x0040	/* thread is on its zone's waitq */
+#define	TS_VCPU		0x0080	/* thread will enter guest context */
 #define	TS_CSTART	0x0100	/* setrun() by continuelwps() */
 #define	TS_UNPAUSE	0x0200	/* setrun() by unpauselwps() */
 #define	TS_XSTART	0x0400	/* setrun() by SIGCONT */
@@ -603,7 +607,8 @@ extern disp_lock_t stop_lock;		/* lock protecting stopped threads */
 
 caddr_t	thread_stk_init(caddr_t);	/* init thread stack */
 
-void	thread_setname(kthread_t *, const char *);
+int thread_setname(kthread_t *, const char *);
+int thread_vsetname(kthread_t *, const char *, ...);
 
 extern int default_binding_mode;
 extern int default_stksize;

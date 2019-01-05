@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (c) 2014 Tycho Nightingale <tycho.nightingale@pluribusnetworks.com>
  * Copyright (c) 2011 NetApp, Inc.
  * All rights reserved.
@@ -41,5 +43,9 @@ int vatpit_handler(struct vm *vm, int vcpuid, bool in, int port, int bytes,
     uint32_t *eax);
 int vatpit_nmisc_handler(struct vm *vm, int vcpuid, bool in, int port,
     int bytes, uint32_t *eax);
+
+#ifndef __FreeBSD__
+void vatpit_localize_resources(struct vatpit *);
+#endif
 
 #endif	/* _VATPIT_H_ */

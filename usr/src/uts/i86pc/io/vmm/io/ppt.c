@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (c) 2011 NetApp, Inc.
  * All rights reserved.
  *
@@ -55,9 +57,10 @@ __FBSDID("$FreeBSD$");
 #include <sys/sunddi.h>
 #include <sys/pci.h>
 #include <sys/pci_cap.h>
+#include <sys/pcie_impl.h>
 #include <sys/ppt_dev.h>
 #include <sys/mkdev.h>
-#include <sys/id_space.h>
+#include <sys/sysmacros.h>
 
 #include "vmm_lapic.h"
 #include "vmm_ktr.h"
@@ -101,7 +104,6 @@ struct pptdev {
 	dev_info_t		*pptd_dip;
 	list_node_t		pptd_node;
 	ddi_acc_handle_t	pptd_cfg;
-	dev_t			pptd_dev;
 	struct pptbar		pptd_bars[PCI_BASE_NUM];
 	struct vm		*vm;
 	struct pptseg mmio[MAX_MMIOSEGS];
@@ -123,10 +125,12 @@ struct pptdev {
 };
 
 
+static major_t		ppt_major;
 static void		*ppt_state;
 static kmutex_t		pptdev_mtx;
 static list_t		pptdev_list;
-static id_space_t	*pptdev_minors = NULL;
+
+#define	PPT_MINOR_NAME	"ppt"
 
 static ddi_device_acc_attr_t ppt_attr = {
 	DDI_DEVICE_ATTR_V0,
@@ -316,6 +320,64 @@ ppt_ioctl(dev_t dev, int cmd, intptr_t arg, int md, cred_t *cr, int *rv)
 	return (0);
 }
 
+static int
+ppt_find_pba_bar(struct pptdev *ppt)
+{
+	uint16_t base;
+	uint32_t pba_off;
+
+	if (PCI_CAP_LOCATE(ppt->pptd_cfg, PCI_CAP_ID_MSI_X, &base) !=
+	    DDI_SUCCESS)
+		return (-1);
+
+	pba_off = pci_config_get32(ppt->pptd_cfg, base + PCI_MSIX_PBA_OFFSET);
+
+	if (pba_off == PCI_EINVAL32)
+		return (-1);
+
+	return (pba_off & PCI_MSIX_PBA_BIR_MASK);
+}
+
+static int
+ppt_devmap(dev_t dev, devmap_cookie_t dhp, offset_t off, size_t len,
+    size_t *maplen, uint_t model)
+{
+	minor_t minor;
+	struct pptdev *ppt;
+	int err;
+	int bar;
+
+	minor = getminor(dev);
+
+	if ((ppt = ddi_get_soft_state(ppt_state, minor)) == NULL)
+		return (ENXIO);
+
+#ifdef _MULTI_DATAMODEL
+	if (ddi_model_convert_from(model) != DDI_MODEL_NONE)
+		return (ENXIO);
+#endif
+
+	if (off < 0 || off != P2ALIGN(off, PAGESIZE))
+		return (EINVAL);
+
+	if ((bar = ppt_find_pba_bar(ppt)) == -1)
+		return (EINVAL);
+
+	/*
+	 * Add 1 to the BAR number to get the register number used by DDI.
+	 * Register 0 corresponds to PCI config space, the PCI BARs start at 1.
+	 */
+	bar += 1;
+
+	err = devmap_devmem_setup(dhp, ppt->pptd_dip, NULL, bar, off, len,
+	    PROT_USER | PROT_READ | PROT_WRITE, IOMEM_DATA_CACHED, &ppt_attr);
+
+	if (err == DDI_SUCCESS)
+		*maplen = len;
+
+	return (err);
+}
+
 
 static void
 ppt_bar_wipe(struct pptdev *ppt)
@@ -344,7 +406,7 @@ ppt_bar_crawl(struct pptdev *ppt)
 	}
 
 	VERIFY3S(rlen, >, 0);
-	rcount = (rlen * sizeof (int)) / sizeof (pci_regspec_t);
+	rcount = rlen / sizeof (pci_regspec_t);
 	for (i = 0; i < rcount; i++) {
 		pci_regspec_t *reg = &regs[i];
 		struct pptbar *pbar;
@@ -385,21 +447,40 @@ ppt_bar_crawl(struct pptdev *ppt)
 	return (err);
 }
 
-static struct pptdev *
-ppt_find_dev(dev_t dev)
+static boolean_t
+ppt_bar_verify_mmio(struct pptdev *ppt, uint64_t base, uint64_t size)
 {
-	struct pptdev *ppt;
+	const uint64_t map_end = base + size;
 
-	ASSERT(MUTEX_HELD(&pptdev_mtx));
-
-	for (ppt = list_head(&pptdev_list); ppt != NULL;
-	    ppt = list_next(&pptdev_list, ppt)) {
-		if (ppt->pptd_dev == dev) {
-			return (ppt);
-		}
+	/* Zero-length or overflow mappings are not valid */
+	if (map_end <= base) {
+		return (B_FALSE);
+	}
+	/* MMIO bounds should be page-aligned */
+	if ((base & PAGEOFFSET) != 0 || (size & PAGEOFFSET) != 0) {
+		return (B_FALSE);
 	}
 
-	return (NULL);
+	for (uint_t i = 0; i < PCI_BASE_NUM; i++) {
+		const struct pptbar *bar = &ppt->pptd_bars[i];
+		const uint64_t bar_end = bar->base + bar->size;
+
+		/* Only memory BARs can be mapped */
+		if (bar->type != PCI_ADDR_MEM32 &&
+		    bar->type != PCI_ADDR_MEM64) {
+			continue;
+		}
+
+		/* Does the mapping fit within this BAR? */
+		if (base < bar->base || base >= bar_end ||
+		    map_end < bar->base || map_end > bar_end) {
+			continue;
+		}
+
+		/* This BAR satisfies the provided map */
+		return (B_TRUE);
+	}
+	return (B_FALSE);
 }
 
 static int
@@ -407,20 +488,17 @@ ppt_ddi_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 {
 	struct pptdev *ppt = NULL;
 	char name[PPT_MAXNAMELEN];
-	minor_t minor;
+	int inst;
 
 	if (cmd != DDI_ATTACH)
 		return (DDI_FAILURE);
 
-	minor = id_alloc_nosleep(pptdev_minors);
-	if (minor == -1) {
-		return (DDI_FAILURE);
-	}
+	inst = ddi_get_instance(dip);
 
-	if (ddi_soft_state_zalloc(ppt_state, minor) != DDI_SUCCESS) {
+	if (ddi_soft_state_zalloc(ppt_state, inst) != DDI_SUCCESS) {
 		goto fail;
 	}
-	VERIFY(ppt = ddi_get_soft_state(ppt_state, minor));
+	VERIFY(ppt = ddi_get_soft_state(ppt_state, inst));
 	ppt->pptd_dip = dip;
 	ddi_set_driver_private(dip, ppt);
 
@@ -430,17 +508,11 @@ ppt_ddi_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	if (ppt_bar_crawl(ppt) != 0) {
 		goto fail;
 	}
-
-	if (snprintf(name, sizeof (name), "ppt%u", minor)
-	    >= PPT_MAXNAMELEN - 1) {
-		goto fail;
-	}
-	if (ddi_create_minor_node(dip, name, S_IFCHR, minor,
+	if (ddi_create_minor_node(dip, PPT_MINOR_NAME, S_IFCHR, inst,
 	    DDI_PSEUDO, 0) != DDI_SUCCESS) {
 		goto fail;
 	}
 
-	ppt->pptd_dev = makedevice(ddi_driver_major(dip), minor);
 	mutex_enter(&pptdev_mtx);
 	list_insert_tail(&pptdev_list, ppt);
 	mutex_exit(&pptdev_mtx);
@@ -454,9 +526,8 @@ fail:
 			pci_config_teardown(&ppt->pptd_cfg);
 		}
 		ppt_bar_wipe(ppt);
-		ddi_soft_state_free(ppt_state, minor);
+		ddi_soft_state_free(ppt_state, inst);
 	}
-	id_free(pptdev_minors, minor);
 	return (DDI_FAILURE);
 }
 
@@ -464,15 +535,15 @@ static int
 ppt_ddi_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 {
 	struct pptdev *ppt;
-	minor_t minor;
+	int inst;
 
 	if (cmd != DDI_DETACH)
 		return (DDI_FAILURE);
 
 	ppt = ddi_get_driver_private(dip);
-	minor = getminor(ppt->pptd_dev);
+	inst = ddi_get_instance(dip);
 
-	ASSERT3P(ddi_get_soft_state(ppt_state, minor), ==, ppt);
+	ASSERT3P(ddi_get_soft_state(ppt_state, inst), ==, ppt);
 
 	mutex_enter(&pptdev_mtx);
 	if (ppt->vm != NULL) {
@@ -482,12 +553,11 @@ ppt_ddi_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 	list_remove(&pptdev_list, ppt);
 	mutex_exit(&pptdev_mtx);
 
-	ddi_remove_minor_node(dip, NULL);
+	ddi_remove_minor_node(dip, PPT_MINOR_NAME);
 	ppt_bar_wipe(ppt);
 	pci_config_teardown(&ppt->pptd_cfg);
 	ddi_set_driver_private(dip, NULL);
-	ddi_soft_state_free(ppt_state, minor);
-	id_free(pptdev_minors, minor);
+	ddi_soft_state_free(ppt_state, inst);
 
 	return (DDI_SUCCESS);
 }
@@ -496,22 +566,20 @@ static int
 ppt_ddi_info(dev_info_t *dip, ddi_info_cmd_t cmd, void *arg, void **result)
 {
 	int error = DDI_FAILURE;
+	int inst = getminor((dev_t)arg);
 
 	switch (cmd) {
 	case DDI_INFO_DEVT2DEVINFO: {
-		struct pptdev *ppt;
+		struct pptdev *ppt = ddi_get_soft_state(ppt_state, inst);
 
-		mutex_enter(&pptdev_mtx);
-		ppt = ppt_find_dev((dev_t)arg);
 		if (ppt != NULL) {
 			*result = (void *)ppt->pptd_dip;
 			error = DDI_SUCCESS;
 		}
-		mutex_exit(&pptdev_mtx);
 		break;
 	}
 	case DDI_INFO_DEVT2INSTANCE: {
-		*result = (void *)(uintptr_t)getminor((dev_t)arg);
+		*result = (void *)(uintptr_t)inst;
 		error = DDI_SUCCESS;
 		break;
 	}
@@ -530,13 +598,14 @@ static struct cb_ops ppt_cb_ops = {
 	nodev,		/* read */
 	nodev,		/* write */
 	ppt_ioctl,
-	nodev,		/* devmap */
-	nodev,		/* mmap */
-	nodev,		/* segmap */
+	ppt_devmap,	/* devmap */
+	NULL,		/* mmap */
+	NULL,		/* segmap */
 	nochpoll,	/* poll */
 	ddi_prop_op,
 	NULL,
-	D_NEW | D_MP | D_DEVMAP
+	D_NEW | D_MP | D_64BIT | D_DEVMAP,
+	CB_REV
 };
 
 static struct dev_ops ppt_ops = {
@@ -572,7 +641,6 @@ _init(void)
 	mutex_init(&pptdev_mtx, NULL, MUTEX_DRIVER, NULL);
 	list_create(&pptdev_list, sizeof (struct pptdev),
 	    offsetof(struct pptdev, pptd_node));
-	pptdev_minors = id_space_create("ppt_minors", 0, MAXMIN32);
 
 	error = ddi_soft_state_init(&ppt_state, sizeof (struct pptdev), 0);
 	if (error) {
@@ -581,11 +649,10 @@ _init(void)
 
 	error = mod_install(&modlinkage);
 
+	ppt_major = ddi_name_to_major("ppt");
 fail:
 	if (error) {
 		ddi_soft_state_fini(&ppt_state);
-		id_space_destroy(pptdev_minors);
-		pptdev_minors = NULL;
 	}
 	return (error);
 }
@@ -598,9 +665,6 @@ _fini(void)
 	error = mod_remove(&modlinkage);
 	if (error)
 		return (error);
-
-	id_space_destroy(pptdev_minors);
-	pptdev_minors = NULL;
 	ddi_soft_state_fini(&ppt_state);
 
 	return (0);
@@ -753,6 +817,10 @@ ppt_flr(dev_info_t *dip, boolean_t force)
 	return (B_TRUE);
 
 fail:
+	/*
+	 * TODO: If the FLR fails for some reason, we should attempt a reset
+	 * using the PCI power management facilities (if possible).
+	 */
 	pci_config_teardown(&hdl);
 	return (B_FALSE);
 }
@@ -770,14 +838,18 @@ ppt_findf(int fd)
 	}
 
 	va.va_mask = AT_RDEV;
-	if (VOP_GETATTR(fp->f_vnode, &va, NO_FOLLOW, fp->f_cred, NULL) == 0) {
-		ppt = ppt_find_dev(va.va_rdev);
-	}
+	if (VOP_GETATTR(fp->f_vnode, &va, NO_FOLLOW, fp->f_cred, NULL) != 0 ||
+	    getmajor(va.va_rdev) != ppt_major)
+		goto fail;
 
-	if (ppt == NULL) {
-		releasef(fd);
-	}
-	return (ppt);
+	ppt = ddi_get_soft_state(ppt_state, getminor(va.va_rdev));
+
+	if (ppt != NULL)
+		return (ppt);
+
+fail:
+	releasef(fd);
+	return (NULL);
 }
 
 static void
@@ -790,8 +862,8 @@ ppt_unmap_mmio(struct vm *vm, struct pptdev *ppt)
 		seg = &ppt->mmio[i];
 		if (seg->len == 0)
 			continue;
-		(void)vm_unmap_mmio(vm, seg->gpa, seg->len);
-		bzero(seg, sizeof(struct pptseg));
+		(void) vm_unmap_mmio(vm, seg->gpa, seg->len);
+		bzero(seg, sizeof (struct pptseg));
 	}
 }
 
@@ -952,6 +1024,7 @@ ppt_assign_device(struct vm *vm, int pptfd)
 	ppt->vm = vm;
 	iommu_remove_device(iommu_host_domain(), pci_get_bdf(ppt->pptd_dip));
 	iommu_add_device(vm_iommu_domain(vm), pci_get_bdf(ppt->pptd_dip));
+	pf_set_passthru(ppt->pptd_dip, B_TRUE);
 
 done:
 	releasef(pptfd);
@@ -1000,6 +1073,8 @@ ppt_do_unassign(struct pptdev *ppt)
 	 */
 	ppt_reset_pci_power_state(ppt->pptd_dip);
 	(void) pci_restore_config_regs(ppt->pptd_dip);
+
+	pf_set_passthru(ppt->pptd_dip, B_FALSE);
 
 	ppt_unmap_mmio(vm, ppt);
 	ppt_teardown_msi(ppt);
@@ -1067,6 +1142,15 @@ ppt_map_mmio(struct vm *vm, int pptfd, vm_paddr_t gpa, size_t len,
 	}
 	if (ppt->vm != vm) {
 		err = EBUSY;
+		goto done;
+	}
+
+	/*
+	 * Ensure that the host-physical range of the requested mapping fits
+	 * within one of the MMIO BARs of the device.
+	 */
+	if (!ppt_bar_verify_mmio(ppt, hpa, len)) {
+		err = EINVAL;
 		goto done;
 	}
 
@@ -1252,9 +1336,9 @@ ppt_setup_msix(struct vm *vm, int vcpu, int pptfd, int idx, uint64_t addr,
 
 		ppt->msix.num_msgs = numvec;
 
-		ppt->msix.arg_sz = numvec * sizeof(ppt->msix.arg[0]);
+		ppt->msix.arg_sz = numvec * sizeof (ppt->msix.arg[0]);
 		ppt->msix.arg = kmem_zalloc(ppt->msix.arg_sz, KM_SLEEP);
-		ppt->msix.inth_sz = numvec * sizeof(ddi_intr_handle_t);
+		ppt->msix.inth_sz = numvec * sizeof (ddi_intr_handle_t);
 		ppt->msix.inth = kmem_zalloc(ppt->msix.inth_sz, KM_SLEEP);
 
 		if (ddi_intr_alloc(dip, ppt->msix.inth, DDI_INTR_TYPE_MSIX, 0,

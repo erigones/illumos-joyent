@@ -1,6 +1,9 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (c) 2015 Tycho Nightingale <tycho.nightingale@pluribusnetworks.com>
  * Copyright (c) 2015 Leon Dang
+ * Copyright 2018 Joyent, Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -32,6 +35,7 @@ __FBSDID("$FreeBSD$");
 #ifndef WITHOUT_CAPSICUM
 #include <sys/capsicum.h>
 #endif
+#include <sys/endian.h>
 #include <sys/socket.h>
 #include <sys/select.h>
 #include <sys/time.h>
@@ -55,14 +59,31 @@ __FBSDID("$FreeBSD$");
 
 #include <zlib.h>
 
+#ifndef __FreeBSD__
+#include <sys/debug.h>
+#endif
+
 #include "bhyvegc.h"
 #include "console.h"
 #include "rfb.h"
 #include "sockstream.h"
 
+#ifndef NO_OPENSSL
+#include <openssl/des.h>
+#endif
+
 static int rfb_debug = 0;
 #define	DPRINTF(params) if (rfb_debug) printf params
 #define	WPRINTF(params) printf params
+
+#define AUTH_LENGTH	16
+#define PASSWD_LENGTH	8
+
+#define SECURITY_TYPE_NONE	1
+#define SECURITY_TYPE_VNC_AUTH	2
+
+#define AUTH_FAILED_UNAUTH	1
+#define AUTH_FAILED_ERROR	2
 
 struct rfb_softc {
 	int		sfd;
@@ -72,9 +93,11 @@ struct rfb_softc {
 
 	int		width, height;
 
-	bool		enc_raw_ok;
-	bool		enc_zlib_ok;
-	bool		enc_resize_ok;
+	char		*password;
+
+	bool	enc_raw_ok;
+	bool	enc_zlib_ok;
+	bool	enc_resize_ok;
 
 	z_stream	zstream;
 	uint8_t		*zbuf;
@@ -122,12 +145,12 @@ struct rfb_pixfmt_msg {
 #define	RFB_ENCODING_ZLIB		6
 #define	RFB_ENCODING_RESIZE		-223
 
-#define RFB_MAX_WIDTH			2000
-#define RFB_MAX_HEIGHT			1200
+#define	RFB_MAX_WIDTH			2000
+#define	RFB_MAX_HEIGHT			1200
 #define	RFB_ZLIB_BUFSZ			RFB_MAX_WIDTH*RFB_MAX_HEIGHT*4
 
 /* percentage changes to screen before sending the entire screen */
-#define RFB_SEND_ALL_THRESH             25
+#define	RFB_SEND_ALL_THRESH		25
 
 struct rfb_enc_msg {
 	uint8_t		type;
@@ -208,7 +231,7 @@ static void
 rfb_send_resize_update_msg(struct rfb_softc *rc, int cfd)
 {
 	struct rfb_srvr_updt_msg supdt_msg;
-        struct rfb_srvr_rect_hdr srect_hdr;
+	struct rfb_srvr_rect_hdr srect_hdr;
 
 	/* Number of rectangles: 1 */
 	supdt_msg.type = 0;
@@ -288,7 +311,7 @@ rfb_send_rect(struct rfb_softc *rc, int cfd, struct bhyvegc_image *gc,
               int x, int y, int w, int h)
 {
 	struct rfb_srvr_updt_msg supdt_msg;
-        struct rfb_srvr_rect_hdr srect_hdr;
+	struct rfb_srvr_rect_hdr srect_hdr;
 	unsigned long zlen;
 	ssize_t nwrite, total;
 	int err;
@@ -448,9 +471,9 @@ doraw:
 	return (nwrite);
 }
 
-#define PIX_PER_CELL	32
+#define	PIX_PER_CELL	32
 #define	PIXCELL_SHIFT	5
-#define PIXCELL_MASK	0x1F
+#define	PIXCELL_MASK	0x1F
 
 static int
 rfb_send_screen(struct rfb_softc *rc, int cfd, int all)
@@ -525,40 +548,23 @@ rfb_send_screen(struct rfb_softc *rc, int cfd, int all)
 		}
 
 		for (x = 0; x < xcells; x++) {
+			if (x == (xcells - 1) && rem_x > 0)
+				cellwidth = rem_x;
+			else
+				cellwidth = PIX_PER_CELL;
+
 			if (rc->hw_crc)
 				crc_p[x] = fast_crc32(p,
-				             PIX_PER_CELL * sizeof(uint32_t),
+				             cellwidth * sizeof(uint32_t),
 				             crc_p[x]);
 			else
 				crc_p[x] = (uint32_t)crc32(crc_p[x],
 				             (Bytef *)p,
-				             PIX_PER_CELL * sizeof(uint32_t));
+				             cellwidth * sizeof(uint32_t));
 
-			p += PIX_PER_CELL;
+			p += cellwidth;
 
 			/* check for crc delta if last row in cell */
-			if ((y & PIXCELL_MASK) == PIXCELL_MASK || y == (h-1)) {
-				if (orig_crc[x] != crc_p[x]) {
-					orig_crc[x] = crc_p[x];
-					crc_p[x] = 1;
-					changes++;
-				} else {
-					crc_p[x] = 0;
-				}
-			}
-		}
-
-		if (rem_x) {
-			if (rc->hw_crc)
-				crc_p[x] = fast_crc32(p,
-				                    rem_x * sizeof(uint32_t),
-				                    crc_p[x]);
-			else
-				crc_p[x] = (uint32_t)crc32(crc_p[x],
-				                    (Bytef *)p,
-				                    rem_x * sizeof(uint32_t));
-			p += rem_x;
-
 			if ((y & PIXCELL_MASK) == PIXCELL_MASK || y == (h-1)) {
 				if (orig_crc[x] != crc_p[x]) {
 					orig_crc[x] = crc_p[x];
@@ -713,7 +719,7 @@ rfb_wr_thr(void *arg)
 		tv.tv_usec = 10000;
 
 		err = select(cfd+1, &rfds, NULL, NULL, &tv);
-                if (err < 0)
+		if (err < 0)
 			return (NULL);
 
 		/* Determine if its time to push screen; ~24hz */
@@ -739,9 +745,21 @@ rfb_handle(struct rfb_softc *rc, int cfd)
 {
 	const char *vbuf = "RFB 003.008\n";
 	unsigned char buf[80];
+	unsigned char *message = NULL;
+
+#ifndef NO_OPENSSL
+	unsigned char challenge[AUTH_LENGTH];
+	unsigned char keystr[PASSWD_LENGTH];
+	unsigned char crypt_expected[AUTH_LENGTH];
+
+	DES_key_schedule ks;
+	int i;
+#endif
+
 	pthread_t tid;
-        uint32_t sres;
+	uint32_t sres = 0;
 	int len;
+	int perror = 1;
 
 	rc->cfd = cfd;
 
@@ -751,18 +769,98 @@ rfb_handle(struct rfb_softc *rc, int cfd)
 	/* 1b. Read client version */
 	len = read(cfd, buf, sizeof(buf));
 
-	/* 2a. Send security type 'none' */
+	/* 2a. Send security type */
 	buf[0] = 1;
-	buf[1] = 1; /* none */
-	stream_write(cfd, buf, 2);
+#ifndef NO_OPENSSL
+	if (rc->password) 
+		buf[1] = SECURITY_TYPE_VNC_AUTH;
+	else
+		buf[1] = SECURITY_TYPE_NONE;
+#else
+	buf[1] = SECURITY_TYPE_NONE;
+#endif
 
+	stream_write(cfd, buf, 2);
 
 	/* 2b. Read agreed security type */
 	len = stream_read(cfd, buf, 1);
 
-	/* 2c. Write back a status of 0 */
-	sres = 0;
+	/* 2c. Do VNC authentication */
+	switch (buf[0]) {
+	case SECURITY_TYPE_NONE:
+		sres = 0;
+		break;
+	case SECURITY_TYPE_VNC_AUTH:
+		/*
+		 * The client encrypts the challenge with DES, using a password
+		 * supplied by the user as the key.
+		 * To form the key, the password is truncated to
+		 * eight characters, or padded with null bytes on the right.
+		 * The client then sends the resulting 16-bytes response.
+		 */
+#ifndef NO_OPENSSL
+		strncpy(keystr, rc->password, PASSWD_LENGTH);
+
+		/* VNC clients encrypts the challenge with all the bit fields
+		 * in each byte of the password mirrored.
+		 * Here we flip each byte of the keystr.
+		 */
+		for (i = 0; i < PASSWD_LENGTH; i++) {
+			keystr[i] = (keystr[i] & 0xF0) >> 4
+				  | (keystr[i] & 0x0F) << 4;
+			keystr[i] = (keystr[i] & 0xCC) >> 2
+				  | (keystr[i] & 0x33) << 2;
+			keystr[i] = (keystr[i] & 0xAA) >> 1
+				  | (keystr[i] & 0x55) << 1;
+		}
+
+		/* Initialize a 16-byte random challenge */
+		arc4random_buf(challenge, sizeof(challenge));
+		stream_write(cfd, challenge, AUTH_LENGTH);
+
+		/* Receive the 16-byte challenge response */
+		stream_read(cfd, buf, AUTH_LENGTH);
+
+		memcpy(crypt_expected, challenge, AUTH_LENGTH);
+
+		/* Encrypt the Challenge with DES */
+		DES_set_key((const_DES_cblock *)keystr, &ks);
+		DES_ecb_encrypt((const_DES_cblock *)challenge,
+				(const_DES_cblock *)crypt_expected,
+				&ks, DES_ENCRYPT);
+		DES_ecb_encrypt((const_DES_cblock *)(challenge + PASSWD_LENGTH),
+				(const_DES_cblock *)(crypt_expected +
+				PASSWD_LENGTH),
+				&ks, DES_ENCRYPT);
+
+		if (memcmp(crypt_expected, buf, AUTH_LENGTH) != 0) {
+			message = "Auth Failed: Invalid Password.";
+			sres = htonl(1);
+		} else
+			sres = 0;
+#else
+		sres = 0;
+		WPRINTF(("Auth not supported, no OpenSSL in your system"));
+#endif
+
+		break;
+	}
+
+	/* 2d. Write back a status */
 	stream_write(cfd, &sres, 4);
+
+	if (sres) {
+#ifdef __FreeBSD__
+		be32enc(buf, strlen(message));
+		stream_write(cfd, buf, 4);
+		stream_write(cfd, message, strlen(message));
+#else
+		be32enc(buf, strlen((char *)message));
+		stream_write(cfd, buf, 4);
+		stream_write(cfd, message, strlen((char *)message));
+#endif
+		goto done;
+	}
 
 	/* 3a. Read client shared-flag byte */
 	len = stream_read(cfd, buf, 1);
@@ -777,8 +875,9 @@ rfb_handle(struct rfb_softc *rc, int cfd)
 
 	rfb_send_screen(rc, cfd, 1);
 
-	pthread_create(&tid, NULL, rfb_wr_thr, rc);
-	pthread_set_name_np(tid, "rfbout");
+	perror = pthread_create(&tid, NULL, rfb_wr_thr, rc);
+	if (perror == 0)
+		pthread_set_name_np(tid, "rfbout");
 
         /* Now read in client requests. 1st byte identifies type */
 	for (;;) {
@@ -814,7 +913,8 @@ rfb_handle(struct rfb_softc *rc, int cfd)
 	}
 done:
 	rc->cfd = -1;
-	pthread_join(tid, NULL);
+	if (perror == 0)
+		pthread_join(tid, NULL);
 	if (rc->enc_zlib_ok)
 		deflateEnd(&rc->zstream);
 }
@@ -869,7 +969,7 @@ sse42_supported(void)
 }
 
 int
-rfb_init(char *hostname, int port, int wait)
+rfb_init(char *hostname, int port, int wait, char *password)
 {
 	struct rfb_softc *rc;
 	struct sockaddr_in sin;
@@ -886,6 +986,8 @@ rfb_init(char *hostname, int port, int wait)
 	                     sizeof(uint32_t));
 	rc->crc_width = RFB_MAX_WIDTH;
 	rc->crc_height = RFB_MAX_HEIGHT;
+
+	rc->password = password;
 
 	rc->sfd = socket(AF_INET, SOCK_STREAM, 0);
 	if (rc->sfd < 0) {
@@ -941,3 +1043,86 @@ rfb_init(char *hostname, int port, int wait)
 
 	return (0);
 }
+
+#ifndef __FreeBSD__
+int
+rfb_init_unix(char *path, int wait, char *password)
+{
+	struct rfb_softc *rc;
+	struct sockaddr_un sock;
+
+	if ((rc = calloc(1, sizeof (struct rfb_softc))) == NULL) {
+		perror("calloc");
+		return (-1);
+	}
+	rc->sfd = -1;
+
+	if ((rc->crc = calloc(howmany(RFB_MAX_WIDTH * RFB_MAX_HEIGHT, 32),
+	    sizeof (uint32_t))) == NULL) {
+		perror("calloc");
+		goto fail;
+	}
+	if ((rc->crc_tmp = calloc(howmany(RFB_MAX_WIDTH * RFB_MAX_HEIGHT, 32),
+	    sizeof (uint32_t))) == NULL) {
+		perror("calloc");
+		goto fail;
+	}
+	rc->crc_width = RFB_MAX_WIDTH;
+	rc->crc_height = RFB_MAX_HEIGHT;
+
+	rc->password = password;
+
+	rc->sfd = socket(PF_UNIX, SOCK_STREAM, 0);
+	if (rc->sfd < 0) {
+		perror("socket");
+		goto fail;
+	}
+
+	sock.sun_family = AF_UNIX;
+	if (strlcpy(sock.sun_path, path, sizeof (sock.sun_path)) >=
+	    sizeof (sock.sun_path)) {
+		(void) fprintf(stderr, "socket path '%s' too long\n", path);
+		goto fail;
+	}
+
+	(void) unlink(path);
+	if (bind(rc->sfd, (struct sockaddr *)&sock, sizeof (sock)) < 0) {
+		perror("bind");
+		goto fail;
+	}
+
+	if (listen(rc->sfd, 1) < 0) {
+		perror("listen");
+		goto fail;
+	}
+
+	rc->hw_crc = sse42_supported();
+
+	rc->conn_wait = wait;
+	if (wait) {
+		VERIFY3S(pthread_mutex_init(&rc->mtx, NULL), ==, 0);
+		VERIFY3S(pthread_cond_init(&rc->cond, NULL), ==, 0);
+	}
+
+	VERIFY3S(pthread_create(&rc->tid, NULL, rfb_thr, rc), ==, 0);
+	pthread_set_name_np(rc->tid, "rfb");
+
+	if (wait) {
+		DPRINTF(("Waiting for rfb client...\n"));
+		VERIFY3S(pthread_mutex_lock(&rc->mtx), ==, 0);
+		VERIFY3S(pthread_cond_wait(&rc->cond, &rc->mtx), ==, 0);
+		VERIFY3S(pthread_mutex_unlock(&rc->mtx), ==, 0);
+	}
+
+	return (0);
+
+fail:
+	if (rc->sfd != -1) {
+		VERIFY3S(close(rc->sfd), ==, 0);
+	}
+	free(rc->crc);
+	free(rc->crc_tmp);
+	free(rc);
+	return (-1);
+}
+#endif

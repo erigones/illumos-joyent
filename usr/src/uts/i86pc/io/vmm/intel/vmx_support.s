@@ -37,7 +37,7 @@
  * http://www.illumos.org/license/CDDL.
  *
  * Copyright 2013 Pluribus Networks Inc.
- * Copyright 2017 Joyent, Inc.
+ * Copyright 2018 Joyent, Inc.
  */
 
 #include <sys/asm_linkage.h>
@@ -101,6 +101,45 @@ vmx_enter_guest(struct vmxctx *ctx, struct vmx *vmx, int launched)
 	movq	VMXCTX_GUEST_R14(%rdi),%r14;				\
 	movq	VMXCTX_GUEST_R15(%rdi),%r15;				\
 	movq	VMXCTX_GUEST_RDI(%rdi),%rdi; /* restore rdi the last */
+
+#define	VMX_GUEST_SAVE							\
+	movq	%rdi, VMXSTK_TMPRDI(%rsp);				\
+	movq	VMXSTK_RDI(%rsp), %rdi;					\
+	movq	%rbp, VMXCTX_GUEST_RBP(%rdi);				\
+	leaq	VMXSTK_FP(%rsp), %rbp;					\
+	movq	%rsi, VMXCTX_GUEST_RSI(%rdi);				\
+	movq	%rdx, VMXCTX_GUEST_RDX(%rdi);				\
+	movq	%rcx, VMXCTX_GUEST_RCX(%rdi);				\
+	movq	%r8, VMXCTX_GUEST_R8(%rdi);				\
+	movq	%r9, VMXCTX_GUEST_R9(%rdi);				\
+	movq	%rax, VMXCTX_GUEST_RAX(%rdi);				\
+	movq	%rbx, VMXCTX_GUEST_RBX(%rdi);				\
+	movq	%r10, VMXCTX_GUEST_R10(%rdi);				\
+	movq	%r11, VMXCTX_GUEST_R11(%rdi);				\
+	movq	%r12, VMXCTX_GUEST_R12(%rdi);				\
+	movq	%r13, VMXCTX_GUEST_R13(%rdi);				\
+	movq	%r14, VMXCTX_GUEST_R14(%rdi);				\
+	movq	%r15, VMXCTX_GUEST_R15(%rdi);				\
+	movq	%cr2, %rbx;						\
+	movq	%rbx, VMXCTX_GUEST_CR2(%rdi);				\
+	movq	VMXSTK_TMPRDI(%rsp), %rdx;				\
+	movq	%rdx, VMXCTX_GUEST_RDI(%rdi);
+
+
+/*
+ * Flush scratch registers to avoid lingering guest state being used for
+ * Spectre v1 attacks when returning from guest entry.
+ */
+#define	VMX_GUEST_FLUSH_SCRATCH						\
+	xorl	%edi, %edi;						\
+	xorl	%esi, %esi;						\
+	xorl	%edx, %edx;						\
+	xorl	%ecx, %ecx;						\
+	xorl	%r8d, %r8d;						\
+	xorl	%r9d, %r9d;						\
+	xorl	%r10d, %r10d;						\
+	xorl	%r11d, %r11d;
+
 
 /* Stack layout (offset from %rsp) for vmx_enter_guest */
 #define	VMXSTK_TMPRDI	0x00	/* temp store %rdi on vmexit		*/
@@ -223,6 +262,9 @@ inst_error:
 	movq	VMXSTK_R13(%rsp), %r13
 	movq	VMXSTK_R14(%rsp), %r14
 	movq	VMXSTK_R15(%rsp), %r15
+
+	VMX_GUEST_FLUSH_SCRATCH
+
 	addq	$VMXSTKSIZE, %rsp
 	popq	%rbp
 	ret
@@ -234,32 +276,8 @@ inst_error:
  */
 .align	ASM_ENTRY_ALIGN;
 ALTENTRY(vmx_exit_guest)
-	/*
-	 * Save guest state that is not automatically saved in the vmcs.
-	 */
-	movq	%rdi, VMXSTK_TMPRDI(%rsp)
-	movq	VMXSTK_RDI(%rsp), %rdi
-	movq	%rbp, VMXCTX_GUEST_RBP(%rdi)
-	leaq	VMXSTK_FP(%rsp), %rbp
-
-	movq	%rsi, VMXCTX_GUEST_RSI(%rdi)
-	movq	%rdx, VMXCTX_GUEST_RDX(%rdi)
-	movq	%rcx, VMXCTX_GUEST_RCX(%rdi)
-	movq	%r8, VMXCTX_GUEST_R8(%rdi)
-	movq	%r9, VMXCTX_GUEST_R9(%rdi)
-	movq	%rax, VMXCTX_GUEST_RAX(%rdi)
-	movq	%rbx, VMXCTX_GUEST_RBX(%rdi)
-	movq	%r10, VMXCTX_GUEST_R10(%rdi)
-	movq	%r11, VMXCTX_GUEST_R11(%rdi)
-	movq	%r12, VMXCTX_GUEST_R12(%rdi)
-	movq	%r13, VMXCTX_GUEST_R13(%rdi)
-	movq	%r14, VMXCTX_GUEST_R14(%rdi)
-	movq	%r15, VMXCTX_GUEST_R15(%rdi)
-
-	movq	%cr2, %rbx
-	movq	%rbx, VMXCTX_GUEST_CR2(%rdi)
-	movq	VMXSTK_TMPRDI(%rsp), %rdx
-	movq	%rdx, VMXCTX_GUEST_RDI(%rdi)
+	/* Save guest state that is not automatically saved in the vmcs. */
+	VMX_GUEST_SAVE
 
 	/* Deactivate guest pmap on this cpu. */
 	movq	VMXCTX_PMAP(%rdi), %rdi
@@ -277,10 +295,65 @@ ALTENTRY(vmx_exit_guest)
 	movq	VMXSTK_R13(%rsp), %r13
 	movq	VMXSTK_R14(%rsp), %r14
 	movq	VMXSTK_R15(%rsp), %r15
+
+	VMX_GUEST_FLUSH_SCRATCH
+
 	addq	$VMXSTKSIZE, %rsp
 	popq	%rbp
 	ret
 SET_SIZE(vmx_enter_guest)
+
+
+
+.align	ASM_ENTRY_ALIGN;
+ALTENTRY(vmx_exit_guest_flush_rsb)
+	/* Save guest state that is not automatically saved in the vmcs. */
+	VMX_GUEST_SAVE
+
+	/* Deactivate guest pmap on this cpu. */
+	movq	VMXCTX_PMAP(%rdi), %rdi
+	leaq	PM_ACTIVE(%rdi), %rdi
+	movl	%gs:CPU_ID, %esi
+	call	cpuset_atomic_del
+
+	VMX_GUEST_FLUSH_SCRATCH
+
+	/*
+	 * To prevent malicious branch target predictions from affecting the
+	 * host, overwrite all entries in the RSB upon exiting a guest.
+	 */
+	movl	$16, %ecx	/* 16 iterations, two calls per loop */
+	movq	%rsp, %rax
+loop:
+	call	2f		/* create an RSB entry. */
+1:
+	pause
+	call	1b		/* capture rogue speculation. */
+2:
+	call	2f		/* create an RSB entry. */
+1:
+	pause
+	call	1b		/* capture rogue speculation. */
+2:
+	subl	$1, %ecx
+	jnz	loop
+	movq	%rax, %rsp
+
+	/*
+	 * This will return to the caller of 'vmx_enter_guest()' with a return
+	 * value of VMX_GUEST_VMEXIT.
+	 */
+	movl	$VMX_GUEST_VMEXIT, %eax
+	movq	VMXSTK_RBX(%rsp), %rbx
+	movq	VMXSTK_R12(%rsp), %r12
+	movq	VMXSTK_R13(%rsp), %r13
+	movq	VMXSTK_R14(%rsp), %r14
+	movq	VMXSTK_R15(%rsp), %r15
+
+	addq	$VMXSTKSIZE, %rsp
+	popq	%rbp
+	ret
+SET_SIZE(vmx_exit_guest_flush_rsb)
 
 /*
  * %rdi = trapno
@@ -307,5 +380,45 @@ ENTRY_NP(vmx_call_isr)
 	popq	%rbp
 	ret
 SET_SIZE(vmx_call_isr)
+
+/*
+ * %rdi = trapno
+ *
+ * This variant is for any explicit exception injection that we need: in this
+ * case, we can't just, for example, do a direct "int $2", as that will then
+ * trash our %cr3 via tr_nmiint due to KPTI.  So we have to fake a trap frame in
+ * a similar fashion to vmx_call_isr().  Both NMIs and MCEs don't push an 'err'
+ * into the frame.
+ */
+ENTRY_NP(vmx_call_trap)
+	pushq	%rbp
+	movq	%rsp, %rbp
+	movq	%rsp, %r11
+	andq	$~0xf, %rsp	/* align stack */
+	pushq	$KDS_SEL	/* %ss */
+	pushq	%r11		/* %rsp */
+	pushfq			/* %rflags */
+	pushq	$KCS_SEL	/* %cs */
+	leaq	.trap_iret_dest(%rip), %rcx
+	pushq	%rcx		/* %rip */
+	cli
+	cmpq	$T_NMIFLT, %rdi
+	je	nmiint
+	cmpq	$T_MCE, %rdi
+	je	mcetrap
+
+	pushq	%rdi		/* save our bad trapno... */
+	leaq	__vmx_call_bad_trap(%rip), %rdi
+	xorl	%eax, %eax
+	call	panic
+	/*NOTREACHED*/
+
+.trap_iret_dest:
+	popq	%rbp
+	ret
+SET_SIZE(vmx_call_trap)
+
+__vmx_call_bad_trap:
+	.string	"bad trapno for vmx_call_trap()"
 
 #endif /* lint */

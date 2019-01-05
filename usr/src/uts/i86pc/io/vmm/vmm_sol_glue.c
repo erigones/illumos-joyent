@@ -51,6 +51,8 @@
 #include <sys/id_space.h>
 #include <sys/psm_defs.h>
 #include <sys/smp_impldefs.h>
+#include <sys/modhash.h>
+#include <sys/hma.h>
 
 #include <sys/x86_archext.h>
 
@@ -61,10 +63,21 @@
 #include <machine/specialreg.h>
 #include <machine/vmm.h>
 #include <sys/vmm_impl.h>
+#include <sys/kernel.h>
 
 #include <vm/as.h>
 #include <vm/seg_kmem.h>
 
+SET_DECLARE(sysinit_set, struct sysinit);
+
+void
+sysinit(void)
+{
+	struct sysinit **si;
+
+	SET_FOREACH(si, sysinit_set)
+		(*si)->func((*si)->data);
+}
 
 u_char const bin2bcd_data[] = {
 	0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
@@ -144,12 +157,50 @@ smp_rendezvous(void (* setup_func)(void *), void (* action_func)(void *),
 
 struct kmem_item {
 	void			*addr;
-	void			*paddr;
 	size_t			size;
-	LIST_ENTRY(kmem_item)	next;
 };
 static kmutex_t kmem_items_lock;
-static LIST_HEAD(, kmem_item) kmem_items;
+
+static mod_hash_t *vmm_alloc_hash;
+uint_t vmm_alloc_hash_nchains = 16381;
+uint_t vmm_alloc_hash_size = PAGESIZE;
+
+static void
+vmm_alloc_hash_valdtor(mod_hash_val_t val)
+{
+	struct kmem_item *i = (struct kmem_item *)val;
+
+	kmem_free(i->addr, i->size);
+	kmem_free(i, sizeof (struct kmem_item));
+}
+
+static void
+vmm_alloc_init(void)
+{
+	vmm_alloc_hash = mod_hash_create_ptrhash("vmm_alloc_hash",
+	    vmm_alloc_hash_nchains, vmm_alloc_hash_valdtor,
+	    vmm_alloc_hash_size);
+
+	VERIFY(vmm_alloc_hash != NULL);
+}
+
+static uint_t
+vmm_alloc_check(mod_hash_key_t key, mod_hash_val_t *val, void *unused)
+{
+	struct kmem_item *i = (struct kmem_item *)val;
+
+	cmn_err(CE_PANIC, "!vmm_alloc_check: hash not empty: %p, %d", i->addr,
+	    i->size);
+
+	return (MH_WALK_TERMINATE);
+}
+
+static void
+vmm_alloc_cleanup(void)
+{
+	mod_hash_walk(vmm_alloc_hash, vmm_alloc_check, NULL);
+	mod_hash_destroy_ptrhash(vmm_alloc_hash);
+}
 
 void *
 malloc(unsigned long size, struct malloc_type *mtp, int flags)
@@ -162,18 +213,28 @@ malloc(unsigned long size, struct malloc_type *mtp, int flags)
 		kmem_flag = KM_NOSLEEP;
 
 	if (flags & M_ZERO) {
-		p = kmem_zalloc(size + sizeof (struct kmem_item), kmem_flag);
+		p = kmem_zalloc(size, kmem_flag);
 	} else {
-		p = kmem_alloc(size + sizeof (struct kmem_item), kmem_flag);
+		p = kmem_alloc(size, kmem_flag);
+	}
+
+	if (p == NULL)
+		return (NULL);
+
+	i = kmem_zalloc(sizeof (struct kmem_item), kmem_flag);
+
+	if (i == NULL) {
+		kmem_free(p, size);
+		return (NULL);
 	}
 
 	mutex_enter(&kmem_items_lock);
-	i = p + size;
 	i->addr = p;
-	i->paddr = (void *)PHYS_TO_DMAP(vtophys(p));
 	i->size = size;
 
-	LIST_INSERT_HEAD(&kmem_items, i, next);
+	VERIFY(mod_hash_insert(vmm_alloc_hash,
+	    (mod_hash_key_t)PHYS_TO_DMAP(vtophys(p)), (mod_hash_val_t)i) == 0);
+
 	mutex_exit(&kmem_items_lock);
 
 	return (p);
@@ -182,19 +243,10 @@ malloc(unsigned long size, struct malloc_type *mtp, int flags)
 void
 free(void *addr, struct malloc_type *mtp)
 {
-	struct kmem_item	*i;
-
 	mutex_enter(&kmem_items_lock);
-	LIST_FOREACH(i, &kmem_items, next) {
-		if (i->addr == addr ||
-		    i->paddr == addr)
-			break;
-	}
-	VERIFY(i != NULL);
-	LIST_REMOVE(i, next);
+	VERIFY(mod_hash_destroy(vmm_alloc_hash,
+	    (mod_hash_key_t)PHYS_TO_DMAP(vtophys(addr))) == 0);
 	mutex_exit(&kmem_items_lock);
-
-	kmem_free(i->addr, i->size + sizeof (struct kmem_item));
 }
 
 extern void *contig_alloc(size_t, ddi_dma_attr_t *, uintptr_t, int);
@@ -242,12 +294,15 @@ contigfree(void *addr, unsigned long size, struct malloc_type *type)
 void
 mtx_init(struct mtx *mtx, char *name, const char *type_name, int opts)
 {
-	if (opts & MTX_SPIN) {
-		mutex_init(&mtx->m, name, MUTEX_SPIN,
-		    (ddi_iblock_cookie_t)ipltospl(DISP_LEVEL));
-	} else {
-		mutex_init(&mtx->m, name, MUTEX_DRIVER, NULL);
-	}
+	/*
+	 * Requests that a mutex be initialized to the MTX_SPIN type are
+	 * ignored.  The limitations which may have required spinlocks on
+	 * FreeBSD do not apply to how bhyve has been structured here.
+	 *
+	 * Adaptive mutexes are required to avoid deadlocks when certain
+	 * cyclics behavior interacts with interrupts and contended locks.
+	 */
+	mutex_init(&mtx->m, name, MUTEX_ADAPTIVE, NULL);
 }
 
 void
@@ -259,80 +314,13 @@ mtx_destroy(struct mtx *mtx)
 void
 critical_enter(void)
 {
-	kthread_t *tp = curthread;
-
 	kpreempt_disable();
-	if (tp->t_preempt == 1) {
-		/*
-		 * Avoid extra work when nested calls to this are made and only
-		 * set affinity on the top-level entry.  This also means only
-		 * removing the affinity in critical_exit() when at last call.
-		 */
-		thread_affinity_set(tp, CPU_CURRENT);
-	}
 }
 
 void
 critical_exit(void)
 {
-	kthread_t *tp = curthread;
-
 	kpreempt_enable();
-	if (tp->t_preempt == 0) {
-		thread_affinity_clear(tp);
-	}
-}
-
-struct unrhdr;
-static kmutex_t unr_lock;
-static uint_t unr_idx;
-
-/*
- * Allocate a new unrheader set.
- *
- * Highest and lowest valid values given as parameters.
- */
-struct unrhdr *
-new_unrhdr(int low, int high, struct mtx *mtx)
-{
-	id_space_t *ids;
-	char name[] = "vmm_unr_00000000";
-
-	ASSERT(mtx == NULL);
-
-	mutex_enter(&unr_lock);
-	/* Get a unique name for the id space */
-	(void) snprintf(name, sizeof (name), "vmm_unr_%08X", unr_idx);
-	VERIFY(++unr_idx != UINT_MAX);
-	mutex_exit(&unr_lock);
-
-	ids = id_space_create(name, low, high);
-
-	return ((struct unrhdr *)ids);
-}
-
-void
-delete_unrhdr(struct unrhdr *uh)
-{
-	id_space_t *ids = (id_space_t *)uh;
-
-	id_space_destroy(ids);
-}
-
-int
-alloc_unr(struct unrhdr *uh)
-{
-	id_space_t *ids = (id_space_t *)uh;
-
-	return (id_alloc(ids));
-}
-
-void
-free_unr(struct unrhdr *uh, u_int item)
-{
-	id_space_t *ids = (id_space_t *)uh;
-
-	id_free(ids, item);
 }
 
 
@@ -468,203 +456,78 @@ vmm_cpuid_init(void)
 	cpu_exthigh = regs[0];
 }
 
-struct savefpu {
-	fpu_ctx_t	fsa_fp_ctx;
-};
-
-static vmem_t *fpu_save_area_arena;
-
-static void
-fpu_save_area_init(void)
-{
-	fpu_save_area_arena = vmem_create("fpu_save_area",
-	    NULL, 0, XSAVE_AREA_ALIGN,
-	    segkmem_alloc, segkmem_free, heap_arena, 0, VM_BESTFIT | VM_SLEEP);
-}
-
-static void
-fpu_save_area_cleanup(void)
-{
-	vmem_destroy(fpu_save_area_arena);
-}
-
+/*
+ * FreeBSD uses the struct savefpu for managing the FPU state. That is mimicked
+ * by our hypervisor multiplexor framework structure.
+ */
 struct savefpu *
 fpu_save_area_alloc(void)
 {
-	struct savefpu *fsa = vmem_alloc(fpu_save_area_arena,
-	    sizeof (struct savefpu), VM_SLEEP);
-
-	bzero(fsa, sizeof (struct savefpu));
-	fsa->fsa_fp_ctx.fpu_regs.kfpu_u.kfpu_generic =
-	    kmem_cache_alloc(fpsave_cachep, KM_SLEEP);
-
-	return (fsa);
+	return ((struct savefpu *)hma_fpu_alloc(KM_SLEEP));
 }
 
 void
 fpu_save_area_free(struct savefpu *fsa)
 {
-	kmem_cache_free(fpsave_cachep,
-	    fsa->fsa_fp_ctx.fpu_regs.kfpu_u.kfpu_generic);
-	vmem_free(fpu_save_area_arena, fsa, sizeof (struct savefpu));
+	hma_fpu_t *fpu = (hma_fpu_t *)fsa;
+	hma_fpu_free(fpu);
 }
 
 void
 fpu_save_area_reset(struct savefpu *fsa)
 {
-	extern const struct fxsave_state sse_initial;
-	extern const struct xsave_state avx_initial;
-	struct fpu_ctx *fp;
-	struct fxsave_state *fx;
-	struct xsave_state *xs;
-
-	fp = &fsa->fsa_fp_ctx;
-
-	fp->fpu_regs.kfpu_status = 0;
-	fp->fpu_regs.kfpu_xstatus = 0;
-
-	switch (fp_save_mech) {
-	case FP_FXSAVE:
-		fx = fp->fpu_regs.kfpu_u.kfpu_fx;
-		bcopy(&sse_initial, fx, sizeof (*fx));
-		break;
-	case FP_XSAVE:
-		fp->fpu_xsave_mask = (XFEATURE_ENABLED_X87 |
-		    XFEATURE_ENABLED_SSE | XFEATURE_ENABLED_AVX);
-		xs = fp->fpu_regs.kfpu_u.kfpu_xs;
-		bcopy(&avx_initial, xs, sizeof (*xs));
-		break;
-	default:
-		panic("Invalid fp_save_mech");
-		/*NOTREACHED*/
-	}
+	hma_fpu_t *fpu = (hma_fpu_t *)fsa;
+	hma_fpu_init(fpu);
 }
 
+/*
+ * This glue function is supposed to save the host's FPU state. This is always
+ * paired in the general bhyve code with a call to fpusave. Therefore, we treat
+ * this as a nop and do all the work in fpusave(), which will have the context
+ * argument that we want anyways.
+ */
 void
 fpuexit(kthread_t *td)
 {
-	fp_save(&curthread->t_lwp->lwp_pcb.pcb_fpu);
 }
 
-static __inline void
-vmm_fxrstor(struct fxsave_state *addr)
-{
-	__asm __volatile("fxrstor %0" : : "m" (*(addr)));
-}
-
-static __inline void
-vmm_fxsave(struct fxsave_state *addr)
-{
-	__asm __volatile("fxsave %0" : "=m" (*(addr)));
-}
-
-static __inline void
-vmm_xrstor(struct xsave_state *addr, uint64_t mask)
-{
-	uint32_t low, hi;
-
-	low = mask;
-	hi = mask >> 32;
-	__asm __volatile("xrstor %0" : : "m" (*addr), "a" (low), "d" (hi));
-}
-
-static __inline void
-vmm_xsave(struct xsave_state *addr, uint64_t mask)
-{
-	uint32_t low, hi;
-
-	low = mask;
-	hi = mask >> 32;
-	__asm __volatile("xsave %0" : "=m" (*addr) : "a" (low), "d" (hi) :
-	    "memory");
-}
-
+/*
+ * This glue function is supposed to restore the guest's FPU state from the save
+ * area back to the host. In FreeBSD, it is assumed that the host state has
+ * already been saved by a call to fpuexit(); however, we do both here.
+ */
 void
 fpurestore(void *arg)
 {
-	struct savefpu *fsa = (struct savefpu *)arg;
-	struct fpu_ctx *fp;
+	hma_fpu_t *fpu = arg;
 
-	fp = &fsa->fsa_fp_ctx;
-
-	switch (fp_save_mech) {
-	case FP_FXSAVE:
-		vmm_fxrstor(fp->fpu_regs.kfpu_u.kfpu_fx);
-		break;
-	case FP_XSAVE:
-		vmm_xrstor(fp->fpu_regs.kfpu_u.kfpu_xs, fp->fpu_xsave_mask);
-		break;
-	default:
-		panic("Invalid fp_save_mech");
-		/*NOTREACHED*/
-	}
+	hma_fpu_start_guest(fpu);
 }
 
+/*
+ * This glue function is supposed to save the guest's FPU state. The host's FPU
+ * state is not expected to be restored necessarily due to the use of FPU
+ * emulation through CR0.TS. However, we can and do restore it here.
+ */
 void
 fpusave(void *arg)
 {
-	struct savefpu *fsa = (struct savefpu *)arg;
-	struct fpu_ctx *fp;
+	hma_fpu_t *fpu = arg;
 
-	fp = &fsa->fsa_fp_ctx;
-
-	switch (fp_save_mech) {
-	case FP_FXSAVE:
-		vmm_fxsave(fp->fpu_regs.kfpu_u.kfpu_fx);
-		break;
-	case FP_XSAVE:
-		vmm_xsave(fp->fpu_regs.kfpu_u.kfpu_xs, fp->fpu_xsave_mask);
-		break;
-	default:
-		panic("Invalid fp_save_mech");
-		/*NOTREACHED*/
-	}
+	hma_fpu_stop_guest(fpu);
 }
 
 void
 vmm_sol_glue_init(void)
 {
+	vmm_alloc_init();
 	vmm_cpuid_init();
-	fpu_save_area_init();
-	unr_idx = 0;
 }
 
 void
 vmm_sol_glue_cleanup(void)
 {
-	fpu_save_area_cleanup();
-}
-
-int idtvec_justreturn;
-
-int
-lapic_ipi_alloc(int *id)
-{
-	/* Only poke_cpu() equivalent is supported */
-	VERIFY(id == &idtvec_justreturn);
-
-	/*
-	 * This is only used by VMX to allocate a do-nothing vector for
-	 * interrupting other running CPUs.  The cached poke_cpu() vector
-	 * as an "allocation" is perfect for this.
-	 */
-	if (psm_cached_ipivect != NULL) {
-		return (psm_cached_ipivect(XC_CPUPOKE_PIL, PSM_INTR_POKE));
-	}
-
-	return (-1);
-}
-
-void
-lapic_ipi_free(int vec)
-{
-	VERIFY(vec > 0);
-
-	/*
-	 * A cached vector was used in the first place.
-	 * No deallocation is necessary
-	 */
-	return;
+	vmm_alloc_cleanup();
 }
 
 

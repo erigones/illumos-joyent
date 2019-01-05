@@ -29,6 +29,7 @@
 /*
  * Copyright 2018 Joyent, Inc.
  * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 OmniOS Community Edition (OmniOSce) Association.
  */
 
 #include <sys/types.h>
@@ -76,6 +77,8 @@
 #include <sys/sysmacros.h>
 #if defined(__xpv)
 #include <sys/hypervisor.h>
+#else
+#include <sys/hma.h>
 #endif
 #include <sys/cpu_module.h>
 #include <sys/ontrap.h>
@@ -1529,6 +1532,19 @@ start_other_cpus(int cprboot)
 	cmn_err(CE_CONT, "?cpu%d: %s\n", CPU->cpu_id, CPU->cpu_brandstr);
 
 	/*
+	 * KPTI initialisation happens very early in boot, before logging is
+	 * set up. Output a status message now as the boot CPU comes online.
+	 */
+	cmn_err(CE_CONT, "?KPTI %s (PCID %s, INVPCID %s)\n",
+	    kpti_enable ? "enabled" : "disabled",
+	    x86_use_pcid == 1 ? "in use" :
+	    (is_x86_feature(x86_featureset, X86FSET_PCID) ? "disabled" :
+	    "not supported"),
+	    x86_use_pcid == 1 && x86_use_invpcid == 1 ? "in use" :
+	    (is_x86_feature(x86_featureset, X86FSET_INVPCID) ? "disabled" :
+	    "not supported"));
+
+	/*
 	 * Initialize our syscall handlers
 	 */
 	init_cpu_syscall(CPU);
@@ -1595,6 +1611,14 @@ done:
 	if (get_hwenv() == HW_NATIVE)
 		workaround_errata_end();
 	cmi_post_mpstartup();
+
+#if !defined(__xpv)
+	/*
+	 * Once other CPUs have completed startup procedures, perform
+	 * initialization of hypervisor resources for HMA.
+	 */
+	hma_init();
+#endif
 
 	if (use_mp && ncpus != boot_max_ncpus) {
 		cmn_err(CE_NOTE,
@@ -1741,22 +1765,6 @@ mp_startup_common(boolean_t boot)
 	sti();
 
 	/*
-	 * Do a sanity check to make sure this new CPU is a sane thing
-	 * to add to the collection of processors running this system.
-	 *
-	 * XXX	Clearly this needs to get more sophisticated, if x86
-	 * systems start to get built out of heterogenous CPUs; as is
-	 * likely to happen once the number of processors in a configuration
-	 * gets large enough.
-	 */
-	if (compare_x86_featureset(x86_featureset, new_x86_featureset) ==
-	    B_FALSE) {
-		cmn_err(CE_CONT, "cpu%d: featureset\n", cp->cpu_id);
-		print_x86_featureset(new_x86_featureset);
-		cmn_err(CE_WARN, "cpu%d feature mismatch", cp->cpu_id);
-	}
-
-	/*
 	 * There exists a small subset of systems which expose differing
 	 * MWAIT/MONITOR support between CPUs.  If MWAIT support is absent from
 	 * the boot CPU, but is found on a later CPU, the system continues to
@@ -1861,6 +1869,23 @@ mp_startup_common(boolean_t boot)
 	 * Fill out cpu_ucode_info.  Update microcode if necessary.
 	 */
 	ucode_check(cp);
+	cpuid_pass_ucode(cp, new_x86_featureset);
+
+	/*
+	 * Do a sanity check to make sure this new CPU is a sane thing
+	 * to add to the collection of processors running this system.
+	 *
+	 * XXX	Clearly this needs to get more sophisticated, if x86
+	 * systems start to get built out of heterogenous CPUs; as is
+	 * likely to happen once the number of processors in a configuration
+	 * gets large enough.
+	 */
+	if (compare_x86_featureset(x86_featureset, new_x86_featureset) ==
+	    B_FALSE) {
+		cmn_err(CE_CONT, "cpu%d: featureset\n", cp->cpu_id);
+		print_x86_featureset(new_x86_featureset);
+		cmn_err(CE_WARN, "cpu%d feature mismatch", cp->cpu_id);
+	}
 
 #ifndef __xpv
 	{
@@ -1885,14 +1910,14 @@ mp_startup_common(boolean_t boot)
 	if (boothowto & RB_DEBUG)
 		kdi_cpu_init();
 
+	(void) mach_cpu_create_device_node(cp, NULL);
+
 	/*
 	 * Setting the bit in cpu_ready_set must be the last operation in
 	 * processor initialization; the boot CPU will continue to boot once
 	 * it sees this bit set for all active CPUs.
 	 */
 	CPUSET_ATOMIC_ADD(cpu_ready_set, cp->cpu_id);
-
-	(void) mach_cpu_create_device_node(cp, NULL);
 
 	cmn_err(CE_CONT, "?cpu%d: %s\n", cp->cpu_id, cp->cpu_idstr);
 	cmn_err(CE_CONT, "?cpu%d: %s\n", cp->cpu_id, cp->cpu_brandstr);
@@ -2040,9 +2065,8 @@ mp_cpu_faulted_exit(struct cpu *cp)
  * syscall features.
  */
 
-/*ARGSUSED*/
 void
-cpu_fast_syscall_disable(void *arg)
+cpu_fast_syscall_disable(void)
 {
 	if (is_x86_feature(x86_featureset, X86FSET_MSR) &&
 	    is_x86_feature(x86_featureset, X86FSET_SEP))
@@ -2052,9 +2076,8 @@ cpu_fast_syscall_disable(void *arg)
 		cpu_asysc_disable();
 }
 
-/*ARGSUSED*/
 void
-cpu_fast_syscall_enable(void *arg)
+cpu_fast_syscall_enable(void)
 {
 	if (is_x86_feature(x86_featureset, X86FSET_MSR) &&
 	    is_x86_feature(x86_featureset, X86FSET_SEP))
@@ -2071,6 +2094,8 @@ cpu_sep_enable(void)
 	ASSERT(curthread->t_preempt || getpil() >= LOCK_LEVEL);
 
 	wrmsr(MSR_INTC_SEP_CS, (uint64_t)(uintptr_t)KCS_SEL);
+
+	CPU->cpu_m.mcpu_fast_syscall_state |= FSS_SEP_ENABLED;
 }
 
 static void
@@ -2084,6 +2109,8 @@ cpu_sep_disable(void)
 	 * the sysenter or sysexit instruction to trigger a #gp fault.
 	 */
 	wrmsr(MSR_INTC_SEP_CS, 0);
+
+	CPU->cpu_m.mcpu_fast_syscall_state &= ~FSS_SEP_ENABLED;
 }
 
 static void
@@ -2094,6 +2121,8 @@ cpu_asysc_enable(void)
 
 	wrmsr(MSR_AMD_EFER, rdmsr(MSR_AMD_EFER) |
 	    (uint64_t)(uintptr_t)AMD_EFER_SCE);
+
+	CPU->cpu_m.mcpu_fast_syscall_state |= FSS_ASYSC_ENABLED;
 }
 
 static void
@@ -2108,4 +2137,6 @@ cpu_asysc_disable(void)
 	 */
 	wrmsr(MSR_AMD_EFER, rdmsr(MSR_AMD_EFER) &
 	    ~((uint64_t)(uintptr_t)AMD_EFER_SCE));
+
+	CPU->cpu_m.mcpu_fast_syscall_state &= ~FSS_ASYSC_ENABLED;
 }

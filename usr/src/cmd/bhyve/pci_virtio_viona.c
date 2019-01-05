@@ -155,25 +155,31 @@ pci_viona_qsize(struct pci_viona_softc *sc, int qnum)
 static void
 pci_viona_ring_reset(struct pci_viona_softc *sc, int ring)
 {
-	int	error;
-
 	assert(ring < VIONA_MAXQ);
 
 	switch (ring) {
 	case VIONA_RXQ:
 	case VIONA_TXQ:
-		error = ioctl(sc->vsc_vnafd, VNA_IOC_RING_RESET, ring);
-		if (error != 0) {
-			WPRINTF(("ioctl viona ring %u reset failed %d\n",
-			    ring, errno));
-		} else {
-			sc->vsc_pfn[ring] = 0;
-		}
 		break;
 	case VIONA_CTLQ:
 	default:
-		break;
+		return;
 	}
+
+	for (;;) {
+		int res;
+
+		res = ioctl(sc->vsc_vnafd, VNA_IOC_RING_RESET, ring);
+		if (res == 0) {
+			break;
+		} else if (errno != EINTR) {
+			WPRINTF(("ioctl viona ring %d reset failed %d\n",
+			    ring, errno));
+			return;
+		}
+	}
+
+	sc->vsc_pfn[ring] = 0;
 }
 
 static void
@@ -671,6 +677,7 @@ pci_viona_write(struct vmctx *ctx, int vcpu, struct pci_devinst *pi,
 		assert(size == 2);
 		assert(sc->vsc_curq != VIONA_CTLQ);
 		sc->vsc_msix_table_idx[sc->vsc_curq] = value;
+		pci_viona_ring_set_msix(pi, sc->vsc_curq);
 		break;
 	case VIONA_R_CFG0:
 	case VIONA_R_CFG1:
@@ -772,6 +779,9 @@ pci_viona_read(struct vmctx *ctx, int vcpu, struct pci_devinst *pi,
 		assert(size == 1);
 		value = sc->vsc_isr;
 		sc->vsc_isr = 0;	/* a read clears this flag */
+		if (value != 0) {
+			pci_lintr_deassert(pi);
+		}
 		break;
 	case VTCFG_R_CFGVEC:
 		assert(size == 2);

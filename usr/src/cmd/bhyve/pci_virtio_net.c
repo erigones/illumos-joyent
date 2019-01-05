@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (c) 2011 NetApp, Inc.
  * All rights reserved.
  *
@@ -36,7 +38,7 @@
  * http://www.illumos.org/license/CDDL.
  *
  * Copyright 2013 Pluribus Networks Inc.
- * Copyright 2017 Joyent, Inc.
+ * Copyright 2018 Joyent, Inc.
  */
 
 #include <sys/cdefs.h>
@@ -820,24 +822,24 @@ pci_vtnet_ping_ctlq(void *vsc, struct vqueue_info *vq)
 static int
 pci_vtnet_parsemac(char *mac_str, uint8_t *mac_addr)
 {
-        struct ether_addr *ea;
-        char *tmpstr;
-        char zero_addr[ETHER_ADDR_LEN] = { 0, 0, 0, 0, 0, 0 };
+	struct ether_addr *ea;
+	char *tmpstr;
+	char zero_addr[ETHER_ADDR_LEN] = { 0, 0, 0, 0, 0, 0 };
 
-        tmpstr = strsep(&mac_str,"=");
-       
-        if ((mac_str != NULL) && (!strcmp(tmpstr,"mac"))) {
-                ea = ether_aton(mac_str);
+	tmpstr = strsep(&mac_str,"=");
 
-                if (ea == NULL || ETHER_IS_MULTICAST(ea->octet) ||
-                    memcmp(ea->octet, zero_addr, ETHER_ADDR_LEN) == 0) {
+	if ((mac_str != NULL) && (!strcmp(tmpstr,"mac"))) {
+		ea = ether_aton(mac_str);
+
+		if (ea == NULL || ETHER_IS_MULTICAST(ea->octet) ||
+		    memcmp(ea->octet, zero_addr, ETHER_ADDR_LEN) == 0) {
 			fprintf(stderr, "Invalid MAC %s\n", mac_str);
-                        return (EINVAL);
-                } else
-                        memcpy(mac_addr, ea->octet, ETHER_ADDR_LEN);
-        }
+			return (EINVAL);
+		} else
+			memcpy(mac_addr, ea->octet, ETHER_ADDR_LEN);
+	}
 
-        return (0);
+	return (0);
 }
 #endif /* __FreeBSD__ */
 
@@ -973,7 +975,9 @@ pci_vtnet_init(struct vmctx *ctx, struct pci_devinst *pi, char *opts)
 	const char *env_msi;
 	char *devname;
 	char *vtopts;
+#ifdef __FreeBSD__
 	int mac_provided;
+#endif
 	int use_msix;
 
 	sc = calloc(1, sizeof(struct pci_vtnet_softc));
@@ -1005,8 +1009,8 @@ pci_vtnet_init(struct vmctx *ctx, struct pci_devinst *pi, char *opts)
 	 * Attempt to open the tap device and read the MAC address
 	 * if specified
 	 */
-	mac_provided = 0;
 #ifdef	__FreeBSD__
+	mac_provided = 0;
 	sc->vsc_tapfd = -1;
 #endif
 	sc->vsc_nmd = NULL;
@@ -1100,8 +1104,9 @@ pci_vtnet_init(struct vmctx *ctx, struct pci_devinst *pi, char *opts)
 	pthread_mutex_init(&sc->tx_mtx, NULL);
 	pthread_cond_init(&sc->tx_cond, NULL);
 	pthread_create(&sc->tx_tid, NULL, pci_vtnet_tx_thread, (void *)sc);
-        snprintf(tname, sizeof(tname), "%s vtnet%d tx", vmname, pi->pi_slot);
-        pthread_set_name_np(sc->tx_tid, tname);
+	snprintf(tname, sizeof(tname), "vtnet-%d:%d tx", pi->pi_slot,
+	    pi->pi_func);
+	pthread_set_name_np(sc->tx_tid, tname);
 
 	return (0);
 }

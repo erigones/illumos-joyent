@@ -21,12 +21,13 @@
 
 #
 # Copyright (c) 1989, 2010, Oracle and/or its affiliates. All rights reserved.
-# Copyright (c) 2017, Joyent, Inc.
+# Copyright (c) 2018, Joyent, Inc.
 # Copyright (c) 2012 by Delphix. All rights reserved.
 # Copyright (c) 2013 DEY Storage Systems, Inc. All rights reserved.
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
 # Copyright 2016 Toomas Soome <tsoome@me.com>
-# Copyright 2016 Nexenta Systems, Inc.
+# Copyright 2018 Nexenta Systems, Inc.
+# Copyright 2018 Gary Mills
 #
 
 include ../Makefile.master
@@ -60,13 +61,13 @@ COMMON_SUBDIRS=		\
 	adbgen		\
 	acct		\
 	acctadm		\
+	ahciem		\
 	arch		\
 	asa		\
 	ast		\
 	audio		\
 	auths		\
 	autopush	\
-	avs		\
 	awk		\
 	awk_xpg4	\
 	backup		\
@@ -112,6 +113,7 @@ COMMON_SUBDIRS=		\
 	ctrun		\
 	ctstat		\
 	ctwatch		\
+	cxgbetool	\
 	datadm		\
 	date		\
 	dc		\
@@ -316,6 +318,7 @@ COMMON_SUBDIRS=		\
 	ppgsz		\
 	pg		\
 	plockstat	\
+	pptadm		\
 	pr		\
 	prctl		\
 	printf		\
@@ -454,7 +457,6 @@ COMMON_SUBDIRS=		\
 	wracct		\
 	write		\
 	xargs		\
-	xhci		\
 	xstr		\
 	yes		\
 	ypcmd		\
@@ -487,6 +489,7 @@ i386_SUBDIRS=		\
 	nvmeadm		\
 	rtc		\
 	ucodeadm	\
+	xhci		\
 	xvm
 
 sparc_SUBDIRS=		\
@@ -522,7 +525,6 @@ MSGSUBDIRS=		\
 	auditset	\
 	auths		\
 	autopush	\
-	avs		\
 	awk		\
 	awk_xpg4	\
 	backup		\

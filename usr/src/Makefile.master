@@ -28,6 +28,7 @@
 # Copyright 2015 Igor Kozhukhov <ikozhukhov@gmail.com>
 # Copyright 2016 Toomas Soome <tsoome@me.com>
 # Copyright 2017 Joyent, Inc.
+# Copyright 2018 OmniOS Community Edition (OmniOSce) Association.
 #
 
 #
@@ -126,12 +127,14 @@ ONBLD_TOOLS=		$(BUILD_TOOLS)/onbld
 JAVA_HOME=	/usr/java
 # define buildtime JAVA_ROOT
 JAVA_ROOT=	/usr/java
-# define to build with JAVA 8
+# Build uses java7 by default.  Pass one the variables below set to empty
+# string in the environment to override.
+BLD_JAVA_6=	$(POUND_SIGN)
 BLD_JAVA_8=	$(POUND_SIGN)
 
-GCC_ROOT=	/opt/gcc/4.4.4
-GCCLIBDIR=	$(GCC_ROOT)/lib
-GCCLIBDIR64=	$(GCC_ROOT)/lib/$(MACH64)
+GNUC_ROOT=	/opt/gcc/4.4.4
+GCCLIBDIR=	$(GNUC_ROOT)/lib
+GCCLIBDIR64=	$(GNUC_ROOT)/lib/$(MACH64)
 
 DOCBOOK_XSL_ROOT=	/usr/share/sgml/docbook/xsl-stylesheets
 
@@ -178,6 +181,7 @@ FLEX=		/usr/bin/flex
 YACC=		/usr/ccs/bin/yacc
 BISON=		/usr/bin/bison
 CPP=		/usr/lib/cpp
+ANSI_CPP=	$(GNUC_ROOT)/bin/cpp
 JAVAC=		$(JAVA_ROOT)/bin/javac
 JAVAH=		$(JAVA_ROOT)/bin/javah
 JAVADOC=	$(JAVA_ROOT)/bin/javadoc
@@ -200,8 +204,14 @@ PERL_ARCH =		i86pc-solaris-64int
 $(SPARC_BLD)PERL_ARCH =	sun4-solaris-64int
 PYTHON_VERSION=	2.7
 PYTHON_PKGVERS=	-27
+PYTHON_SUFFIX=
 PYTHON=		/usr/bin/python$(PYTHON_VERSION)
+PYTHON3_VERSION=	3.5
+PYTHON3_PKGVERS=	-35
+PYTHON3_SUFFIX=		m
+PYTHON3=		/usr/bin/python$(PYTHON3_VERSION)
 SORT=		/usr/bin/sort
+TR=		/usr/bin/tr
 TOUCH=		/usr/bin/touch
 WC=		/usr/bin/wc
 XARGS=		/usr/bin/xargs
@@ -215,6 +225,8 @@ MSGFMT=		/usr/bin/msgfmt -s
 LCDEF=		$(ONBLD_TOOLS)/bin/$(MACH)/localedef
 TIC=		$(ONBLD_TOOLS)/bin/$(MACH)/tic
 ZIC=		$(ONBLD_TOOLS)/bin/$(MACH)/zic
+OPENSSL=	/usr/bin/openssl
+CPCGEN=		$(ONBLD_TOOLS)/bin/$(MACH)/cpcgen
 
 FILEMODE=	644
 DIRMODE=	755
@@ -263,6 +275,11 @@ INSLINKTARGET=	$<
 INS.link=	$(RM) $@; $(LN) $(INSLINKTARGET) $@
 INS.symlink=	$(RM) $@; $(SYMLINK) $(INSLINKTARGET) $@
 
+# The path to python that will be used for the shebang line when installing
+# python scripts to the proto area. This is overridden by makefiles to
+# select to the correct version.
+PYSHEBANG=	$(PYTHON)
+
 #
 # Python bakes the mtime of the .py file into the compiled .pyc and
 # rebuilds if the baked-in mtime != the mtime of the source file
@@ -271,7 +288,7 @@ INS.symlink=	$(RM) $@; $(SYMLINK) $(INSLINKTARGET) $@
 # (.py) file. As a part of this we also go through and change the #!
 # line in the python script to that of the actual python we are using.
 #
-INS.pyfile=	$(RM) $@; $(SED) -e "1s:^\#!@PYTHON@:\#!$(PYTHON):" < $< > $@; $(CHMOD) $(FILEMODE) $@; $(TOUCH) -r $< $@
+INS.pyfile=	$(RM) $@; $(SED) -e "1s:^\#!@PYTHON@:\#!$(PYSHEBANG):" < $< > $@; $(CHMOD) $(FILEMODE) $@; $(TOUCH) -r $< $@
 
 # MACH must be set in the shell environment per uname -p on the build host
 # More specific architecture variables should be set in lower makefiles.
@@ -339,9 +356,24 @@ CC32BITCALLERS=		-_gcc=-massume-32bit-callers
 # Additionally, we wish to prevent optimisations which cause GCC to clone
 # functions -- in particular, these may cause unhelpful symbols to be
 # emitted instead of function names
-CCNOAUTOINLINE= -_gcc=-fno-inline-small-functions \
+CCNOAUTOINLINE= \
+	-_gcc=-fno-inline-small-functions \
 	-_gcc=-fno-inline-functions-called-once \
-	-_gcc=-fno-ipa-cp
+	-_gcc=-fno-ipa-cp \
+	-_gcc7=-fno-ipa-icf \
+	-_gcc8=-fno-ipa-icf \
+	-_gcc7=-fno-clone-functions \
+	-_gcc8=-fno-clone-functions
+
+# GCC may put functions in different named sub-sections of .text based on
+# their presumed calling frequency.  At least in the kernel, where we actually
+# deliver relocatable objects, we don't want this to happen.
+#
+# Since at present we don't benefit from this even in userland, we disable it globally,
+# but the application of this may move into usr/src/uts/ in future.
+CCNOREORDER=	\
+	-_gcc7=-fno-reorder-functions \
+	-_gcc8=-fno-reorder-functions
 
 # One optimization the compiler might perform is to turn this:
 #	#pragma weak foo
@@ -397,7 +429,6 @@ STAND_FLAGS_64 = $($(MACH64)_STAND_FLAGS)
 # disable the incremental linker
 ILDOFF=			-xildoff
 #
-XDEPEND=		-xdepend
 XFFLAG=			-xF=%all
 XESS=			-xs
 XSTRCONST=		-xstrconst
@@ -504,15 +535,13 @@ CTF_FLAGS	= $(CTF_FLAGS_32)
 #
 # Flags used with genoffsets
 #
-GOFLAGS = -_noecho \
-	$(CALLSYMS) \
-	$(CDWARFSTR)
+GOFLAGS = $(CALLSYMS) $(CDWARFSTR)
 
 OFFSETS_CREATE = $(GENOFFSETS) -s $(CTFSTABS) -r $(CTFCONVERT) \
-	$(CC) $(GOFLAGS) $(CFLAGS) $(CPPFLAGS)
+	$(CW) --noecho $(CW_CC_COMPILERS) -- $(GOFLAGS) $(CFLAGS) $(CPPFLAGS)
 
 OFFSETS_CREATE64 = $(GENOFFSETS) -s $(CTFSTABS) -r $(CTFCONVERT) \
-	$(CC) $(GOFLAGS) $(CFLAGS64) $(CPPFLAGS)
+	$(CW) --noecho $(CW_CC_COMPILERS) -- $(GOFLAGS) $(CFLAGS64) $(CPPFLAGS)
 
 #
 # tradeoff time for space (smaller is better)
@@ -572,12 +601,12 @@ $(SRCDBGBLD)CCSOURCEDEBUGFLAGS	= -g -xs
 
 CFLAGS=         $(COPTFLAG) $($(MACH)_CFLAGS) $(SPACEFLAG) $(CCMODE) \
 		$(ILDOFF) $(CERRWARN) $(CSTD) $(CCUNBOUND) $(IROPTFLAG) \
-		$(CGLOBALSTATIC) $(CCNOAUTOINLINE) $(CSOURCEDEBUGFLAGS) \
-		$(CUSERFLAGS)
+		$(CGLOBALSTATIC) $(CCNOAUTOINLINE) $(CCNOREORDER) \
+		$(CSOURCEDEBUGFLAGS) $(CUSERFLAGS)
 CFLAGS64=       $(COPTFLAG64) $($(MACH64)_CFLAGS) $(SPACEFLAG64) $(CCMODE64) \
 		$(ILDOFF) $(CERRWARN) $(CSTD) $(CCUNBOUND) $(IROPTFLAG64) \
-		$(CGLOBALSTATIC) $(CCNOAUTOINLINE) $(CSOURCEDEBUGFLAGS) \
-		$(CUSERFLAGS64)
+		$(CGLOBALSTATIC) $(CCNOAUTOINLINE) $(CCNOREORDER) \
+		$(CSOURCEDEBUGFLAGS) $(CUSERFLAGS64)
 #
 # Flags that are used to build parts of the code that are subsequently
 # run on the build machine (also known as the NATIVE_BUILD).
@@ -585,7 +614,7 @@ CFLAGS64=       $(COPTFLAG64) $($(MACH64)_CFLAGS) $(SPACEFLAG64) $(CCMODE64) \
 NATIVE_CFLAGS=	$(COPTFLAG) $($(NATIVE_MACH)_CFLAGS) $(CCMODE) \
 		$(ILDOFF) $(CERRWARN) $(CSTD) $($(NATIVE_MACH)_CCUNBOUND) \
 		$(IROPTFLAG) $(CGLOBALSTATIC) $(CCNOAUTOINLINE) \
-		$(CSOURCEDEBUGFLAGS) $(CUSERFLAGS)
+		$(CCNOREORDER) $(CSOURCEDEBUGFLAGS) $(CUSERFLAGS)
 
 DTEXTDOM=-DTEXT_DOMAIN=\"$(TEXT_DOMAIN)\"	# For messaging.
 DTS_ERRNO=-D_TS_ERRNO
@@ -707,7 +736,7 @@ MAPFILE.INT =		mapfile-intf
 #
 LDLIBS32 =	$(ENVLDLIBS1) $(ENVLDLIBS2) $(ENVLDLIBS3)
 LDLIBS32 +=	$(ADJUNCT_PROTO:%=-L%/usr/lib -L%/lib)
-LDLIBS.cmd = 	$(LDLIBS32)
+LDLIBS.cmd =	$(LDLIBS32)
 LDLIBS.lib =	$(LDLIBS32)
 
 LDLIBS64 =	$(ENVLDLIBS1:%=%/$(MACH64)) \
@@ -800,6 +829,15 @@ SPRO_ROOT=		$(BUILD_TOOLS)/SUNWspro
 SPRO_VROOT=		$(SPRO_ROOT)/SS12
 GNU_ROOT=		/usr
 
+$(__GNUC)PRIMARY_CC=	gcc4,$(GNUC_ROOT)/bin/gcc,gnu
+$(__SUNC)PRIMARY_CC=	studio12,$(SPRO_VROOT)/bin/cc,sun
+$(__GNUC)PRIMARY_CCC=	gcc4,$(GNUC_ROOT)/bin/g++,gnu
+$(__SUNC)PRIMARY_CCC=	studio12,$(SPRO_VROOT)/bin/CC,sun
+
+CW_CC_COMPILERS=	$(PRIMARY_CC:%=--primary %) $(SHADOW_CCS:%=--shadow %)
+CW_CCC_COMPILERS=	$(PRIMARY_CCC:%=--primary %) $(SHADOW_CCCS:%=--shadow %)
+
+
 # Till SS12u1 formally becomes the NV CBE, LINT is hard
 # coded to be picked up from the $SPRO_ROOT/sunstudio12.1/
 # location. Impacted variables are sparc_LINT, sparcv9_LINT,
@@ -810,42 +848,31 @@ GNU_ROOT=		/usr
 # Specify platform compiler versions for languages
 # that we use (currently only c and c++).
 #
-sparc_CC=		$(ONBLD_TOOLS)/bin/$(MACH)/cw -_cc
-$(__GNUC)sparc_CC=	$(ONBLD_TOOLS)/bin/$(MACH)/cw -_gcc
-sparc_CCC=		$(ONBLD_TOOLS)/bin/$(MACH)/cw -_CC
-$(__GNUC)sparc_CCC=	$(ONBLD_TOOLS)/bin/$(MACH)/cw -_g++
-sparc_CPP=		/usr/ccs/lib/cpp
+CW=			$(ONBLD_TOOLS)/bin/$(MACH)/cw
+
+BUILD_CC=		$(CW) $(CW_CC_COMPILERS) --
+BUILD_CCC=		$(CW) -C $(CW_CCC_COMPILERS) --
+BUILD_CPP=		/usr/ccs/lib/cpp
+BUILD_LD=		/usr/ccs/bin/ld
+BUILD_LINT=		$(SPRO_ROOT)/sunstudio12.1/bin/lint
+
+$(MACH)_CC=		$(BUILD_CC)
+$(MACH)_CCC=		$(BUILD_CCC)
+$(MACH)_CPP=		$(BUILD_CPP)
+$(MACH)_LD=		$(BUILD_LD)
+$(MACH)_LINT=		$(BUILD_LINT)
+$(MACH64)_CC=		$(BUILD_CC)
+$(MACH64)_CCC=		$(BUILD_CCC)
+$(MACH64)_CPP=		$(BUILD_CPP)
+$(MACH64)_LD=		$(BUILD_LD)
+$(MACH64)_LINT=		$(BUILD_LINT)
+
 sparc_AS=		/usr/ccs/bin/as -xregsym=no
-sparc_LD=		/usr/ccs/bin/ld
-sparc_LINT=		$(SPRO_ROOT)/sunstudio12.1/bin/lint
+sparcv9_AS=		$($(MACH)_AS)
 
-sparcv9_CC=		$(ONBLD_TOOLS)/bin/$(MACH)/cw -_cc
-$(__GNUC64)sparcv9_CC=	$(ONBLD_TOOLS)/bin/$(MACH)/cw -_gcc
-sparcv9_CCC=		$(ONBLD_TOOLS)/bin/$(MACH)/cw -_CC
-$(__GNUC64)sparcv9_CCC=	$(ONBLD_TOOLS)/bin/$(MACH)/cw -_g++
-sparcv9_CPP=		/usr/ccs/lib/cpp
-sparcv9_AS=		/usr/ccs/bin/as -xregsym=no
-sparcv9_LD=		/usr/ccs/bin/ld
-sparcv9_LINT=		$(SPRO_ROOT)/sunstudio12.1/bin/lint
-
-i386_CC=		$(ONBLD_TOOLS)/bin/$(MACH)/cw -_cc
-$(__GNUC)i386_CC=	$(ONBLD_TOOLS)/bin/$(MACH)/cw -_gcc
-i386_CCC=		$(ONBLD_TOOLS)/bin/$(MACH)/cw -_CC
-$(__GNUC)i386_CCC=	$(ONBLD_TOOLS)/bin/$(MACH)/cw -_g++
-i386_CPP=		/usr/ccs/lib/cpp
 i386_AS=		/usr/ccs/bin/as
 $(__GNUC)i386_AS=	$(ONBLD_TOOLS)/bin/$(MACH)/aw
-i386_LD=		/usr/ccs/bin/ld
-i386_LINT=		$(SPRO_ROOT)/sunstudio12.1/bin/lint
-
-amd64_CC=		$(ONBLD_TOOLS)/bin/$(MACH)/cw -_cc
-$(__GNUC64)amd64_CC=	$(ONBLD_TOOLS)/bin/$(MACH)/cw -_gcc
-amd64_CCC=		$(ONBLD_TOOLS)/bin/$(MACH)/cw -_CC
-$(__GNUC64)amd64_CCC=	$(ONBLD_TOOLS)/bin/$(MACH)/cw -_g++
-amd64_CPP=		/usr/ccs/lib/cpp
 amd64_AS=		$(ONBLD_TOOLS)/bin/$(MACH)/aw
-amd64_LD=		/usr/ccs/bin/ld
-amd64_LINT=		$(SPRO_ROOT)/sunstudio12.1/bin/lint
 
 NATIVECC=		$($(NATIVE_MACH)_CC)
 NATIVECCC=		$($(NATIVE_MACH)_CCC)
@@ -863,12 +890,6 @@ CPP=			$(NATIVECPP)
 AS=			$(NATIVEAS)
 LD=			$(NATIVELD)
 LINT=			$(NATIVELINT)
-
-# The real compilers used for this build
-CW_CC_CMD=		$(CC) -_compiler
-CW_CCC_CMD=		$(CCC) -_compiler
-REAL_CC=		$(CW_CC_CMD:sh)
-REAL_CCC=		$(CW_CCC_CMD:sh)
 
 # Pass -Y flag to cpp (method of which is release-dependent)
 CCYFLAG=		-Y I,
@@ -908,30 +929,31 @@ CCMT=		-mt
 # Handle different PIC models on different ISAs
 # (May be overridden by lower-level Makefiles)
 
-sparc_C_PICFLAGS =	-K pic
-sparcv9_C_PICFLAGS =	-K pic
-i386_C_PICFLAGS =	-K pic
-amd64_C_PICFLAGS =	-K pic
+sparc_C_PICFLAGS =	-fpic
+sparcv9_C_PICFLAGS =	-fpic
+i386_C_PICFLAGS =	-fpic
+amd64_C_PICFLAGS =	-fpic
 C_PICFLAGS =		$($(MACH)_C_PICFLAGS)
 C_PICFLAGS64 =		$($(MACH64)_C_PICFLAGS)
 
-sparc_C_BIGPICFLAGS =	-K PIC
-sparcv9_C_BIGPICFLAGS =	-K PIC
-i386_C_BIGPICFLAGS =	-K PIC
-amd64_C_BIGPICFLAGS =	-K PIC
+sparc_C_BIGPICFLAGS =	-fPIC
+sparcv9_C_BIGPICFLAGS =	-fPIC
+i386_C_BIGPICFLAGS =	-fPIC
+amd64_C_BIGPICFLAGS =	-fPIC
 C_BIGPICFLAGS =		$($(MACH)_C_BIGPICFLAGS)
 C_BIGPICFLAGS64 =	$($(MACH64)_C_BIGPICFLAGS)
 
 # CC requires there to be no space between '-K' and 'pic' or 'PIC'.
-sparc_CC_PICFLAGS =	-Kpic
-sparcv9_CC_PICFLAGS =	-KPIC
-i386_CC_PICFLAGS = 	-Kpic
-amd64_CC_PICFLAGS = 	-Kpic
+# and does not support -f
+sparc_CC_PICFLAGS =	-_cc=-Kpic -_gcc=-fpic
+sparcv9_CC_PICFLAGS =	-_cc=-KPIC -_gcc=-fPIC
+i386_CC_PICFLAGS =	-_cc=-Kpic -_gcc=-fpic
+amd64_CC_PICFLAGS =	-_cc=-Kpic -_gcc=-fpic
 CC_PICFLAGS =		$($(MACH)_CC_PICFLAGS)
 CC_PICFLAGS64 =		$($(MACH64)_CC_PICFLAGS)
 
-AS_PICFLAGS=		$(C_PICFLAGS)
-AS_BIGPICFLAGS=		$(C_BIGPICFLAGS)
+AS_PICFLAGS=		-K pic
+AS_BIGPICFLAGS=		-K PIC
 
 #
 # Default label for CTF sections
@@ -986,7 +1008,7 @@ CTFCONVERT_O		= $(CTFCONVERT) $(CTFCVTFLAGS) $@
 # The following list of macros are used in the definition of RELEASE_CM
 # which is used to label all binaries in the build:
 #
-# 	RELEASE		Specific release of the build, eg: 5.2
+#	RELEASE		Specific release of the build, eg: 5.2
 #	RELEASE_MAJOR	Major version number part of $(RELEASE)
 #	RELEASE_MINOR	Minor version number part of $(RELEASE)
 #	VERSION		Version of the build (alpha, beta, Generic)
@@ -1013,7 +1035,7 @@ $(RELEASE_BUILD)PROCESS_COMMENT=   @?${MCS} -d -a $(RELEASE_CM)
 STRIP_STABS=			   $(STRIP) -x $@
 $(SRCDBGBLD)STRIP_STABS=	   :
 
-POST_PROCESS_O=	
+POST_PROCESS_O=
 POST_PROCESS_A=
 POST_PROCESS_SO=	$(PROCESS_COMMENT) $@ ; $(STRIP_STABS) ; \
 			$(ELFSIGN_OBJECT)
@@ -1112,8 +1134,8 @@ PKGPUBLISHER_NONREDIST=	on-extra
 # build the catalogue with awk(1).
 
 .sh.po .ksh.po:
-	$(SED) -n -e ":a" 				\
-		  -e "h" 					\
+	$(SED) -n -e ":a"					\
+		  -e "h"					\
 		  -e "s/.*gettext *\(\"[^\"]*\"\).*/\1/p"	\
 		  -e "x"					\
 		  -e "s/\(.*\)gettext *\"[^\"]*\"\(.*\)/\1\2/"	\
@@ -1131,7 +1153,7 @@ PKGPUBLISHER_NONREDIST=	on-extra
 	$(CHMOD) +x $@
 
 .py:
-	$(RM) $@; $(SED) -e "1s:^\#!@PYTHON@:\#!$(PYTHON):" < $< > $@; $(CHMOD) +x $@
+	$(RM) $@; $(SED) -e "1s:^\#!@PYTHON@:\#!$(PYSHEBANG):" < $< > $@; $(CHMOD) +x $@
 
 .py.pyc:
 	$(RM) $@

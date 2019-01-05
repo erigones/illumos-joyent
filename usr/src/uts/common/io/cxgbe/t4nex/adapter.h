@@ -27,6 +27,7 @@
 #include <sys/mac_provider.h>
 #include <sys/ethernet.h>
 #include <sys/queue.h>
+#include <sys/containerof.h>
 
 #include "offload.h"
 #include "firmware/t4fw_interface.h"
@@ -280,6 +281,7 @@ struct sge_fl {
 
 	uint64_t copied_up;	/* # of frames copied into mblk and handed up */
 	uint64_t passed_up;	/* # of frames wrapped in mblk and handed up */
+	uint64_t allocb_fail;	/* # of mblk allocation failures */
 
 	TAILQ_ENTRY(sge_fl) link; /* All starving freelists */
 };
@@ -507,6 +509,7 @@ struct adapter {
 	struct sge sge;
 
 	struct port_info *port[MAX_NPORTS];
+	ddi_taskq_t *tq[NCHAN];
 	uint8_t chan_map[NCHAN];
 	uint32_t filter_mode;
 
@@ -717,7 +720,7 @@ is_10G_port(const struct port_info *pi)
 static inline struct sge_rxq *
 iq_to_rxq(struct sge_iq *iq)
 {
-	return (container_of(iq, struct sge_rxq, iq));
+	return (__containerof(iq, struct sge_rxq, iq));
 }
 
 static inline bool

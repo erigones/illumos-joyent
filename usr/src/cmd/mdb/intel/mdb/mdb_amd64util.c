@@ -39,6 +39,7 @@
 #include <mdb/mdb_kreg_impl.h>
 #include <mdb/mdb_debug.h>
 #include <mdb/mdb_modapi.h>
+#include <mdb/mdb_isautil.h>
 #include <mdb/mdb_amd64util.h>
 #include <mdb/mdb_ctf.h>
 #include <mdb/mdb_err.h>
@@ -136,6 +137,7 @@ const mdb_tgt_regdesc_t mdb_amd64_kregs[] = {
 	{ "gsbase", KREG_GSBASE, MDB_TGT_R_EXPORT },
 	{ "kgsbase", KREG_KGSBASE, MDB_TGT_R_EXPORT },
 	{ "cr2", KREG_CR2, MDB_TGT_R_EXPORT },
+	{ "cr3", KREG_CR3, MDB_TGT_R_EXPORT },
 	{ NULL, 0, 0 }
 };
 
@@ -194,8 +196,9 @@ mdb_amd64_printregs(const mdb_tgt_gregset_t *gregs)
 	    kregs[KREG_ES], kregs[KREG_FS] & 0xffff);
 	mdb_printf("%%gs = 0x%04x\t%%gsbase = 0x%lx\t%%kgsbase = 0x%lx\n",
 	    kregs[KREG_GS] & 0xffff, kregs[KREG_GSBASE], kregs[KREG_KGSBASE]);
-	mdb_printf("%%trapno = 0x%x\t%%err = 0x%x\t%%cr2 = 0x%lx\n",
-	    kregs[KREG_TRAPNO], kregs[KREG_ERR], kregs[KREG_CR2]);
+	mdb_printf("%%trapno = 0x%x\t%%err = 0x%x\t%%cr2 = 0x%lx\t"
+	    "%%cr3 = 0x%lx\n", kregs[KREG_TRAPNO], kregs[KREG_ERR],
+	    kregs[KREG_CR2], kregs[KREG_CR3]);
 }
 
 int
@@ -242,7 +245,8 @@ mdb_amd64_kvm_stack_iter(mdb_tgt_t *t, const mdb_tgt_gregset_t *gsp,
 	while (fp != 0) {
 		int args_style = 0;
 
-		if (mdb_tgt_vread(t, &fr, sizeof (fr), fp) != sizeof (fr)) {
+		if (mdb_tgt_aread(t, MDB_TGT_AS_VIRT_S, &fr, sizeof (fr), fp) !=
+		    sizeof (fr)) {
 			err = EMDB_NOMAP;
 			goto badfp;
 		}
@@ -257,8 +261,9 @@ mdb_amd64_kvm_stack_iter(mdb_tgt_t *t, const mdb_tgt_gregset_t *gsp,
 			if (advance_tortoise != 0) {
 				struct fr tfr;
 
-				if (mdb_tgt_vread(t, &tfr, sizeof (tfr),
-				    tortoise_fp) != sizeof (tfr)) {
+				if (mdb_tgt_aread(t, MDB_TGT_AS_VIRT_S, &tfr,
+				    sizeof (tfr), tortoise_fp) !=
+				    sizeof (tfr)) {
 					err = EMDB_NOMAP;
 					goto badfp;
 				}
@@ -328,7 +333,8 @@ mdb_amd64_kvm_stack_iter(mdb_tgt_t *t, const mdb_tgt_gregset_t *gsp,
 		insnsize = MIN(MIN(s.st_size, SAVEARGS_INSN_SEQ_LEN),
 		    pc - s.st_value);
 
-		if (mdb_tgt_vread(t, ins, insnsize, s.st_value) != insnsize)
+		if (mdb_tgt_aread(t, MDB_TGT_AS_VIRT_I, ins, insnsize,
+		    s.st_value) != insnsize)
 			argc = 0;
 
 		if ((argc != 0) &&
@@ -347,8 +353,8 @@ mdb_amd64_kvm_stack_iter(mdb_tgt_t *t, const mdb_tgt_gregset_t *gsp,
 			if (args_style == SAVEARGS_STRUCT_ARGS)
 				size += sizeof (long);
 
-			if (mdb_tgt_vread(t, fr_argv, size, (fp - size))
-			    != size)
+			if (mdb_tgt_aread(t, MDB_TGT_AS_VIRT_S, fr_argv, size,
+			    (fp - size)) != size)
 				return (-1);	/* errno has been set for us */
 
 			/*
@@ -367,7 +373,8 @@ mdb_amd64_kvm_stack_iter(mdb_tgt_t *t, const mdb_tgt_gregset_t *gsp,
 				    sizeof (fr_argv) -
 				    (reg_argc * sizeof (long)));
 
-				if (mdb_tgt_vread(t, &fr_argv[reg_argc], size,
+				if (mdb_tgt_aread(t, MDB_TGT_AS_VIRT_S,
+				    &fr_argv[reg_argc], size,
 				    fp + sizeof (fr)) != size)
 					return (-1); /* errno has been set */
 			}
@@ -432,14 +439,15 @@ mdb_amd64_step_out(mdb_tgt_t *t, uintptr_t *p, kreg_t pc, kreg_t fp, kreg_t sp,
 		if (pc == s.st_value && curinstr == M_PUSHQ_RBP)
 			fp = sp - 8;
 		else if (pc == s.st_value + 1 && curinstr == M_REX_W) {
-			if (mdb_tgt_vread(t, &curinstr, sizeof (curinstr),
-			    pc + 1) == sizeof (curinstr) && curinstr ==
-			    M_MOVL_RBP)
+			if (mdb_tgt_aread(t, MDB_TGT_AS_VIRT_I, &curinstr,
+			    sizeof (curinstr), pc + 1) == sizeof (curinstr) &&
+			    curinstr == M_MOVL_RBP)
 				fp = sp;
 		}
 	}
 
-	if (mdb_tgt_vread(t, &fr, sizeof (fr), fp) == sizeof (fr)) {
+	if (mdb_tgt_aread(t, MDB_TGT_AS_VIRT_S, &fr, sizeof (fr), fp) ==
+	    sizeof (fr)) {
 		*p = fr.fr_savpc;
 		return (0);
 	}
@@ -474,8 +482,8 @@ mdb_amd64_next(mdb_tgt_t *t, uintptr_t *p, kreg_t pc, mdb_instr_t curinstr)
 	/* Skip the rex prefix, if any */
 	callpc = pc;
 	while (curinstr >= M_REX_LO && curinstr <= M_REX_HI) {
-		if (mdb_tgt_vread(t, &curinstr, sizeof (curinstr), ++callpc) !=
-		    sizeof (curinstr))
+		if (mdb_tgt_aread(t, MDB_TGT_AS_VIRT_I, &curinstr,
+		    sizeof (curinstr), ++callpc) != sizeof (curinstr))
 			return (-1); /* errno is set for us */
 	}
 
@@ -484,7 +492,8 @@ mdb_amd64_next(mdb_tgt_t *t, uintptr_t *p, kreg_t pc, mdb_instr_t curinstr)
 		return (set_errno(EAGAIN));
 	}
 
-	if ((npc = mdb_dis_nextins(mdb.m_disasm, t, MDB_TGT_AS_VIRT, pc)) == pc)
+	npc = mdb_dis_nextins(mdb.m_disasm, t, MDB_TGT_AS_VIRT_I, pc);
+	if (npc == pc)
 		return (-1); /* errno is set for us */
 
 	*p = npc;

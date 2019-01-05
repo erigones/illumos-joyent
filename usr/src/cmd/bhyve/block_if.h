@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (c) 2013  Peter Grehan <grehan@freebsd.org>
  * All rights reserved.
  *
@@ -42,16 +44,21 @@
 #ifdef	__FreeBSD__
 #define BLOCKIF_IOV_MAX		33	/* not practical to be IOV_MAX */
 #else
-#define BLOCKIF_IOV_MAX		17	/* not practical to be IOV_MAX */
+/*
+ * Upstream is in the process of bumping this up to 128 for several reasons,
+ * including Windows compatibility.  For the sake of our Windows support, we
+ * will use the higher value now.
+ */
+#define	BLOCKIF_IOV_MAX		128
 #endif
 
 struct blockif_req {
-	struct iovec	br_iov[BLOCKIF_IOV_MAX];
 	int		br_iovcnt;
 	off_t		br_offset;
 	ssize_t		br_resid;
 	void		(*br_callback)(struct blockif_req *req, int err);
 	void		*br_param;
+	struct iovec	br_iov[BLOCKIF_IOV_MAX];
 };
 
 struct blockif_ctxt;
@@ -64,6 +71,9 @@ void	blockif_psectsz(struct blockif_ctxt *bc, int *size, int *off);
 int	blockif_queuesz(struct blockif_ctxt *bc);
 int	blockif_is_ro(struct blockif_ctxt *bc);
 int	blockif_candelete(struct blockif_ctxt *bc);
+#ifndef __FreeBSD__
+int	blockif_set_wce(struct blockif_ctxt *bc, int enable);
+#endif
 int	blockif_read(struct blockif_ctxt *bc, struct blockif_req *breq);
 int	blockif_write(struct blockif_ctxt *bc, struct blockif_req *breq);
 int	blockif_flush(struct blockif_ctxt *bc, struct blockif_req *breq);

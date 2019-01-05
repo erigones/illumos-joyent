@@ -15,4 +15,8 @@
 
 ps_brand=bhyve
 
+typeset -A FORCED_ATTRS
+FORCED_ATTRS["zlog-mode"]=g--
+FORCED_ATTRS["zlog-name"]=platform.log
+
 . /usr/lib/brand/jcommon/statechange

@@ -358,6 +358,7 @@ typedef struct dld_ioc_led {
 #define	DLD_CAPAB_POLL		0x00000002
 #define	DLD_CAPAB_PERIM		0x00000003
 #define	DLD_CAPAB_LSO		0x00000004
+#define	DLD_CAPAB_IPCHECK	0x00000005
 
 #define	DLD_ENABLE		0x00000001
 #define	DLD_DISABLE		0x00000002
@@ -414,6 +415,11 @@ typedef struct dld_capab_direct_s {
 	uint_t		di_flags;
 } dld_capab_direct_t;
 
+typedef struct dld_capab_ipcheck_s {
+	uintptr_t	ipc_allowed_df;
+	void		*ipc_allowed_dh;
+} dld_capab_ipcheck_t;
+
 /*
  * Polling/softring capability.
  */
@@ -446,7 +452,7 @@ typedef struct dld_capab_lso_s {
 int	dld_getinfo(dev_info_t *, ddi_info_cmd_t, void *, void **);
 int	dld_devt_to_instance(dev_t);
 int	dld_open(queue_t *, dev_t *, int, int, cred_t *);
-int	dld_close(queue_t *);
+int	dld_close(queue_t *, int, cred_t *);
 void	dld_wput(queue_t *, mblk_t *);
 void	dld_wsrv(queue_t *);
 int	dld_str_open(queue_t *, dev_t *, void *);

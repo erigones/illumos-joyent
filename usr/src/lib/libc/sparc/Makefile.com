@@ -21,10 +21,10 @@
 
 #
 # Copyright (c) 1989, 2010, Oracle and/or its affiliates. All rights reserved.
-# Copyright 2016 Joyent, Inc.
 # Copyright (c) 2013, OmniTI Computer Consulting, Inc. All rights reserved.
 # Copyright 2013 Garrett D'Amore <garrett@damore.org>
-# Copyright 2017 Nexenta Systems, Inc.
+# Copyright 2018 Nexenta Systems, Inc.
+# Copyright 2018 Joyent, Inc.
 #
 
 LIBCDIR=	$(SRC)/lib/libc
@@ -348,6 +348,7 @@ SYSOBJS=			\
 PORTGEN64=			\
 	_xftw64.o		\
 	attropen64.o		\
+	fts64.o			\
 	ftw64.o			\
 	mkstemp64.o		\
 	nftw64.o		\
@@ -395,7 +396,7 @@ PORTFP=				\
 	moddi3.o		\
 	muldi3.o		\
 	qdivrem.o		\
-	ucmpdi2.o  		\
+	ucmpdi2.o		\
 	udivdi3.o		\
 	umoddi3.o
 
@@ -529,6 +530,7 @@ PORTGEN=			\
 	malloc.o		\
 	memalign.o		\
 	memmem.o		\
+	memset_s.o		\
 	mkdev.o			\
 	mkdtemp.o		\
 	mkfifo.o		\
@@ -586,6 +588,7 @@ PORTGEN=			\
 	scandir.o		\
 	seekdir.o		\
 	select.o		\
+	set_constraint_handler_s.o \
 	setlabel.o		\
 	setpriority.o		\
 	settimeofday.o		\
@@ -656,6 +659,14 @@ PORTGEN=			\
 	xgetwidth.o		\
 	xpg4.o			\
 	xpg6.o
+
+PORTINET=			\
+	inet_lnaof.o		\
+	inet_makeaddr.o		\
+	inet_network.o		\
+	inet_ntoa.o		\
+	inet_ntop.o		\
+	inet_pton.o
 
 PORTPRINT_W=			\
 	doprnt_w.o
@@ -1033,6 +1044,7 @@ MOSTOBJS=			\
 	$(PORTGEN64)		\
 	$(PORTI18N)		\
 	$(PORTI18N_COND)	\
+	$(PORTINET)		\
 	$(PORTLOCALE)		\
 	$(PORTPRINT)		\
 	$(PORTPRINT_C89)	\
@@ -1119,7 +1131,7 @@ MAPFILES =	$(LIBCDIR)/port/mapfile-vers
 CFLAGS +=	$(EXTN_CFLAGS)
 CPPFLAGS=	-D_REENTRANT -Dsparc $(EXTN_CPPFLAGS) $(THREAD_DEBUG) \
 		-I$(LIBCBASE)/inc -I$(LIBCDIR)/inc $(CPPFLAGS.master)
-ASFLAGS=	$(EXTN_ASFLAGS) -K pic -P -D__STDC__ -D_ASM $(CPPFLAGS) $(sparc_AS_XARCH)
+ASFLAGS=	$(EXTN_ASFLAGS) $(AS_PICFLAGS) -P -D__STDC__ -D_ASM $(CPPFLAGS) $(sparc_AS_XARCH)
 
 # As a favor to the dtrace syscall provider, libc still calls the
 # old syscall traps that have been obsoleted by the *at() interfaces.
@@ -1183,6 +1195,7 @@ SRCS=							\
 	$(PORTFP:%.o=$(LIBCDIR)/port/fp/%.c)		\
 	$(PORTGEN:%.o=$(LIBCDIR)/port/gen/%.c)		\
 	$(PORTI18N:%.o=$(LIBCDIR)/port/i18n/%.c)	\
+	$(PORTINET:%.o=$(LIBCDIR)/port/inet/%.c)	\
 	$(PORTLOCALE:%.o=$(LIBCDIR)/port/locale/%.c)	\
 	$(PORTPRINT:%.o=$(LIBCDIR)/port/print/%.c)	\
 	$(PORTREGEX:%.o=$(LIBCDIR)/port/regex/%.c)	\
@@ -1370,7 +1383,7 @@ $(STRETS:%=pics/%): $(LIBCBASE)/crt/stret.s
 	$(POST_PROCESS_O)
 
 $(LIBCBASE)/crt/_rtbootld.s:	$(LIBCBASE)/crt/_rtboot.s $(LIBCBASE)/crt/_rtld.c
-	$(CC) $(CPPFLAGS) $(CTF_FLAGS) -O -S -K pic \
+	$(CC) $(CPPFLAGS) $(CTF_FLAGS) -O -S $(C_PICFLAGS) \
 	    $(LIBCBASE)/crt/_rtld.c -o $(LIBCBASE)/crt/_rtld.s
 	$(CAT) $(LIBCBASE)/crt/_rtboot.s $(LIBCBASE)/crt/_rtld.s > $@
 	$(RM) $(LIBCBASE)/crt/_rtld.s
@@ -1399,16 +1412,6 @@ $(ASSYMDEP_OBJS:%=pics/%): assym.h
 assym.h := CFLAGS += -g
 
 GENASSYM_C = $(LIBCDIR)/$(MACH)/genassym.c
-
-genassym: $(GENASSYM_C)
-	$(NATIVECC) $(NATIVE_CFLAGS) -I$(LIBCBASE)/inc -I$(LIBCDIR)/inc \
-		$(CPPFLAGS.native) -o $@ $(GENASSYM_C)
-
-OFFSETS = $(LIBCDIR)/$(MACH)/offsets.in
-
-assym.h: $(OFFSETS) genassym
-	$(OFFSETS_CREATE) <$(OFFSETS) >$@
-	./genassym >>$@
 
 # derived C source and related explicit dependencies
 $(LIBCDIR)/port/gen/errlst.c + \

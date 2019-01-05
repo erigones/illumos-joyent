@@ -26,6 +26,7 @@
 /*
  * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
  * Copyright 2016 Toomas Soome <tsoome@me.com>
+ * Copyright 2018 OmniOS Community Edition (OmniOSce) Association.
  */
 
 /*
@@ -282,7 +283,7 @@ menu_read(struct menu_lst *menu, char *menu_path)
 	if (fp == NULL)
 		return (BAM_ERROR);
 
-	if (be_list(NULL, &be_nodes) != BE_SUCCESS)
+	if (be_list(NULL, &be_nodes, BE_LIST_DEFAULT) != BE_SUCCESS)
 		be_nodes = NULL;
 
 	/*
@@ -353,7 +354,9 @@ void
 menu_free(struct menu_lst *menu)
 {
 	menu_entry_t *entry;
-	STAILQ_FOREACH(entry, menu, me_next) {
+
+	while (!STAILQ_EMPTY(menu)) {
+		entry = STAILQ_FIRST(menu);
 		STAILQ_REMOVE_HEAD(menu, me_next);
 		free(entry->me_title);
 		free(entry->me_type);
@@ -718,7 +721,7 @@ bam_mount_be(menu_entry_t *entry, char **dir)
 		goto out;
 	}
 
-	ret = be_list(NULL, &be_nodes);
+	ret = be_list(NULL, &be_nodes, BE_LIST_DEFAULT);
 	if (ret != BE_SUCCESS) {
 		goto out;
 	}
@@ -906,7 +909,7 @@ list_menu_entry(menu_entry_t *entry, char *setting)
 			if (*setting == '\0') {
 				(void) printf("Kernel:      %s\n",
 				    getenv("bootfile"));
-			} if (strcasecmp(setting, "kernel") == 0) {
+			} else if (strcasecmp(setting, "kernel") == 0) {
 				(void) printf("%s\n", getenv("bootfile"));
 				goto done;
 			}
@@ -1028,7 +1031,7 @@ update_entry(struct menu_lst *menu, char *menu_root, char *osdev)
 	FILE *fp;
 
 	(void) snprintf(path, PATH_MAX, "%s%s", menu_root, MENU);
-	rv = be_list(NULL, &be_nodes);
+	rv = be_list(NULL, &be_nodes, BE_LIST_DEFAULT);
 
 	if (rv != BE_SUCCESS)
 		return (BAM_ERROR);
@@ -1205,7 +1208,7 @@ list_setting(struct menu_lst *menu, char *which, char *setting)
 
 	/* find default entry */
 	if (entry == -1) {
-		ret = be_list(NULL, &be_nodes);
+		ret = be_list(NULL, &be_nodes, BE_LIST_DEFAULT);
 		if (ret != BE_SUCCESS) {
 			bam_error(_("No BE's found\n"));
 			return (BAM_ERROR);

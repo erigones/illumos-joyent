@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (c) 2011 NetApp, Inc.
  * All rights reserved.
  *
@@ -27,6 +29,10 @@
  */
 
 /*
+ * Copyright 2018 Joyent, Inc.
+ */
+
+/*
  * Test program for the micro event library. Set up a simple TCP echo
  * service.
  *
@@ -35,10 +41,14 @@
 
 #include <sys/types.h>
 #include <sys/stdint.h>
+#ifdef __FreeBSD__
 #include <sys/sysctl.h>
+#endif
 #include <sys/socket.h>
 #include <netinet/in.h>
+#ifdef __FreeBSD__
 #include <machine/cpufunc.h>
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -66,20 +76,29 @@ uint64_t tevbuf[TEVSZ];
 static void
 timer_print(void)
 {
-	uint64_t min, max, diff, sum, tsc_freq;
+	uint64_t min, max, diff, sum;
+#ifdef __FreeBSD__
+	uint64_t tsc_freq;
 	size_t len;
+#endif
 	int j;
 
 	min = UINT64_MAX;
 	max = 0;
 	sum = 0;
 
+#ifdef __FreeBSD__
 	len = sizeof(tsc_freq);
 	sysctlbyname("machdep.tsc_freq", &tsc_freq, &len, NULL, 0);
+#endif
 
 	for (j = 1; j < TEVSZ; j++) {
+#ifdef __FreeBSD__
 		/* Convert a tsc diff into microseconds */
 		diff = (tevbuf[j] - tevbuf[j-1]) * 1000000 / tsc_freq;
+#else
+		diff = (tevbuf[j] - tevbuf[j-1]) / 1000;
+#endif
 		sum += diff;
 		if (min > diff)
 			min = diff;
@@ -99,7 +118,11 @@ timer_callback(int fd, enum ev_type type, void *param)
 	if (i >= TEVSZ)
 		abort();
 
+#ifdef __FreeBSD__
 	tevbuf[i++] = rdtsc();
+#else
+	tevbuf[i++] = gethrtime();
+#endif
 
 	if (i == TEVSZ) {
 		mevent_delete(tevp);
@@ -141,7 +164,7 @@ echoer(void *param)
 	mev = mevent_add(fd, EVF_READ, echoer_callback, &sync);
 	if (mev == NULL) {
 		printf("Could not allocate echoer event\n");
-		exit(1);
+		exit(4);
 	}
 
 	while (!pthread_cond_wait(&sync.e_cond, &sync.e_mt)) {
@@ -195,27 +218,28 @@ acceptor(void *param)
 	pthread_t tid;
 	int news;
 	int s;
-	static int first;
 
-        if ((s = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-                perror("socket");
-                exit(1);
-        }
+	if ((s = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+		perror("cannot create socket");
+		exit(4);
+	}
 
-        sin.sin_len = sizeof(sin);
-        sin.sin_family = AF_INET;
-        sin.sin_addr.s_addr = htonl(INADDR_ANY);
-        sin.sin_port = htons(TEST_PORT);
+#ifdef __FreeBSD__
+	sin.sin_len = sizeof(sin);
+#endif
+	sin.sin_family = AF_INET;
+	sin.sin_addr.s_addr = htonl(INADDR_ANY);
+	sin.sin_port = htons(TEST_PORT);
 
-        if (bind(s, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
-                perror("bind");
-                exit(1);
-        }
+	if (bind(s, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
+		perror("cannot bind socket");
+		exit(4);
+	}
 
-        if (listen(s, 1) < 0) {
-                perror("listen");
-                exit(1);
-        }
+	if (listen(s, 1) < 0) {
+		perror("cannot listen socket");
+		exit(4);
+	}
 
 	(void) mevent_add(s, EVF_READ, acceptor_callback, NULL);
 
@@ -246,6 +270,7 @@ acceptor(void *param)
 	return (NULL);
 }
 
+int
 main()
 {
 	pthread_t tid;
@@ -253,4 +278,5 @@ main()
 	pthread_create(&tid, NULL, acceptor, NULL);
 
 	mevent_dispatch();
+	return (0);
 }

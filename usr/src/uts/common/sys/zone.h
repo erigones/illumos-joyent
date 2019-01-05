@@ -42,6 +42,8 @@
 #include <sys/socket_impl.h>
 #include <sys/secflags.h>
 #include <netinet/in.h>
+#include <sys/cpu_uarray.h>
+#include <sys/nvpair.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -137,12 +139,17 @@ extern "C" {
 #define	ZONE_EVENT_READY		"ready"
 #define	ZONE_EVENT_RUNNING		"running"
 #define	ZONE_EVENT_SHUTTING_DOWN	"shutting_down"
+#define	ZONE_EVENT_FREE			"free"
 
 #define	ZONE_CB_NAME		"zonename"
 #define	ZONE_CB_NEWSTATE	"newstate"
 #define	ZONE_CB_OLDSTATE	"oldstate"
+#define	ZONE_CB_RESTARTS	"restarts"
 #define	ZONE_CB_TIMESTAMP	"when"
 #define	ZONE_CB_ZONEID		"zoneid"
+
+#define	ZONE_EVENT_INIT_CLASS		"init"
+#define	ZONE_EVENT_INIT_RESTART_SC	"restart"
 
 /*
  * Exit values that may be returned by scripts or programs invoked by various
@@ -244,7 +251,8 @@ typedef enum {
 	ZONE_IS_EMPTY,
 	ZONE_IS_DOWN,
 	ZONE_IS_DYING,
-	ZONE_IS_DEAD
+	ZONE_IS_DEAD,
+	ZONE_IS_FREE		/* transient state for zone sysevent */
 } zone_status_t;
 #define	ZONE_MIN_STATE		ZONE_IS_UNINITIALIZED
 #define	ZONE_MAX_STATE		ZONE_IS_DEAD
@@ -351,6 +359,15 @@ typedef struct zone_net_data {
 
 #define	GLOBAL_ZONEUNIQID	0	/* uniqid of the global zone */
 
+/*
+ * Indexes into ->zone_ustate array, summing the micro state of all threads in a
+ * particular zone.
+ */
+#define	ZONE_USTATE_STIME (0)
+#define	ZONE_USTATE_UTIME (1)
+#define	ZONE_USTATE_WTIME (2)
+#define	ZONE_USTATE_MAX (3)
+
 struct pool;
 struct brand;
 
@@ -427,7 +444,7 @@ typedef struct {
 	kstat_named_t	zv_100ms_ops;
 	kstat_named_t	zv_1s_ops;
 	kstat_named_t	zv_10s_ops;
-	kstat_named_t 	zv_delay_cnt;
+	kstat_named_t	zv_delay_cnt;
 	kstat_named_t	zv_delay_time;
 } zone_vfs_kstat_t;
 
@@ -474,6 +491,7 @@ typedef struct {
 	kstat_named_t	zm_mfseglim;
 	kstat_named_t	zm_nested_intp;
 	kstat_named_t	zm_init_pid;
+	kstat_named_t	zm_init_restarts;
 	kstat_named_t	zm_boot_time;
 } zone_misc_kstat_t;
 
@@ -500,13 +518,13 @@ typedef struct zone {
 					/* if not emulated */
 	/*
 	 * zone_lock protects the following fields of a zone_t:
-	 * 	zone_ref
-	 * 	zone_cred_ref
-	 * 	zone_subsys_ref
-	 * 	zone_ref_list
-	 * 	zone_ntasks
-	 * 	zone_flags
-	 * 	zone_zsd
+	 *	zone_ref
+	 *	zone_cred_ref
+	 *	zone_subsys_ref
+	 *	zone_ref_list
+	 *	zone_ntasks
+	 *	zone_flags
+	 *	zone_zsd
 	 *	zone_pfexecd
 	 */
 	kmutex_t	zone_lock;
@@ -569,6 +587,7 @@ typedef struct zone {
 	kcondvar_t	zone_cv;	/* used to signal state changes */
 	struct proc	*zone_zsched;	/* Dummy kernel "zsched" process */
 	pid_t		zone_proc_initpid; /* pid of "init" for this zone */
+	uint_t		zone_proc_init_restarts; /* times init restarted */
 	char		*zone_initname;		/* fs path to 'init' */
 	int		zone_init_status;	/* init's exit status */
 	int		zone_boot_err;  /* for zone_boot() if boot fails */
@@ -614,7 +633,7 @@ typedef struct zone {
 	boolean_t	zone_restart_init_0;	/* Restart only if it exits 0 */
 	boolean_t	zone_setup_app_contract; /* setup contract? */
 	struct brand	*zone_brand;		/* zone's brand */
-	void 		*zone_brand_data;	/* store brand specific data */
+	void		*zone_brand_data;	/* store brand specific data */
 	id_t		zone_defaultcid;	/* dflt scheduling class id */
 	boolean_t	zone_fixed_hipri;	/* fixed sched. hi prio */
 	kstat_t		*zone_swapresv_kstat;
@@ -676,22 +695,12 @@ typedef struct zone {
 
 	/*
 	 * Misc. kstats and counters for zone cpu-usage aggregation.
-	 * The zone_Xtime values are the sum of the micro-state accounting
-	 * values for all threads that are running or have run in the zone.
-	 * This is tracked in msacct.c as threads change state.
-	 * The zone_stime is the sum of the LMS_SYSTEM times.
-	 * The zone_utime is the sum of the LMS_USER times.
-	 * The zone_wtime is the sum of the LMS_WAIT_CPU times.
-	 * As with per-thread micro-state accounting values, these values are
-	 * not scaled to nanosecs.  The scaling is done by the
-	 * zone_misc_kstat_update function when kstats are requested.
 	 */
 	kmutex_t	zone_misc_lock;		/* protects misc statistics */
 	kstat_t		*zone_misc_ksp;
 	zone_misc_kstat_t *zone_misc_stats;
-	uint64_t	zone_stime;		/* total system time */
-	uint64_t	zone_utime;		/* total user time */
-	uint64_t	zone_wtime;		/* total time waiting in runq */
+	/* Accumulated microstate for all threads in this zone. */
+	cpu_uarray_t	*zone_ustate;
 	/* fork-fail kstat tracking */
 	uint32_t	zone_ffcap;		/* hit an rctl cap */
 	uint32_t	zone_ffnoproc;		/* get proc/lwp error */
@@ -823,7 +832,7 @@ typedef uint_t zone_key_t;
 
 extern void	zone_key_create(zone_key_t *, void *(*)(zoneid_t),
     void (*)(zoneid_t, void *), void (*)(zoneid_t, void *));
-extern int 	zone_key_delete(zone_key_t);
+extern int	zone_key_delete(zone_key_t);
 extern void	*zone_getspecific(zone_key_t, zone_t *);
 extern int	zone_setspecific(zone_key_t, zone_t *, const void *);
 
@@ -849,7 +858,7 @@ struct zsd_entry {
 	void			(*zsd_shutdown)(zoneid_t, void *);
 	void			(*zsd_destroy)(zoneid_t, void *);
 	list_node_t		zsd_linkage;
-	uint16_t 		zsd_flags;	/* See below */
+	uint16_t		zsd_flags;	/* See below */
 	kcondvar_t		zsd_cv;
 };
 
@@ -1011,6 +1020,10 @@ extern rctl_hndl_t rc_zone_locked_mem;
 extern rctl_hndl_t rc_zone_max_swap;
 extern rctl_hndl_t rc_zone_phys_mem;
 extern rctl_hndl_t rc_zone_max_lofi;
+
+/* For publishing sysevents related to a particular zone */
+extern void zone_sysevent_publish(zone_t *, const char *, const char *,
+    nvlist_t *);
 
 #endif	/* _KERNEL */
 

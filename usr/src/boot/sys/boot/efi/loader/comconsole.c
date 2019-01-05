@@ -124,6 +124,7 @@ efi_serial_init(EFI_HANDLE **handlep, int *nhandles)
 	 * get buffer size
 	 */
 	*nhandles = 0;
+	handles = NULL;
 	status = BS->LocateHandle(ByProtocol, &serial, NULL, &bufsz, handles);
 	if (status != EFI_BUFFER_TOO_SMALL)
 		return (status);
@@ -151,7 +152,7 @@ comc_probe(struct console *cp)
 	struct serial *port;
 	char name[20];
 	char value[20];
-	char *cons, *env;
+	char *env;
 	EFI_HANDLE *handles = NULL;	/* array of handles */
 	int nhandles = 0;		/* number of handles in array */
 
@@ -303,34 +304,55 @@ comc_ischar(struct console *cp)
 	if (EFI_ERROR(status))
 		return (0);
 
-	return (!(status & EFI_SERIAL_INPUT_BUFFER_EMPTY));
+	return (!(control & EFI_SERIAL_INPUT_BUFFER_EMPTY));
 }
 
 static char *
 comc_asprint_mode(struct serial *sp)
 {
-	char par = 'n', *buf;
-	int stop = 1;
+	char par, *buf;
+	char *stop;
 
 	if (sp == NULL)
 		return (NULL);
 
 	switch (sp->parity) {
-	case NoParity: par = 'n';
+	case NoParity:
+		par = 'n';
 		break;
-	case EvenParity: par = 'e';
+	case EvenParity:
+		par = 'e';
 		break;
-	case OddParity: par = 'o';
+	case OddParity:
+		par = 'o';
 		break;
-	}
-	switch (sp->stopbits) {
-	case OneStopBit: stop = 1;
+	case MarkParity:
+		par = 'm';
 		break;
-	case TwoStopBits: stop = 2;
+	case SpaceParity:
+		par = 's';
+		break;
+	default:
+		par = 'n';
 		break;
 	}
 
-	asprintf(&buf, "%ju,%d,%c,%d,-", sp->baudrate, sp->databits, par, stop);
+	switch (sp->stopbits) {
+	case OneStopBit:
+		stop = "1";
+		break;
+	case TwoStopBits:
+		stop = "2";
+		break;
+	case OneFiveStopBits:
+		stop = "1.5";
+		break;
+	default:
+		stop = "1";
+		break;
+	}
+
+	asprintf(&buf, "%ju,%d,%c,%s,-", sp->baudrate, sp->databits, par, stop);
 	return (buf);
 }
 
@@ -359,6 +381,10 @@ comc_parse_mode(struct serial *sp, const char *value)
 		return (CMD_ERROR);
 
 	switch (n) {
+	case 5: databits = 5;
+		break;
+	case 6: databits = 6;
+		break;
 	case 7: databits = 7;
 		break;
 	case 8: databits = 8;
@@ -375,6 +401,10 @@ comc_parse_mode(struct serial *sp, const char *value)
 		break;
 	case 'o': parity = OddParity;
 		break;
+	case 'm': parity = MarkParity;
+		break;
+	case 's': parity = SpaceParity;
+		break;
 	default:
 		return (CMD_ERROR);
 	}
@@ -386,6 +416,10 @@ comc_parse_mode(struct serial *sp, const char *value)
 
 	switch (*ep++) {
 	case '1': stopbits = OneStopBit;
+		if (ep[0] == '.' && ep[1] == '5') {
+			ep += 2;
+			stopbits = OneFiveStopBits;
+		}
 		break;
 	case '2': stopbits = TwoStopBits;
 		break;

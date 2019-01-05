@@ -22,7 +22,7 @@
  * Copyright (c) 1991, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2014, OmniTI Computer Consulting, Inc. All rights reserved.
- * Copyright 2015, Joyent, Inc.
+ * Copyright 2018, Joyent, Inc.
  */
 /* Copyright (c) 1990 Mentat Inc. */
 
@@ -127,7 +127,7 @@ static void	udp_bind_hash_remove(udp_t *udp, boolean_t caller_holds_lock);
 static int	udp_build_hdr_template(conn_t *, const in6_addr_t *,
     const in6_addr_t *, in_port_t, uint32_t);
 static void	udp_capability_req(queue_t *q, mblk_t *mp);
-static int	udp_tpi_close(queue_t *q, int flags);
+static int	udp_tpi_close(queue_t *q, int flags, cred_t *);
 static void	udp_close_free(conn_t *);
 static void	udp_tpi_connect(queue_t *q, mblk_t *mp);
 static void	udp_tpi_disconnect(queue_t *q, mblk_t *mp);
@@ -373,8 +373,6 @@ udp_srcport_hash(mblk_t *mp, int type, uint16_t min, uint16_t max,
     uint16_t def)
 {
 	size_t szused = 0;
-	struct ether_header *ether;
-	struct ether_vlan_header *vether;
 	ip6_t *ip6h;
 	ipha_t *ipha;
 	uint16_t sap;
@@ -401,12 +399,10 @@ udp_srcport_hash(mblk_t *mp, int type, uint16_t min, uint16_t max,
 		if (mp->b_cont == NULL)
 			return (def);
 		mp = mp->b_cont;
-		ether = (struct ether_header *)mp->b_rptr;
 	} else if (MBLKL(mp) < VXLAN_HDR_LEN) {
 		return (def);
 	} else {
 		szused = VXLAN_HDR_LEN;
-		ether = (struct ether_header *)((uintptr_t)mp->b_rptr + szused);
 	}
 
 	/* Can we hold a MAC header? */
@@ -803,8 +799,9 @@ udp_tpi_connect(queue_t *q, mblk_t *mp)
 	}
 }
 
+/* ARGSUSED */
 static int
-udp_tpi_close(queue_t *q, int flags)
+udp_tpi_close(queue_t *q, int flags, cred_t *credp __unused)
 {
 	conn_t	*connp;
 

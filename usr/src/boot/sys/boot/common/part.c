@@ -36,7 +36,9 @@
 #include <sys/queue.h>
 #include <sys/vtoc.h>
 
-#include <crc32.h>
+#include <fs/cd9660/iso.h>
+
+#include <zlib.h>
 #include <part.h>
 #include <uuid.h>
 
@@ -101,6 +103,7 @@ static struct parttypes {
 	{ PART_LINUX,		"Linux" },
 	{ PART_LINUX_SWAP,	"Linux swap" },
 	{ PART_DOS,		"DOS/Windows" },
+	{ PART_ISO9660,		"ISO9660" },
 	{ PART_SOLARIS2,	"Solaris 2" },
 	{ PART_ILLUMOS_UFS,	"illumos UFS" },
 	{ PART_ILLUMOS_ZFS,	"illumos ZFS" },
@@ -180,19 +183,19 @@ gpt_checkhdr(struct gpt_hdr *hdr, uint64_t lba_self,
 	}
 	sz = le32toh(hdr->hdr_size);
 	if (sz < 92 || sz > sectorsize) {
-		DEBUG("invalid GPT header size: %d", sz);
+		DEBUG("invalid GPT header size: %u", sz);
 		return (NULL);
 	}
 	crc = le32toh(hdr->hdr_crc_self);
-	hdr->hdr_crc_self = 0;
-	if (crc32(hdr, sz) != crc) {
+	hdr->hdr_crc_self = crc32(0, Z_NULL, 0);
+	if (crc32(hdr->hdr_crc_self, (const Bytef *)hdr, sz) != crc) {
 		DEBUG("GPT header's CRC doesn't match");
 		return (NULL);
 	}
 	hdr->hdr_crc_self = crc;
 	hdr->hdr_revision = le32toh(hdr->hdr_revision);
 	if (hdr->hdr_revision < GPT_HDR_REVISION) {
-		DEBUG("unsupported GPT revision %d", hdr->hdr_revision);
+		DEBUG("unsupported GPT revision %u", hdr->hdr_revision);
 		return (NULL);
 	}
 	hdr->hdr_lba_self = le64toh(hdr->hdr_lba_self);
@@ -233,7 +236,7 @@ gpt_checktbl(const struct gpt_hdr *hdr, uint8_t *tbl, size_t size,
 		cnt = hdr->hdr_entries;
 		/* Check CRC only when buffer size is enough for table. */
 		if (hdr->hdr_crc_table !=
-		    crc32(tbl, hdr->hdr_entries * hdr->hdr_entsz)) {
+		    crc32(0, tbl, hdr->hdr_entries * hdr->hdr_entsz)) {
 			DEBUG("GPT table's CRC doesn't match");
 			return (-1);
 		}
@@ -342,8 +345,7 @@ ptable_gptread(struct ptable *table, void *dev, diskread_t dread)
 	 * Note, this is still not a foolproof way to get disk's size. For
 	 * example, an image file can be truncated when copied to smaller media.
 	 */
-	if (hdr.hdr_lba_alt + 1 > table->sectors)
-		table->sectors = hdr.hdr_lba_alt + 1;
+	table->sectors = hdr.hdr_lba_alt + 1;
 
 	for (i = 0; i < size / hdr.hdr_entsz; i++) {
 		ent = (struct gpt_ent *)(tbl + i * hdr.hdr_entsz);
@@ -711,6 +713,45 @@ out:
 	return (table);
 }
 
+#define	cdb2devb(bno)	((bno) * ISO_DEFAULT_BLOCK_SIZE / table->sectorsize)
+
+static struct ptable *
+ptable_iso9660read(struct ptable *table, void *dev, diskread_t dread)
+{
+	uint8_t *buf;
+	struct iso_primary_descriptor *vd;
+	struct pentry *entry;
+
+	buf = malloc(table->sectorsize);
+	if (buf == NULL)
+		return (table);
+
+	if (dread(dev, buf, 1, cdb2devb(16)) != 0) {
+		DEBUG("read failed");
+		ptable_close(table);
+		table = NULL;
+		goto out;
+	}
+	vd = (struct iso_primary_descriptor *)buf;
+	if (bcmp(vd->id, ISO_STANDARD_ID, sizeof (vd->id)) != 0)
+		goto out;
+
+	entry = malloc(sizeof (*entry));
+	if (entry == NULL)
+		goto out;
+	entry->part.start = 0;
+	entry->part.end = table->sectors;
+	entry->part.type = PART_ISO9660;
+	entry->part.index = 0;
+	STAILQ_INSERT_TAIL(&table->entries, entry, entry);
+
+	table->type = PTABLE_ISO9660;
+
+out:
+	free(buf);
+	return (table);
+}
+
 struct ptable *
 ptable_open(void *dev, uint64_t sectors, uint16_t sectorsize, diskread_t *dread)
 {
@@ -740,6 +781,13 @@ ptable_open(void *dev, uint64_t sectors, uint16_t sectorsize, diskread_t *dread)
 	table->sectorsize = sectorsize;
 	table->type = PTABLE_NONE;
 	STAILQ_INIT(&table->entries);
+
+	if (ptable_iso9660read(table, dev, dread) == NULL) {
+		/* Read error. */
+		table = NULL;
+		goto out;
+	} else if (table->type == PTABLE_ISO9660)
+		goto out;
 
 	if (ptable_dklabelread(table, dev, dread) == NULL) { /* Read error. */
 		table = NULL;

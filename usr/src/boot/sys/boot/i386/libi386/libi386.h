@@ -30,31 +30,16 @@
 
 /*
  * i386 fully-qualified device descriptor.
- * Note, this must match the 'struct devdesc' declaration
- * in bootstrap.h and also with struct zfs_devdesc for zfs
- * support.
  */
-struct i386_devdesc
-{
-    struct devsw	*d_dev;
-    int			d_type;
-    int			d_unit;
-    union 
-    {
-	struct 
-	{
-	    void	*data;
+struct i386_devdesc {
+    struct devdesc	dd;	/* Must be first. */
+    union {
+	struct {
 	    int		slice;
 	    int		partition;
 	    off_t	offset;
 	} biosdisk;
-	struct
-	{
-	    void	*data;
-	} bioscd;
-	struct
-	{
-	    void	*data;
+	struct {
 	    uint64_t	pool_guid;
 	    uint64_t	root_guid;
 	} zfs;
@@ -104,17 +89,15 @@ extern struct devdesc	currdev;	/* our current device */
 
 /* exported devices XXX rename? */
 extern struct devsw bioscd;
-extern struct devsw biosdisk;
+extern struct devsw biosfd;
+extern struct devsw bioshd;
 extern struct devsw pxedisk;
 extern struct fs_ops pxe_fsops;
 
 int	bc_add(int biosdev);		/* Register CD booted from. */
-int	bc_getdev(struct i386_devdesc *dev);	/* return dev_t for (dev) */
-int	bc_bios2unit(int biosdev);	/* xlate BIOS device -> bioscd unit */
-int	bc_unit2bios(int unit);		/* xlate bioscd unit -> BIOS device */
 uint32_t bd_getbigeom(int bunit);	/* return geometry in bootinfo format */
 int	bd_bios2unit(int biosdev);	/* xlate BIOS device -> biosdisk unit */
-int	bd_unit2bios(int unit);		/* xlate biosdisk unit -> BIOS device */
+int	bd_unit2bios(struct i386_devdesc *); /* xlate biosdisk -> BIOS device */
 int	bd_getdev(struct i386_devdesc *dev);	/* return dev_t for (dev) */
 
 ssize_t	i386_copyin(const void *src, vm_offset_t dest, const size_t len);
@@ -155,6 +138,7 @@ int	bi_load32(char *args, int *howtop, int *bootdevp, vm_offset_t *bip,
 int	bi_load64(char *args, vm_offset_t addr, vm_offset_t *modulep,
 	    vm_offset_t *kernend, int add_smap);
 int	bi_checkcpu(void);
+void	bi_isadir(void);
 
 int	mb_kernel_cmdline(struct preloaded_file *, struct devdesc *, char **);
 void	multiboot_tramp(uint32_t, vm_offset_t, vm_offset_t);

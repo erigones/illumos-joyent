@@ -21,7 +21,7 @@ OBJS=	btx.o
 
 AS=	$(GNU_ROOT)/bin/gas
 LD=	$(GNU_ROOT)/bin/gld
-CC=	$(GCC_ROOT)/bin/gcc
+CC=	$(GNUC_ROOT)/bin/gcc
 
 #.if defined(BOOT_BTX_NOHANG)
 #BOOT_BTX_FLAGS=0x1
@@ -48,7 +48,7 @@ ORG=	0x9000
 
 LDFLAGS=-e start -Ttext ${ORG} -N -S --oformat binary
 
-all:	$(PROG)
+all install:	$(PROG)
 
 $(PROG): $(OBJS)
 	$(LD) $(LDFLAGS) -o $@ $(OBJS)

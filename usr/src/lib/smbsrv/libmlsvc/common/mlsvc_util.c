@@ -57,22 +57,16 @@ static DWORD
 mlsvc_join_noauth(smb_domainex_t *dxi,
 	char *machine_name, char *machine_pw);
 
-
+/*
+ * This is called by smbd_dc_update just after we've learned about a
+ * new domain controller.  Make sure we can authenticate with this DC.
+ */
 DWORD
 mlsvc_netlogon(char *server, char *domain)
 {
-	mlsvc_handle_t netr_handle;
 	DWORD status;
 
-	status = netr_open(server, domain, &netr_handle);
-	if (status != 0) {
-		syslog(LOG_NOTICE, "Failed to connect to %s "
-		    "for domain %s (%s)", server, domain,
-		    xlate_nt_status(status));
-		return (status);
-	}
-
-	status = netlogon_auth(server, &netr_handle, NETR_FLG_INIT);
+	status = smb_netlogon_check(server, domain);
 	if (status != NT_STATUS_SUCCESS) {
 		syslog(LOG_NOTICE, "Failed to establish NETLOGON "
 		    "credential chain with DC: %s (%s)", server,
@@ -81,7 +75,6 @@ mlsvc_netlogon(char *server, char *domain)
 		    "domain controller does not match the local storage.");
 		syslog(LOG_NOTICE, "To correct this, use 'smbadm join'");
 	}
-	(void) netr_close(&netr_handle);
 
 	return (status);
 }
@@ -424,4 +417,44 @@ void
 mlsvc_disconnect(const char *server)
 {
 	smbrdr_disconnect(server);
+}
+
+/*
+ * A few more helper functions for RPC services.
+ */
+
+/*
+ * Check whether or not the specified user has administrator privileges,
+ * i.e. is a member of Domain Admins or Administrators.
+ * Returns true if the user is an administrator, otherwise returns false.
+ */
+boolean_t
+ndr_is_admin(ndr_xa_t *xa)
+{
+	smb_netuserinfo_t *ctx = xa->pipe->np_user;
+
+	return (ctx->ui_flags & SMB_ATF_ADMIN);
+}
+
+/*
+ * Check whether or not the specified user has power-user privileges,
+ * i.e. is a member of Domain Admins, Administrators or Power Users.
+ * This is typically required for operations such as managing shares.
+ * Returns true if the user is a power user, otherwise returns false.
+ */
+boolean_t
+ndr_is_poweruser(ndr_xa_t *xa)
+{
+	smb_netuserinfo_t *ctx = xa->pipe->np_user;
+
+	return ((ctx->ui_flags & SMB_ATF_ADMIN) ||
+	    (ctx->ui_flags & SMB_ATF_POWERUSER));
+}
+
+int32_t
+ndr_native_os(ndr_xa_t *xa)
+{
+	smb_netuserinfo_t *ctx = xa->pipe->np_user;
+
+	return (ctx->ui_native_os);
 }

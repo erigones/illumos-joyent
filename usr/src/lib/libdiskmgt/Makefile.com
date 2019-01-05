@@ -23,6 +23,7 @@
 # Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 # Copyright 2016 Nexenta Systems, Inc.
+# Copyright 2018 Joyent, Inc.
 #
 
 LIBRARY =	libdiskmgt.a

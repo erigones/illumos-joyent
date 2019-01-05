@@ -104,6 +104,8 @@
 #include <libdladm.h>
 #include <sys/dls_mgmt.h>
 #include <libscf.h>
+#include <uuid/uuid.h>
+#include <libppt.h>
 
 #include <libzonecfg.h>
 #include <zonestat_impl.h>
@@ -128,7 +130,8 @@ char pre_statechg_hook[2 * MAXPATHLEN];
 char post_statechg_hook[2 * MAXPATHLEN];
 char query_hook[2 * MAXPATHLEN];
 
-zlog_t logsys;
+zlog_t logsys;			/* log to syslog */
+zlog_t logplat;			/* log to platform.log */
 
 mutex_t	lock = DEFAULTMUTEX;	/* to serialize stuff */
 mutex_t	msglock = DEFAULTMUTEX;	/* for calling setlocale() */
@@ -140,6 +143,8 @@ static int	zone_door = -1;
 
 boolean_t in_death_throes = B_FALSE;	/* daemon is dying */
 boolean_t bringup_failure_recovery = B_FALSE; /* ignore certain failures */
+
+static int platloghdl = -1;	/* Handle for <zonepath>/logs/platform.log */
 
 #if !defined(TEXT_DOMAIN)		/* should be defined by cc -D */
 #define	TEXT_DOMAIN	"SYS_TEST"	/* Use this only if it wasn't */
@@ -223,17 +228,14 @@ zerror(zlog_t *zlogp, boolean_t use_strerror, const char *fmt, ...)
 {
 	va_list alist;
 	char buf[MAXPATHLEN * 2]; /* enough space for err msg with a path */
-	char *bp;
+	char *bp, *bp_nozone;
 	int saved_errno = errno;
 
-	if (zlogp == NULL)
-		return;
 	if (zlogp == &logsys)
-		(void) snprintf(buf, sizeof (buf), "[zone '%s'] ",
-		    zone_name);
+		(void) snprintf(buf, sizeof (buf), "[zone '%s'] ", zone_name);
 	else
 		buf[0] = '\0';
-	bp = &(buf[strlen(buf)]);
+	bp = bp_nozone = &(buf[strlen(buf)]);
 
 	/*
 	 * In theory, the locale pointer should be set to either "C" or a
@@ -250,15 +252,38 @@ zerror(zlog_t *zlogp, boolean_t use_strerror, const char *fmt, ...)
 	if (use_strerror)
 		(void) snprintf(bp, sizeof (buf) - (bp - buf), ": %s",
 		    strerror(saved_errno));
+
+	(void) strlcat(buf, "\n", sizeof (buf));
+
+	/*
+	 * If we don't have the platform log, we are in a child process, and
+	 * should log to stderr (which is a pipe) instead of the file.
+	 */
+	if (logging_poisoned) {
+		(void) fprintf(stderr, "%s", buf);
+
+		if (zlogp != &logsys && zlogp->logfile == stderr)
+			return;
+	} else {
+		logstream_write(platloghdl, bp_nozone, strlen(bp_nozone));
+
+		if (zlogp == &logplat)
+			return;
+	}
+
 	if (zlogp == &logsys) {
+		bp = strrchr(buf, '\n');
+		if (bp != NULL && bp[1] == '\0') {
+			*bp = '\0';
+		}
 		(void) syslog(LOG_ERR, "%s", buf);
 	} else if (zlogp->logfile != NULL) {
-		(void) fprintf(zlogp->logfile, "%s\n", buf);
+		(void) fprintf(zlogp->logfile, "%s", buf);
 	} else {
 		size_t buflen;
 		size_t copylen;
 
-		buflen = snprintf(zlogp->log, zlogp->loglen, "%s\n", buf);
+		buflen = snprintf(zlogp->log, zlogp->loglen, "%s", buf);
 		copylen = MIN(buflen, zlogp->loglen);
 		zlogp->log += copylen;
 		zlogp->loglen -= copylen;
@@ -816,6 +841,46 @@ set_zonecfg_env(char *rsrc, char *attr, char *name, char *val)
 }
 
 /*
+ * Resolve a device:match value to a path.  This is only different for PPT
+ * devices, where we expect the match property to be a /devices/... path, and
+ * configured for PPT already.
+ */
+int
+resolve_device_match(zlog_t *zlogp, struct zone_devtab *dtab,
+    char *path, size_t len)
+{
+	struct zone_res_attrtab *rap;
+
+	for (rap = dtab->zone_dev_attrp; rap != NULL;
+	    rap = rap->zone_res_attr_next) {
+		if (strcmp(rap->zone_res_attr_name, "model") == 0 &&
+		    strcmp(rap->zone_res_attr_value, "passthru") == 0)
+			break;
+	}
+
+	if (rap == NULL) {
+		if (strlcpy(path, dtab->zone_dev_match, len) >= len)
+			return (Z_INVAL);
+		return (Z_OK);
+	}
+
+	if (strncmp(dtab->zone_dev_match, "/devices",
+	    strlen("/devices")) != 0) {
+		zerror(zlogp, B_FALSE, "invalid passthru match value '%s'",
+		    dtab->zone_dev_match);
+		return (Z_INVAL);
+	}
+
+	if (ppt_devpath_to_dev(dtab->zone_dev_match, path, len) != 0) {
+		zerror(zlogp, B_TRUE, "failed to resolve passthru device %s",
+		    dtab->zone_dev_match);
+		return (Z_INVAL);
+	}
+
+	return (Z_OK);
+}
+
+/*
  * Export various zonecfg properties into environment for the boot and state
  * change hooks.
  *
@@ -832,7 +897,7 @@ set_zonecfg_env(char *rsrc, char *attr, char *name, char *val)
  * SmartOS.
  */
 static int
-setup_subproc_env(boolean_t debug)
+setup_subproc_env(zlog_t *zlogp, boolean_t debug)
 {
 	int res;
 	struct zone_nwiftab ntab;
@@ -841,10 +906,18 @@ setup_subproc_env(boolean_t debug)
 	char net_resources[MAXNAMELEN * 2];
 	char dev_resources[MAXNAMELEN * 2];
 	char didstr[16];
+	char uuidstr[UUID_PRINTABLE_STRING_LENGTH];
+	uuid_t uuid;
 
 	/* snap_hndl is null when called through the set_brand_env code path */
 	if (snap_hndl == NULL)
 		return (Z_OK);
+
+	if ((res = zonecfg_get_uuid(zone_name, uuid)) != Z_OK)
+		return (res);
+
+	uuid_unparse(uuid, uuidstr);
+	(void) setenv("_ZONECFG_uuid", uuidstr, 1);
 
 	(void) snprintf(didstr, sizeof (didstr), "%d", zone_did);
 	(void) setenv("_ZONECFG_did", didstr, 1);
@@ -901,25 +974,27 @@ setup_subproc_env(boolean_t debug)
 	 * program.  At such a time as brand callbacks can be executed as part
 	 * of the zoneadmd process, this should be removed.
 	 *
-	 * The bhyve brand only supports disk-like devices and does not support
-	 * regular expressions.
+	 * The bhyve brand only supports disk-like and ppt devices and does not
+	 * support regular expressions.
 	 */
 	if ((res = zonecfg_setdevent(snap_hndl)) != Z_OK)
 		goto done;
 
 	dev_resources[0] = '\0';
 	while (zonecfg_getdevent(snap_hndl, &dtab) == Z_OK) {
+		char *match = dtab.zone_dev_match;
 		struct zone_res_attrtab *rap;
-		char *match;
+		char path[MAXPATHLEN];
 
-		match = dtab.zone_dev_match;
+		res = resolve_device_match(zlogp, &dtab, path, sizeof (path));
+		if (res != Z_OK)
+			goto done;
 
 		/*
-		 * In the environment variable name, the value of match will be
-		 * mangled.  Thus, we store the value of match in a "path"
-		 * environment variable.
+		 * Even if not modified, the match path will be mangled in the
+		 * environment variable name, so we always store the value here.
 		 */
-		set_zonecfg_env(RSRC_DEV, match, "path", match);
+		set_zonecfg_env(RSRC_DEV, match, "path", path);
 
 		for (rap = dtab.zone_dev_attrp; rap != NULL;
 		    rap = rap->zone_res_attr_next) {
@@ -996,6 +1071,8 @@ do_subproc(zlog_t *zlogp, char *cmdbuf, char **retstr, boolean_t debug)
 	FILE *file;
 	int status;
 	int rd_cnt;
+	int fds[2];
+	pid_t child;
 
 	if (retstr != NULL) {
 		if ((*retstr = malloc(1024)) == NULL) {
@@ -1008,17 +1085,71 @@ do_subproc(zlog_t *zlogp, char *cmdbuf, char **retstr, boolean_t debug)
 		inbuf = buf;
 	}
 
-	if (setup_subproc_env(debug) != Z_OK) {
-		zerror(zlogp, B_FALSE, "failed to setup environment");
+	if (pipe(fds) != 0) {
+		zerror(zlogp, B_TRUE, "failed to create pipe for subprocess");
 		return (-1);
 	}
 
-	file = popen(cmdbuf, "r");
-	if (file == NULL) {
-		zerror(zlogp, B_TRUE, "could not launch: %s", cmdbuf);
+	if ((child = fork()) == 0) {
+		int in;
+
+		/*
+		 * SIGINT is currently ignored.  It probably shouldn't be so
+		 * hard to kill errant children, so we revert to SIG_DFL.
+		 * SIGHUP and SIGUSR1 are used to perform log rotation.  We
+		 * leave those as-is because we don't want a 'pkill -HUP
+		 * zoneadmd' to kill this child process before exec().  On
+		 * exec(), SIGHUP and SIGUSR1 will become SIG_DFL.
+		 */
+		sigset(SIGINT, SIG_DFL);
+
+		/*
+		 * Set up a pipe for the child to log to.
+		 */
+		if (dup2(fds[1], STDERR_FILENO) == -1) {
+			(void) snprintf(buf, sizeof (buf),
+			    "subprocess failed to dup2(STDERR_FILENO): %s\n",
+			    strerror(errno));
+			(void) write(fds[1], buf, strlen(buf));
+			_exit(127);
+		}
+		if (dup2(fds[1], STDOUT_FILENO) == -1) {
+			perror("subprocess failed to dup2(STDOUT_FILENO)");
+			_exit(127);
+		}
+		/*
+		 * Some naughty children may try to read from stdin.  Be sure
+		 * that the first file that a child opens doesn't get stdin's
+		 * file descriptor.
+		 */
+		if ((in = open("/dev/null", O_RDONLY)) == -1 ||
+		    dup2(in, STDIN_FILENO) == -1) {
+			zerror(zlogp, B_TRUE,
+			    "subprocess failed to set up STDIN_FILENO");
+			_exit(127);
+		}
+		closefrom(STDERR_FILENO + 1);
+
+		if (setup_subproc_env(zlogp, debug) != Z_OK) {
+			zerror(zlogp, B_FALSE, "failed to setup environment");
+			_exit(127);
+		}
+
+		(void) execl("/bin/sh", "sh", "-c", cmdbuf, NULL);
+
+		zerror(zlogp, B_TRUE, "subprocess execl failed");
+		_exit(127);
+	} else if (child == -1) {
+		zerror(zlogp, B_TRUE, "failed to create subprocess for '%s'",
+		    cmdbuf);
+		(void) close(fds[0]);
+		(void) close(fds[1]);
 		return (-1);
 	}
 
+	(void) close(fds[1]);
+
+	file = fdopen(fds[0], "r");
 	while (fgets(inbuf, 1024, file) != NULL) {
 		if (retstr == NULL) {
 			if (zlogp != &logsys) {
@@ -1034,15 +1165,24 @@ do_subproc(zlog_t *zlogp, char *cmdbuf, char **retstr, boolean_t debug)
 			rd_cnt += 1024 - 1;
 			if ((p = realloc(*retstr, rd_cnt + 1024)) == NULL) {
 				zerror(zlogp, B_FALSE, "out of memory");
-				(void) pclose(file);
-				return (-1);
+				break;
 			}
 
 			*retstr = p;
 			inbuf = *retstr + rd_cnt;
 		}
 	}
-	status = pclose(file);
+
+	while (fclose(file) != 0) {
+		assert(errno == EINTR);
+	}
+	while (waitpid(child, &status, 0) == -1) {
+		if (errno != EINTR) {
+			zerror(zlogp, B_TRUE,
+			    "failed to get exit status of '%s'", cmdbuf);
+			return (-1);
+		}
+	}
 
 	if (WIFSIGNALED(status)) {
 		zerror(zlogp, B_FALSE, "%s unexpectedly terminated due to "
@@ -1108,7 +1248,7 @@ restartinit(brand_handle_t bh)
  * application will be terminated.
  */
 static boolean_t
-is_app_svc_dep(brand_handle_t bh)
+is_app_svc_dep(void)
 {
 	struct zone_attrtab a;
 
@@ -1198,7 +1338,7 @@ zone_bootup(zlog_t *zlogp, const char *bootargs, int zstate, boolean_t debug)
 	 * See if we need to setup contract dependencies between the zone's
 	 * primary application and any of its services.
 	 */
-	app_svc_dep = is_app_svc_dep(bh);
+	app_svc_dep = is_app_svc_dep();
 
 	brand_close(bh);
 
@@ -1224,6 +1364,7 @@ zone_bootup(zlog_t *zlogp, const char *bootargs, int zstate, boolean_t debug)
 		goto bad;
 	}
 
+	/* LINTED: E_NOP_IF_STMT */
 	if ((st.st_mode & S_IFMT) == S_IFLNK) {
 		/* symlink, we'll have to wait and resolve when we boot */
 	} else if ((st.st_mode & S_IXUSR) == 0) {
@@ -1285,16 +1426,19 @@ zone_bootup(zlog_t *zlogp, const char *bootargs, int zstate, boolean_t debug)
 	 */
 	notify_zonestatd(zone_id);
 
+	/* Startup a thread to perform zfd logging/tty svc for the zone. */
+	create_log_thread(zlogp);
+
 	if (zone_boot(zoneid) == -1) {
 		zerror(zlogp, B_TRUE, "unable to boot zone");
+		destroy_log_thread(zlogp);
 		goto bad;
 	}
 
-	if (brand_poststatechg(zlogp, zstate, Z_BOOT, debug) != 0)
+	if (brand_poststatechg(zlogp, zstate, Z_BOOT, debug) != 0) {
+		destroy_log_thread(zlogp);
 		goto bad;
-
-	/* Startup a thread to perform zfd logging/tty svc for the zone. */
-	create_log_thread(zlogp, zone_id);
+	}
 
 	return (0);
 
@@ -1325,12 +1469,12 @@ zone_halt(zlog_t *zlogp, boolean_t unmount_cmd, boolean_t rebooting, int zstate,
 	if (vplat_teardown(zlogp, unmount_cmd, rebooting, debug) != 0) {
 		if (!bringup_failure_recovery)
 			zerror(zlogp, B_FALSE, "unable to destroy zone");
-		destroy_log_thread();
+		destroy_log_thread(zlogp);
 		return (-1);
 	}
 
 	/* Shut down is done, stop the log thread */
-	destroy_log_thread();
+	destroy_log_thread(zlogp);
 
 	if (unmount_cmd == B_FALSE &&
 	    brand_poststatechg(zlogp, zstate, Z_HALT, debug) != 0)
@@ -1583,6 +1727,8 @@ server(void *cookie, char *args, size_t alen, door_desc_t *dp,
 	 * it is time for us to shut down zoneadmd.
 	 */
 	if (zargp == DOOR_UNREF_DATA) {
+		logstream_close(platloghdl);
+
 		/*
 		 * See comment at end of main() for info on the last rites.
 		 */
@@ -1694,7 +1840,7 @@ server(void *cookie, char *args, size_t alen, door_desc_t *dp,
 			rval = -1;
 			goto out;
 		}
-		zlogp = &logsys;	/* Log errors to syslog */
+		zlogp = &logplat;	/* Log errors to platform.log */
 	}
 
 	/*
@@ -2151,8 +2297,6 @@ top:
 		 * state.
 		 */
 		if (zstate > ZONE_STATE_INSTALLED) {
-			static zoneid_t zid;
-
 			zerror(zlogp, B_FALSE,
 			    "zone '%s': WARNING: zone is in state '%s', but "
 			    "zoneadmd does not appear to be available; "
@@ -2162,10 +2306,10 @@ top:
 			/*
 			 * Startup a thread to perform the zfd logging/tty svc
 			 * for the zone. zlogp won't be valid for much longer
-			 * so use logsys.
+			 * so use logplat.
 			 */
-			if ((zid = getzoneidbyname(zone_name)) != -1) {
-				create_log_thread(&logsys, zid);
+			if (getzoneidbyname(zone_name) != -1) {
+				create_log_thread(&logplat);
 			}
 
 			/* recover the global configuration snapshot */
@@ -2606,6 +2750,15 @@ main(int argc, char *argv[])
 	openlog("zoneadmd", LOG_PID, LOG_DAEMON);
 
 	/*
+	 * Allow logging to <zonepath>/logs/<file>.
+	 */
+	logstream_init(zlogp);
+	platloghdl = logstream_open("platform.log", "zoneadmd", 0);
+
+	/* logplat looks the same as logsys, but logs to platform.log */
+	logplat = logsys;
+
+	/*
 	 * The eventstream is used to publish state changes in the zone
 	 * from the door threads to the console I/O poller.
 	 */
@@ -2624,7 +2777,6 @@ main(int argc, char *argv[])
 	if (make_daemon_exclusive(zlogp) == -1)
 		goto child_out;
 
-
 	/*
 	 * Create/join a new session; we need to be careful of what we do with
 	 * the console from now on so we don't end up being the session leader
@@ -2634,9 +2786,13 @@ main(int argc, char *argv[])
 
 	/*
 	 * This thread shouldn't be receiving any signals; in particular,
-	 * SIGCHLD should be received by the thread doing the fork().
+	 * SIGCHLD should be received by the thread doing the fork().  The
+	 * exceptions are SIGHUP and SIGUSR1 for log rotation, set up by
+	 * logstream_init().
 	 */
 	(void) sigfillset(&blockset);
+	(void) sigdelset(&blockset, SIGHUP);
+	(void) sigdelset(&blockset, SIGUSR1);
 	(void) thr_sigsetmask(SIG_BLOCK, &blockset, NULL);
 
 	/*

@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (c) 2011 NetApp, Inc.
  * All rights reserved.
  *
@@ -27,7 +29,7 @@
  */
 
 /*
- * Copyright 2017 Joyent, Inc.
+ * Copyright 2018 Joyent, Inc.
  */
 
 #ifndef _VMX_H_
@@ -54,6 +56,11 @@ struct vmxctx {
 	register_t	guest_r14;
 	register_t	guest_r15;
 	register_t	guest_cr2;
+	register_t	guest_dr0;
+	register_t	guest_dr1;
+	register_t	guest_dr2;
+	register_t	guest_dr3;
+	register_t	guest_dr6;
 
 #ifdef __FreeBSD__
 	register_t	host_r15;		/* Host state */
@@ -64,9 +71,15 @@ struct vmxctx {
 	register_t	host_rsp;
 	register_t	host_rbx;
 #endif /* __FreeBSD__ */
-	/*
-	 * XXX todo debug registers and fpu state
-	 */
+
+	register_t	host_dr0;
+	register_t	host_dr1;
+	register_t	host_dr2;
+	register_t	host_dr3;
+	register_t	host_dr6;
+	register_t	host_dr7;
+	uint64_t	host_debugctl;
+	int		host_tf;
 
 	int		inst_fail_status;
 
@@ -113,6 +126,14 @@ enum {
 	GUEST_MSR_NUM		/* must be the last enumeration */
 };
 
+#ifndef	__FreeBSD__
+typedef enum {
+	VS_NONE		= 0x0,
+	VS_LAUNCHED	= 0x1,
+	VS_LOADED	= 0x2
+} vmcs_state_t;
+#endif /* __FreeBSD__ */
+
 /* virtual machine softc */
 struct vmx {
 	struct vmcs	vmcs[VM_MAXCPU];	/* one vmcs per virtual cpu */
@@ -122,7 +143,8 @@ struct vmx {
 	uint64_t	guest_msrs[VM_MAXCPU][GUEST_MSR_NUM];
 #ifndef	__FreeBSD__
 	uint64_t	host_msrs[VM_MAXCPU][GUEST_MSR_NUM];
-	uint64_t	tsc_offset[VM_MAXCPU];
+	uint64_t	tsc_offset_active[VM_MAXCPU];
+	vmcs_state_t	vmcs_state[VM_MAXCPU];
 #endif
 	struct vmxctx	ctx[VM_MAXCPU];
 	struct vmxcap	cap[VM_MAXCPU];
@@ -142,6 +164,9 @@ CTASSERT((offsetof(struct vmx, pir_desc[0]) & 63) == 0);
 #define	VMX_VMWRITE_ERROR	4
 int	vmx_enter_guest(struct vmxctx *ctx, struct vmx *vmx, int launched);
 void	vmx_call_isr(uintptr_t entry);
+#ifndef __FreeBSD__
+void	vmx_call_trap(uint64_t);
+#endif
 
 u_long	vmx_fix_cr0(u_long cr0);
 u_long	vmx_fix_cr4(u_long cr4);
@@ -149,5 +174,6 @@ u_long	vmx_fix_cr4(u_long cr4);
 int	vmx_set_tsc_offset(struct vmx *vmx, int vcpu, uint64_t offset);
 
 extern char	vmx_exit_guest[];
+extern char	vmx_exit_guest_flush_rsb[];
 
 #endif

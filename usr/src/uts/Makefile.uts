@@ -24,7 +24,7 @@
 # Copyright (c) 2011 Bayard G. Bell. All rights reserved.
 # Copyright (c) 2011 by Delphix. All rights reserved.
 # Copyright (c) 2013 Andrew Stormont.  All rights reserved.
-# Copyright 2015 Joyent, Inc.
+# Copyright 2018 Joyent, Inc.
 # Copyright 2016 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
 #
 
@@ -44,7 +44,7 @@ include $(SRC)/Makefile.master
 DTEXTDOM =
 
 #
-# 	Keep references to $(SRC)/common relative.
+#	Keep references to $(SRC)/common relative.
 COMMONBASE=	$(UTSBASE)/../common
 
 #
@@ -62,10 +62,13 @@ COMMONBASE=	$(UTSBASE)/../common
 # The NOT_RELEASE_BUILD noise is to maintain compatibility with the
 # gatekeeper's nightly build script.
 #
+DEF_BUILDS32				= obj32
 DEF_BUILDS64				= obj64
 DEF_BUILDSONLY64			= obj64
+$(NOT_RELEASE_BUILD)DEF_BUILDS32	= debug32
 $(NOT_RELEASE_BUILD)DEF_BUILDS64	= debug64
 $(NOT_RELEASE_BUILD)DEF_BUILDSONLY64	= debug64
+ALL_BUILDS32				= obj32 debug32
 ALL_BUILDS64				= obj64 debug64
 ALL_BUILDSONLY64			= obj64 debug64
 
@@ -74,11 +77,14 @@ ALL_BUILDSONLY64			= obj64 debug64
 #	or modules in 64b dirs that aren't built 32b we
 #	need to create empty modlintlib files so global lint works
 #
+LINT32_BUILDS	= debug32
 LINT64_BUILDS	= debug64
 
 #
-#	Build class (64b)
+#	Build class (32b or 64b)
 #
+CLASS_OBJ32	= 32
+CLASS_DBG32	= 32
 CLASS_OBJ64	= 64
 CLASS_DBG64	= 64
 CLASS		= $(CLASS_$(BUILD_TYPE))
@@ -86,6 +92,8 @@ CLASS		= $(CLASS_$(BUILD_TYPE))
 #
 #	Build subdirectory
 #
+OBJS_DIR_OBJ32	= obj32
+OBJS_DIR_DBG32	= debug32
 OBJS_DIR_OBJ64	= obj64
 OBJS_DIR_DBG64	= debug64
 OBJS_DIR	= $(OBJS_DIR_$(BUILD_TYPE))
@@ -176,7 +184,7 @@ LINT_MODULE=	$(MODULE)
 #
 #	Build the compile/assemble lines:
 #
-EXTRA_OPTIONS		= 
+EXTRA_OPTIONS		=
 AS_DEFS			= -D_ASM -D__STDC__=0
 
 ALWAYS_DEFS_32		= -D_KERNEL -D_SYSCALL32 -D_DDI_STRICT
@@ -207,7 +215,6 @@ AS_CPPFLAGS	= $(ALWAYS_DEFS) $(ALL_DEFS) $(CONFIG_DEFS) $(AS_DEFS) \
 
 # Override the default, the kernel is squeaky clean
 CERRWARN = -errtags=yes -errwarn=%all
-$(__GNUC4)CERRWARN += -_gcc=-Wno-address
 
 CERRWARN += -_gcc=-Wno-missing-braces
 CERRWARN += -_gcc=-Wno-sign-compare
@@ -230,6 +237,7 @@ CFLAGS_uts		+= $(XAOPT)
 CFLAGS_uts		+= $(CTF_FLAGS_$(CLASS))
 CFLAGS_uts		+= $(CERRWARN)
 CFLAGS_uts		+= $(CCNOAUTOINLINE)
+CFLAGS_uts		+= $(CCNOREORDER)
 CFLAGS_uts		+= $(CGLOBALSTATIC)
 CFLAGS_uts		+= $(EXTRA_CFLAGS)
 CFLAGS_uts		+= $(CSOURCEDEBUGFLAGS)
@@ -318,7 +326,7 @@ CTFMERGE_GUDIR_sparc	= sun4u
 CTFMERGE_GUDIR_i386	= intel
 CTFMERGE_GUDIR		= $(CTFMERGE_GUDIR_$(MACH))
 
-CTFMERGE_GENUNIX 	= \
+CTFMERGE_GENUNIX	= \
 	$(UTSBASE)/$(CTFMERGE_GUDIR)/genunix/$(OBJS_DIR)/genunix
 
 #

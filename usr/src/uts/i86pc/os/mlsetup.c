@@ -362,11 +362,6 @@ mlsetup(struct regs *rp)
 	CPU->cpu_pri = 12;		/* initial PIL for the boot CPU */
 
 	/*
-	 * The kernel doesn't use LDTs unless a process explicitly requests one.
-	 */
-	p0.p_ldt_desc = null_sdesc;
-
-	/*
 	 * Initialize thread/cpu microstate accounting
 	 */
 	init_mstate(&t0, LMS_SYSTEM);
@@ -495,6 +490,7 @@ mlsetup(struct regs *rp)
 	 * Fill out cpu_ucode_info.  Update microcode if necessary.
 	 */
 	ucode_check(CPU);
+	cpuid_pass_ucode(CPU, x86_featureset);
 
 	if (workaround_errata(CPU) != 0)
 		panic("critical workaround(s) missing for boot cpu");

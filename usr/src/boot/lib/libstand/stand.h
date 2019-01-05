@@ -24,7 +24,7 @@
  * SUCH DAMAGE.
  *
  * $FreeBSD$
- * From	$NetBSD: stand.h,v 1.22 1997/06/26 19:17:40 drochner Exp $	
+ * From	$NetBSD: stand.h,v 1.22 1997/06/26 19:17:40 drochner Exp $
  */
 
 /*
@@ -131,12 +131,18 @@ extern struct fs_ops pkgfs_fsops;
 #define	SEEK_CUR	1	/* set file offset to current plus offset */
 #define	SEEK_END	2	/* set file offset to EOF plus offset */
 
-/* 
+/*
  * Device switch
  */
 struct devsw {
     const char	dv_name[8];
     int		dv_type;		/* opaque type constant, arch-dependant */
+#define	DEVT_NONE	0
+#define	DEVT_DISK	1
+#define	DEVT_NET	2
+#define	DEVT_CD		3
+#define	DEVT_ZFS	4
+#define	DEVT_FD		5
     int		(*dv_init)(void);	/* early probe call */
     int		(*dv_strategy)(void *devdata, int rw, daddr_t blk,
 			size_t size, char *buf, size_t *rsize);
@@ -159,16 +165,8 @@ extern int errno;
  * versions may be larger, but should be allowed to
  * overlap.
  */
-struct devdesc
-{
+struct devdesc {
     struct devsw	*d_dev;
-    int			d_type;
-#define	DEVT_NONE	0
-#define	DEVT_DISK	1
-#define	DEVT_NET	2
-#define	DEVT_CD		3
-#define	DEVT_ZFS	4
-#define	DEVT_FD		5
     int			d_unit;
     void		*d_opendata;
 };
@@ -287,7 +285,7 @@ extern struct	dirent *readdirfd(int);
 
 extern void	srandom(u_long seed);
 extern u_long	random(void);
-    
+
 /* imports from stdlib, locally modified */
 extern long	strtol(const char *, char **, int);
 extern unsigned long	strtoul(const char *, char **, int);
@@ -375,9 +373,9 @@ extern int	null_stat(struct open_file *f, struct stat *sb);
 extern int	null_readdir(struct open_file *f, struct dirent *d);
 
 
-/* 
- * Machine dependent functions and data, must be provided or stubbed by 
- * the consumer 
+/*
+ * Machine dependent functions and data, must be provided or stubbed by
+ * the consumer
  */
 extern int		getchar(void);
 extern int		ischar(void);

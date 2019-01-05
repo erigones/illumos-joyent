@@ -21,7 +21,7 @@
 /*
  * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 1999, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2017, Joyent, Inc.
+ * Copyright (c) 2018, Joyent, Inc.
  * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
@@ -97,6 +97,7 @@
 #include "nvpair.h"
 #include "pg.h"
 #include "rctl.h"
+#include "refhash.h"
 #include "sobj.h"
 #include "streams.h"
 #include "sysevent.h"
@@ -161,20 +162,18 @@ ps_threadprint(uintptr_t addr, const void *data, void *private)
 		mdb_printf("\tT  %?a <%b>\n", addr, t->t_state, t_state_bits);
 
 	if (prt_flags & PS_PRTLWPS) {
-		char name[THREAD_NAME_MAX];
+		char desc[128] = "";
 
-		mdb_printf("\tL  %?a ID: %u", t->t_lwp, t->t_tid);
-		if (thread_getname(addr, name, sizeof (name))) {
-			mdb_printf(" NAME: %s", name);
-		}
-		mdb_printf("\n");
+		(void) thread_getdesc(addr, B_FALSE, desc, sizeof (desc));
+
+		mdb_printf("\tL  %?a ID: %s\n", t->t_lwp, desc);
 	}
 
 	return (WALK_NEXT);
 }
 
 typedef struct mdb_pflags_proc {
-	struct pid 	*p_pidp;
+	struct pid	*p_pidp;
 	ushort_t	p_pidflag;
 	uint_t		p_proc_flag;
 	uint_t		p_flag;
@@ -264,8 +263,8 @@ pflags(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 
 typedef struct mdb_ps_proc {
 	char		p_stat;
-	struct pid 	*p_pidp;
-	struct pid 	*p_pgidp;
+	struct pid	*p_pidp;
+	struct pid	*p_pgidp;
 	struct cred	*p_cred;
 	struct sess	*p_sessp;
 	struct task	*p_task;
@@ -4688,6 +4687,10 @@ static const mdb_walker_t walkers[] = {
 		rctl_set_walk_step, NULL },
 	{ "rctl_val", "given a rctl_t, walk all rctl_val entries associated",
 		rctl_val_walk_init, rctl_val_walk_step },
+
+	/* from refhash.c */
+	{ REFHASH_WALK_NAME, REFHASH_WALK_DESC,
+		refhash_walk_init, refhash_walk_step, NULL },
 
 	/* from sobj.c */
 	{ "blocked", "walk threads blocked on a given sobj",

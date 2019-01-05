@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (c) 2011 NetApp, Inc.
  * All rights reserved.
  *
@@ -64,6 +66,10 @@ static struct iommu_ops *ops;
 static void *host_domain;
 #ifdef __FreeBSD__
 static eventhandler_tag add_tag, delete_tag;
+#endif
+
+#ifndef __FreeBSD__
+static volatile u_int iommu_initted;
 #endif
 
 static __inline int
@@ -177,20 +183,31 @@ iommu_pci_delete(void *arg, device_t dev)
 }
 #endif
 
+#ifndef __FreeBSD__
 static int
-iommu_find_device(dev_info_t *dip, void *unused)
+iommu_find_device(dev_info_t *dip, void *arg)
 {
-	if (pcie_is_pci_device(dip))
-		iommu_add_device(host_domain, pci_get_rid(dip));
+	boolean_t add = (boolean_t)arg;
+
+	if (pcie_is_pci_device(dip)) {
+		if (add)
+			iommu_add_device(host_domain, pci_get_rid(dip));
+		else
+			iommu_remove_device(host_domain, pci_get_rid(dip));
+	}
 
 	return (DDI_WALK_CONTINUE);
 }
+#endif
 
 static void
 iommu_init(void)
 {
 	int error, bus, slot, func;
 	vm_paddr_t maxaddr;
+#ifdef __FreeBSD__
+	devclass_t dc;
+#endif
 	device_t dev;
 
 	if (!iommu_enable)
@@ -232,6 +249,7 @@ iommu_init(void)
 	add_tag = EVENTHANDLER_REGISTER(pci_add_device, iommu_pci_add, NULL, 0);
 	delete_tag = EVENTHANDLER_REGISTER(pci_delete_device, iommu_pci_delete,
 	    NULL, 0);
+	dc = devclass_find("ppt");
 	for (bus = 0; bus <= PCI_BUSMAX; bus++) {
 		for (slot = 0; slot <= PCI_SLOTMAX; slot++) {
 			for (func = 0; func <= PCI_FUNCMAX; func++) {
@@ -239,14 +257,22 @@ iommu_init(void)
 				if (dev == NULL)
 					continue;
 
-				/* Everything belongs to the host domain. */
+				/* Skip passthrough devices. */
+				if (dc != NULL &&
+				    device_get_devclass(dev) == dc)
+					continue;
+
+				/*
+				 * Everything else belongs to the host
+				 * domain.
+				 */
 				iommu_add_device(host_domain,
 				    pci_get_rid(dev));
 			}
 		}
 	}
 #else
-	ddi_walk_devs(ddi_root_node(), iommu_find_device, NULL);
+	ddi_walk_devs(ddi_root_node(), iommu_find_device, (void *)B_TRUE);
 #endif
 	IOMMU_ENABLE();
 
@@ -264,17 +290,23 @@ iommu_cleanup(void)
 		EVENTHANDLER_DEREGISTER(pci_delete_device, delete_tag);
 		delete_tag = NULL;
 	}
+#else
+	atomic_store_rel_int(&iommu_initted, 0);
 #endif
 	IOMMU_DISABLE();
+#ifndef __FreeBSD__
+	ddi_walk_devs(ddi_root_node(), iommu_find_device, (void *)B_FALSE);
+#endif
 	IOMMU_DESTROY_DOMAIN(host_domain);
 	IOMMU_CLEANUP();
+#ifndef __FreeBSD__
+	ops = NULL;
+#endif
 }
 
 void *
 iommu_create_domain(vm_paddr_t maxaddr)
 {
-	static volatile u_int iommu_initted;
-
 	if (iommu_initted < 2) {
 		if (atomic_cmpset_int(&iommu_initted, 0, 1)) {
 			iommu_init();

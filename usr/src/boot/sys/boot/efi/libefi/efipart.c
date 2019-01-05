@@ -1,4 +1,4 @@
-/*-
+/*
  * Copyright (c) 2010 Marcel Moolenaar
  * All rights reserved.
  *
@@ -118,6 +118,7 @@ efiblk_get_pdinfo_list(struct devsw *dev)
 	return (NULL);
 }
 
+/* XXX this gets called way way too often, investigate */
 pdinfo_t *
 efiblk_get_pdinfo(struct devdesc *dev)
 {
@@ -135,6 +136,40 @@ efiblk_get_pdinfo(struct devdesc *dev)
 	return (pd);
 }
 
+static bool
+same_handle(pdinfo_t *pd, EFI_HANDLE h)
+{
+
+	return (pd->pd_handle == h || pd->pd_alias == h);
+}
+
+pdinfo_t *
+efiblk_get_pdinfo_by_handle(EFI_HANDLE h)
+{
+	pdinfo_t *dp, *pp;
+
+	/*
+	 * Check hard disks, then cd, then floppy
+	 */
+	STAILQ_FOREACH(dp, &hdinfo, pd_link) {
+		if (same_handle(dp, h))
+			return (dp);
+		STAILQ_FOREACH(pp, &dp->pd_part, pd_link) {
+			if (same_handle(pp, h))
+				return (pp);
+		}
+	}
+	STAILQ_FOREACH(dp, &cdinfo, pd_link) {
+		if (same_handle(dp, h))
+			return (dp);
+	}
+	STAILQ_FOREACH(dp, &fdinfo, pd_link) {
+		if (same_handle(dp, h))
+			return (dp);
+	}
+	return (NULL);
+}
+
 static int
 efiblk_pdinfo_count(pdinfo_list_t *pdi)
 {
@@ -147,7 +182,7 @@ efiblk_pdinfo_count(pdinfo_list_t *pdi)
 	return (i);
 }
 
-static int
+int
 efipart_inithandles(void)
 {
 	UINTN sz;
@@ -175,6 +210,10 @@ efipart_inithandles(void)
 
 	efipart_handles = hin;
 	efipart_nhandles = sz;
+#ifdef EFIPART_DEBUG
+	printf("%s: Got %d BLOCK IO MEDIA handle(s)\n", __func__,
+	    efipart_nhandles);
+#endif
 	return (0);
 }
 
@@ -289,6 +328,8 @@ efipart_fdinfo_add(EFI_HANDLE handle, uint32_t uid, EFI_DEVICE_PATH *devpath)
 	fd->pd_unit = uid;
 	fd->pd_handle = handle;
 	fd->pd_devpath = devpath;
+	fd->pd_parent = NULL;
+	fd->pd_devsw = &efipart_fddev;
 	STAILQ_INSERT_TAIL(&fdinfo, fd, pd_link);
 	return (0);
 }
@@ -318,11 +359,7 @@ efipart_updatefd(void)
 static int
 efipart_initfd(void)
 {
-	int rv;
 
-	rv = efipart_inithandles();
-	if (rv != 0)
-		return (rv);
 	STAILQ_INIT(&fdinfo);
 
 	efipart_updatefd();
@@ -363,6 +400,8 @@ efipart_cdinfo_add(EFI_HANDLE handle, EFI_HANDLE alias,
 	cd->pd_unit = unit;
 	cd->pd_alias = alias;
 	cd->pd_devpath = devpath;
+	cd->pd_parent = NULL;
+	cd->pd_devsw = &efipart_cddev;
 	STAILQ_INSERT_TAIL(&cdinfo, cd, pd_link);
 	return (0);
 }
@@ -438,11 +477,7 @@ efipart_updatecd(void)
 static int
 efipart_initcd(void)
 {
-	int rv;
 
-	rv = efipart_inithandles();
-	if (rv != 0)
-		return (rv);
 	STAILQ_INIT(&cdinfo);
 
 	efipart_updatecd();
@@ -492,6 +527,8 @@ efipart_hdinfo_add(EFI_HANDLE disk_handle, EFI_HANDLE part_handle)
 			pd->pd_handle = part_handle;
 			pd->pd_unit = node->PartitionNumber;
 			pd->pd_devpath = part_devpath;
+			pd->pd_parent = hd;
+			pd->pd_devsw = &efipart_hddev;
 			STAILQ_INSERT_TAIL(&hd->pd_part, pd, pd_link);
 			return (0);
 		}
@@ -508,6 +545,8 @@ efipart_hdinfo_add(EFI_HANDLE disk_handle, EFI_HANDLE part_handle)
 	hd->pd_handle = disk_handle;
 	hd->pd_unit = unit;
 	hd->pd_devpath = disk_devpath;
+	hd->pd_parent = NULL;
+	hd->pd_devsw = &efipart_hddev;
 	STAILQ_INSERT_TAIL(&hdinfo, hd, pd_link);
 
 	if (part_devpath == NULL)
@@ -524,6 +563,8 @@ efipart_hdinfo_add(EFI_HANDLE disk_handle, EFI_HANDLE part_handle)
 	pd->pd_handle = part_handle;
 	pd->pd_unit = node->PartitionNumber;
 	pd->pd_devpath = part_devpath;
+	pd->pd_parent = hd;
+	pd->pd_devsw = &efipart_hddev;
 	STAILQ_INSERT_TAIL(&hd->pd_part, pd, pd_link);
 
 	return (0);
@@ -582,6 +623,8 @@ efipart_hdinfo_add_filepath(EFI_HANDLE disk_handle)
 		pd->pd_handle = disk_handle;
 		pd->pd_unit = unit;
 		pd->pd_devpath = devpath;
+		pd->pd_parent = NULL;
+		pd->pd_devsw = &efipart_hddev;
 		STAILQ_INSERT_TAIL(&hdinfo, pd, pd_link);
 		free(pathname);
 		return (0);
@@ -612,6 +655,8 @@ efipart_hdinfo_add_filepath(EFI_HANDLE disk_handle)
 	pd->pd_handle = disk_handle;
 	pd->pd_unit = unit;
 	pd->pd_devpath = devpath;
+	pd->pd_parent = last;
+	pd->pd_devsw = &efipart_hddev;
 	STAILQ_INSERT_TAIL(&last->pd_part, pd, pd_link);
 	free(pathname);
 	return (0);
@@ -684,11 +729,7 @@ efipart_updatehd(void)
 static int
 efipart_inithd(void)
 {
-	int rv;
 
-	rv = efipart_inithandles();
-	if (rv != 0)
-		return (rv);
 	STAILQ_INIT(&hdinfo);
 
 	efipart_updatehd();
@@ -751,11 +792,10 @@ efipart_print_common(struct devsw *dev, pdinfo_list_t *pdlist, int verbose)
 				continue;
 
 			pd->pd_blkio = blkio;
-			pd_dev.d_dev = dev;
-			pd_dev.d_unit = pd->pd_unit;
+			pd_dev.dd.d_dev = dev;
+			pd_dev.dd.d_unit = pd->pd_unit;
 			pd_dev.d_slice = -1;
 			pd_dev.d_partition = -1;
-			pd_dev.d_opendata = blkio;
 			ret = disk_open(&pd_dev, blkio->Media->BlockSize *
 			    (blkio->Media->LastBlock + 1),
 			    blkio->Media->BlockSize);
@@ -828,7 +868,7 @@ efipart_open(struct open_file *f, ...)
 	if (pd->pd_bcache == NULL)
 		pd->pd_bcache = bcache_allocate();
 
-	if (dev->d_dev->dv_type == DEVT_DISK) {
+	if (dev->dd.d_dev->dv_type == DEVT_DISK) {
 		int rc;
 
 		rc = disk_open(dev,
@@ -867,7 +907,7 @@ efipart_close(struct open_file *f)
 		bcache_free(pd->pd_bcache);
 		pd->pd_bcache = NULL;
 	}
-	if (dev->d_dev->dv_type == DEVT_DISK)
+	if (dev->dd.d_dev->dv_type == DEVT_DISK)
 		return (disk_close(dev));
 	return (0);
 }
@@ -887,7 +927,7 @@ efipart_ioctl(struct open_file *f, u_long cmd, void *data)
 	if (pd == NULL)
 		return (EINVAL);
 
-	if (dev->d_dev->dv_type == DEVT_DISK) {
+	if (dev->dd.d_dev->dv_type == DEVT_DISK) {
 		rc = disk_ioctl(dev, cmd, data);
 		if (rc != ENOTTY)
 			return (rc);
@@ -974,7 +1014,7 @@ efipart_strategy(void *devdata, int rw, daddr_t blk, size_t size,
 	bcd.dv_devdata = devdata;
 	bcd.dv_cache = pd->pd_bcache;
 
-	if (dev->d_dev->dv_type == DEVT_DISK) {
+	if (dev->dd.d_dev->dv_type == DEVT_DISK) {
 		daddr_t offset;
 
 		offset = dev->d_offset * pd->pd_blkio->Media->BlockSize;
@@ -1018,7 +1058,7 @@ efipart_realstrategy(void *devdata, int rw, daddr_t blk, size_t size,
 	 * partition.
 	 */
 	disk_blocks = 0;
-	if (dev->d_dev->dv_type == DEVT_DISK) {
+	if (dev->dd.d_dev->dv_type == DEVT_DISK) {
 		if (disk_ioctl(dev, DIOCGMEDIASIZE, &disk_blocks) == 0) {
 			/* DIOCGMEDIASIZE does return bytes. */
 			disk_blocks /= blkio->Media->BlockSize;

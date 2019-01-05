@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (c) 2013  Zhixiang Yu <zcore@freebsd.org>
  * Copyright (c) 2015-2016 Alexander Motin <mav@FreeBSD.org>
  * All rights reserved.
@@ -2364,6 +2366,17 @@ pci_ahci_init(struct vmctx *ctx, struct pci_devinst *pi, char *opts, int atapi)
 		sc->port[p].pr_sc = sc;
 		sc->port[p].port = p;
 		sc->port[p].atapi = atapi;
+
+#ifndef __FreeBSD__
+		/*
+		 * Attempt to enable the write cache for this device, as the
+		 * guest will issue FLUSH commands when it requires durability.
+		 *
+		 * Failure here is fine, since an always-sync device will not
+		 * have an impact on correctness.
+		 */
+		(void) blockif_set_wce(bctxt, 1);
+#endif
 
 		/*
 		 * Create an identifier for the backing file.

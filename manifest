@@ -1038,7 +1038,6 @@ f kernel/kmdb/amd64/genunix 0555 root sys
 f kernel/kmdb/amd64/hook 0555 root sys
 f kernel/kmdb/amd64/i40e 0555 root sys
 f kernel/kmdb/amd64/idm 0555 root sys
-f kernel/kmdb/amd64/ii 0555 root sys
 f kernel/kmdb/amd64/ip 0555 root sys
 f kernel/kmdb/amd64/ipc 0555 root sys
 f kernel/kmdb/amd64/ipp 0555 root sys
@@ -1054,24 +1053,20 @@ f kernel/kmdb/amd64/mr_sas 0555 root sys
 f kernel/kmdb/amd64/nca 0555 root sys
 f kernel/kmdb/amd64/neti 0555 root sys
 f kernel/kmdb/amd64/nfs 0555 root sys
-f kernel/kmdb/amd64/nsctl 0555 root sys
 f kernel/kmdb/amd64/ptm 0555 root sys
 f kernel/kmdb/amd64/qlc 0555 root sys
 f kernel/kmdb/amd64/random 0555 root sys
-f kernel/kmdb/amd64/rdc 0555 root sys
 f kernel/kmdb/amd64/s1394 0555 root sys
 f kernel/kmdb/amd64/sata 0555 root sys
 f kernel/kmdb/amd64/scsi_vhci 0555 root sys
 f kernel/kmdb/amd64/sctp 0555 root sys
 f kernel/kmdb/amd64/sd 0555 root sys
-f kernel/kmdb/amd64/sdbc 0555 root sys
 f kernel/kmdb/amd64/sockfs 0555 root sys
 f kernel/kmdb/amd64/specfs 0555 root sys
 f kernel/kmdb/amd64/sppp 0555 root sys
 f kernel/kmdb/amd64/srpt 0555 root sys
 f kernel/kmdb/amd64/stmf 0555 root sys
 f kernel/kmdb/amd64/stmf_sbd 0555 root sys
-f kernel/kmdb/amd64/sv 0555 root sys
 f kernel/kmdb/amd64/ufs 0555 root sys
 f kernel/kmdb/amd64/uhci 0555 root sys
 f kernel/kmdb/amd64/usba 0555 root sys
@@ -1285,6 +1280,7 @@ f lib/amd64/libctf.so.1 0755 root bin
 s lib/amd64/libctf.so=libctf.so.1
 f lib/amd64/libcurses.so.1 0755 root bin
 s lib/amd64/libcurses.so=libcurses.so.1
+f lib/amd64/libcustr.so.1 0755 root bin
 f lib/amd64/libdevice.so.1 0755 root bin
 s lib/amd64/libdevice.so=libdevice.so.1
 f lib/amd64/libdevid.so.1 0755 root bin
@@ -1394,6 +1390,8 @@ f lib/amd64/libuuid.so.1 0755 root bin
 s lib/amd64/libuuid.so=libuuid.so.1
 f lib/amd64/libuutil.so.1 0755 root bin
 s lib/amd64/libuutil.so=libuutil.so.1
+f lib/amd64/libvmm.so.1 0755 root bin
+s lib/amd64/libvmm.so=libvmm.so.1
 f lib/amd64/libvmmapi.so.1 0755 root bin
 s lib/amd64/libvmmapi.so=libvmmapi.so.1
 f lib/amd64/libw.so.1 0755 root bin
@@ -1466,6 +1464,7 @@ f lib/libcmdutils.so.1 0755 root bin
 s lib/libcmdutils.so=libcmdutils.so.1
 f lib/libcontract.so.1 0755 root bin
 s lib/libcontract.so=libcontract.so.1
+f lib/libcustr.so.1 0755 root bin
 f lib/libcryptoutil.so.1 0755 root bin
 s lib/libcryptoutil.so=libcryptoutil.so.1
 f lib/libctf.so.1 0755 root bin
@@ -1756,11 +1755,6 @@ f lib/svc/manifest/system/logadm-upgrade.xml 0444 root sys
 f lib/svc/manifest/system/manifest-import.xml 0444 root sys
 f lib/svc/manifest/system/name-service-cache.xml 0444 root sys
 f lib/svc/manifest/system/ndmp.xml 0444 root sys
-f lib/svc/manifest/system/nws_ii.xml 0444 root sys
-f lib/svc/manifest/system/nws_rdc.xml 0444 root sys
-f lib/svc/manifest/system/nws_rdcsyncd.xml 0444 root sys
-f lib/svc/manifest/system/nws_scm.xml 0444 root sys
-f lib/svc/manifest/system/nws_sv.xml 0444 root sys
 f lib/svc/manifest/system/pfexecd.xml 0444 root sys
 f lib/svc/manifest/system/picl.xml 0444 root sys
 f lib/svc/manifest/system/poold.xml 0444 root sys
@@ -1841,7 +1835,6 @@ f lib/svc/method/svc-fcoet 0555 root sys
 f lib/svc/method/svc-forwarding 0555 root bin
 f lib/svc/method/svc-hostid 0555 root bin
 f lib/svc/method/svc-hotplug 0555 root bin
-f lib/svc/method/svc-ii 0744 root sys
 f lib/svc/method/svc-intrd 0555 root sys
 f lib/svc/method/svc-labeld 0555 root sys
 f lib/svc/method/svc-legacy-routing 0555 root bin
@@ -1852,22 +1845,17 @@ f lib/svc/method/svc-poold 0555 root sys
 f lib/svc/method/svc-pools 0555 root sys
 f lib/svc/method/svc-power 0555 root sys
 f lib/svc/method/svc-rbac 0555 root bin
-f lib/svc/method/svc-rdc 0744 root sys
-f lib/svc/method/svc-rdcsyncd 0744 root sys
 f lib/svc/method/svc-rdisc 0555 root bin
 f lib/svc/method/svc-resource-mgmt 0555 root sys
 f lib/svc/method/svc-ripng 0555 root bin
 f lib/svc/method/svc-route 0555 root bin
 f lib/svc/method/svc-scheduler 0555 root sys
-f lib/svc/method/svc-scm 0744 root sys
 f lib/svc/method/svc-sockfilter 0555 root bin
 f lib/svc/method/svc-srpt 0555 root sys
 f lib/svc/method/svc-stmf 0555 root sys
-f lib/svc/method/svc-sv 0744 root sys
 f lib/svc/method/svc-syseventd 0555 root sys
 f lib/svc/method/svc-tnd 0555 root sys
 f lib/svc/method/svc-utmpd 0555 root bin
-f lib/svc/method/svc-varpd 0555 root sys
 f lib/svc/method/svc-vrrp 0555 root sys
 f lib/svc/method/svc-zones 0555 root sys
 f lib/svc/method/system-log 0555 root bin
@@ -1958,11 +1946,16 @@ s platform/i86pc/kernel/pcbe/amd64/pcbe.GenuineIntel.6.29=pcbe.GenuineIntel.6.15
 s platform/i86pc/kernel/pcbe/amd64/pcbe.GenuineIntel.6.30=pcbe.GenuineIntel.6.15
 s platform/i86pc/kernel/pcbe/amd64/pcbe.GenuineIntel.6.31=pcbe.GenuineIntel.6.15
 s platform/i86pc/kernel/pcbe/amd64/pcbe.GenuineIntel.6.37=pcbe.GenuineIntel.6.15
+s platform/i86pc/kernel/pcbe/amd64/pcbe.GenuineIntel.6.38=pcbe.GenuineIntel.6.15
+s platform/i86pc/kernel/pcbe/amd64/pcbe.GenuineIntel.6.39=pcbe.GenuineIntel.6.15
 s platform/i86pc/kernel/pcbe/amd64/pcbe.GenuineIntel.6.42=pcbe.GenuineIntel.6.15
 s platform/i86pc/kernel/pcbe/amd64/pcbe.GenuineIntel.6.44=pcbe.GenuineIntel.6.15
 s platform/i86pc/kernel/pcbe/amd64/pcbe.GenuineIntel.6.45=pcbe.GenuineIntel.6.15
 s platform/i86pc/kernel/pcbe/amd64/pcbe.GenuineIntel.6.46=pcbe.GenuineIntel.6.15
 s platform/i86pc/kernel/pcbe/amd64/pcbe.GenuineIntel.6.47=pcbe.GenuineIntel.6.15
+s platform/i86pc/kernel/pcbe/amd64/pcbe.GenuineIntel.6.53=pcbe.GenuineIntel.6.15
+s platform/i86pc/kernel/pcbe/amd64/pcbe.GenuineIntel.6.54=pcbe.GenuineIntel.6.15
+s platform/i86pc/kernel/pcbe/amd64/pcbe.GenuineIntel.6.55=pcbe.GenuineIntel.6.15
 s platform/i86pc/kernel/pcbe/amd64/pcbe.GenuineIntel.6.58=pcbe.GenuineIntel.6.15
 s platform/i86pc/kernel/pcbe/amd64/pcbe.GenuineIntel.6.60=pcbe.GenuineIntel.6.15
 s platform/i86pc/kernel/pcbe/amd64/pcbe.GenuineIntel.6.61=pcbe.GenuineIntel.6.15
@@ -1971,15 +1964,324 @@ s platform/i86pc/kernel/pcbe/amd64/pcbe.GenuineIntel.6.63=pcbe.GenuineIntel.6.15
 s platform/i86pc/kernel/pcbe/amd64/pcbe.GenuineIntel.6.69=pcbe.GenuineIntel.6.15
 s platform/i86pc/kernel/pcbe/amd64/pcbe.GenuineIntel.6.70=pcbe.GenuineIntel.6.15
 s platform/i86pc/kernel/pcbe/amd64/pcbe.GenuineIntel.6.71=pcbe.GenuineIntel.6.15
+s platform/i86pc/kernel/pcbe/amd64/pcbe.GenuineIntel.6.76=pcbe.GenuineIntel.6.15
+s platform/i86pc/kernel/pcbe/amd64/pcbe.GenuineIntel.6.77=pcbe.GenuineIntel.6.15
 s platform/i86pc/kernel/pcbe/amd64/pcbe.GenuineIntel.6.78=pcbe.GenuineIntel.6.15
 s platform/i86pc/kernel/pcbe/amd64/pcbe.GenuineIntel.6.79=pcbe.GenuineIntel.6.15
 s platform/i86pc/kernel/pcbe/amd64/pcbe.GenuineIntel.6.85=pcbe.GenuineIntel.6.15
+s platform/i86pc/kernel/pcbe/amd64/pcbe.GenuineIntel.6.86=pcbe.GenuineIntel.6.15
+s platform/i86pc/kernel/pcbe/amd64/pcbe.GenuineIntel.6.92=pcbe.GenuineIntel.6.15
+s platform/i86pc/kernel/pcbe/amd64/pcbe.GenuineIntel.6.94=pcbe.GenuineIntel.6.15
+s platform/i86pc/kernel/pcbe/amd64/pcbe.GenuineIntel.6.95=pcbe.GenuineIntel.6.15
+s platform/i86pc/kernel/pcbe/amd64/pcbe.GenuineIntel.6.122=pcbe.GenuineIntel.6.15
+s platform/i86pc/kernel/pcbe/amd64/pcbe.GenuineIntel.6.142=pcbe.GenuineIntel.6.15
+s platform/i86pc/kernel/pcbe/amd64/pcbe.GenuineIntel.6.158=pcbe.GenuineIntel.6.15
 d platform/i86pc/kernel/sys 0755 root sys
 d platform/i86pc/kernel/sys/amd64 0755 root sys
 f platform/i86pc/kernel/sys/amd64/cpc 0755 root sys
 d platform/i86pc/ucode 0755 root sys
-f platform/i86pc/ucode/amd-ucode.bin 0444 root sys
-f platform/i86pc/ucode/intel-ucode.txt 0444 root sys
+d platform/i86pc/ucode/AuthenticAMD 0755 root sys
+f platform/i86pc/ucode/AuthenticAMD/1020-00 0444 root sys
+f platform/i86pc/ucode/AuthenticAMD/1022-00 0444 root sys
+f platform/i86pc/ucode/AuthenticAMD/1041-00 0444 root sys
+f platform/i86pc/ucode/AuthenticAMD/1043-00 0444 root sys
+f platform/i86pc/ucode/AuthenticAMD/1062-00 0444 root sys
+f platform/i86pc/ucode/AuthenticAMD/1080-00 0444 root sys
+f platform/i86pc/ucode/AuthenticAMD/1081-00 0444 root sys
+f platform/i86pc/ucode/AuthenticAMD/10A0-00 0444 root sys
+f platform/i86pc/ucode/AuthenticAMD/3010-00 0444 root sys
+f platform/i86pc/ucode/AuthenticAMD/5010-00 0444 root sys
+f platform/i86pc/ucode/AuthenticAMD/5020-00 0444 root sys
+f platform/i86pc/ucode/AuthenticAMD/6012-00 0444 root sys
+f platform/i86pc/ucode/AuthenticAMD/container 0444 root sys
+f platform/i86pc/ucode/AuthenticAMD/equivalence-table 0444 root sys
+d platform/i86pc/ucode/GenuineIntel 0755 root sys
+f platform/i86pc/ucode/GenuineIntel/00000650-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000650-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000650-08 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000651-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000652-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000652-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000652-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000653-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000653-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000653-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000653-08 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000660-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000665-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/0000066A-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/0000066A-08 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/0000066A-20 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/0000066D-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/0000066D-08 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/0000066D-20 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000671-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000672-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000673-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000681-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000681-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000681-08 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000681-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000681-20 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000683-08 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000683-20 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000686-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000686-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000686-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000686-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000686-80 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/0000068A-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/0000068A-20 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/0000068A-80 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000695-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000695-20 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000695-80 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000006A0-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000006A1-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000006B1-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000006B1-20 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000006B4-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000006B4-20 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000006D6-20 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000006E8-20 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000006EC-20 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000006EC-80 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000006F2-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000006F2-20 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000006F6-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000006F6-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000006F6-20 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000006F7-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000006F7-40 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000006FA-80 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000006FB-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000006FB-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000006FB-08 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000006FB-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000006FB-20 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000006FB-40 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000006FB-80 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000006FD-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000006FD-20 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000006FD-80 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F07-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F07-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F0A-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F0A-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F0A-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F12-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F24-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F24-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F24-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F25-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F25-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F25-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F25-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F26-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F27-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F27-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F27-08 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F29-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F29-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F29-08 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F32-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F32-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F32-08 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F33-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F33-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F33-08 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F34-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F34-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F34-08 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F34-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F41-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F41-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F41-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F41-08 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F41-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F41-20 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F41-80 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F43-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F43-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F43-08 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F43-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F43-80 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F44-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F44-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F44-08 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F44-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F44-80 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F47-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F47-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F47-08 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F47-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F47-80 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F48-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F48-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F48-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F48-08 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F48-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F48-40 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F49-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F49-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F49-08 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F49-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F49-20 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F49-80 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F4A-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F4A-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F4A-08 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F4A-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F4A-40 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F62-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F64-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F64-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F64-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F64-20 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F65-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F68-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00000F68-20 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00001632-00 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00010661-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00010661-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00010661-80 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00010676-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00010676-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00010676-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00010676-40 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00010676-80 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00010677-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/0001067A-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/0001067A-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/0001067A-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/0001067A-20 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/0001067A-40 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/0001067A-80 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000106A4-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000106A4-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000106A5-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000106A5-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000106C2-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000106C2-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000106C2-08 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000106CA-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000106CA-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000106CA-08 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000106CA-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000106D1-08 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000106E5-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000106E5-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000106E5-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00020652-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00020652-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00020655-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00020655-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00020655-80 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00020661-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00020661-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000206A7-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000206A7-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000206C2-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000206C2-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000206D6-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000206D6-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000206D6-08 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000206D6-20 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000206D6-40 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000206D7-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000206D7-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000206D7-08 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000206D7-20 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000206D7-40 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000206E6-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000206F2-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000206F2-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000306A9-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000306A9-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000306C3-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000306C3-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000306C3-20 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000306D4-40 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000306D4-80 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000306E4-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000306E4-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000306E4-08 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000306E4-20 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000306E4-40 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000306E4-80 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000306E6-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000306E6-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000306E6-08 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000306E6-20 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000306E6-40 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000306E6-80 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000306E7-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000306E7-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000306E7-08 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000306E7-20 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000306E7-40 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000306E7-80 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000306F2-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000306F2-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000306F2-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000306F2-08 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000306F2-20 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000306F2-40 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000306F4-80 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00040651-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00040651-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00040651-20 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00040651-40 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00040661-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00040661-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00040661-20 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00040671-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00040671-20 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000406E3-40 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000406E3-80 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000406F1-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000406F1-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000406F1-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000406F1-08 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000406F1-20 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000406F1-40 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000406F1-80 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00050653-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00050653-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00050653-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00050653-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00050653-80 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00050654-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00050654-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00050654-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00050654-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00050654-20 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00050654-80 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00050662-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00050663-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00050664-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/00050665-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000506C2-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000506C9-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000506C9-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000506CA-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000506CA-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000506E3-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000506E3-04 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000506E3-10 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000506E3-20 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000506F1-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000706A1-01 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000806E9-40 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000806E9-80 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000806EA-40 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000806EA-80 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000906E9-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000906E9-08 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000906E9-20 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000906EA-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000906EA-20 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000906EB-02 0444 root sys
 d proc 0755 root root
 d sbin 0755 root sys
 f sbin/autopush 0555 root bin
@@ -3201,7 +3503,6 @@ f usr/include/nfs/rnode4.h 0644 root bin
 f usr/include/nl_types.h 0644 root bin
 f usr/include/nlist.h 0644 root bin
 f usr/include/note.h 0644 root bin
-f usr/include/nsctl.h 0644 root bin
 f usr/include/nss.h 0644 root bin
 f usr/include/nss_common.h 0644 root bin
 f usr/include/nss_dbdefs.h 0644 root bin
@@ -3402,7 +3703,6 @@ f usr/include/smbsrv/alloc.h 0644 root bin
 f usr/include/smbsrv/cp_unicode.h 0644 root bin
 f usr/include/smbsrv/cp_usascii.h 0644 root bin
 f usr/include/smbsrv/hash_table.h 0644 root bin
-f usr/include/smbsrv/libmlrpc.h 0644 root bin
 f usr/include/smbsrv/libmlsvc.h 0644 root bin
 f usr/include/smbsrv/libsmb.h 0644 root bin
 f usr/include/smbsrv/libsmbns.h 0644 root bin
@@ -3416,17 +3716,14 @@ f usr/include/smbsrv/ndl/eventlog.ndl 0644 root bin
 f usr/include/smbsrv/ndl/llsrpc.ndl 0644 root bin
 f usr/include/smbsrv/ndl/lsarpc.ndl 0644 root bin
 f usr/include/smbsrv/ndl/msgsvc.ndl 0644 root bin
-f usr/include/smbsrv/ndl/ndrtypes.ndl 0644 root bin
 f usr/include/smbsrv/ndl/netdfs.ndl 0644 root bin
 f usr/include/smbsrv/ndl/netlogon.ndl 0644 root bin
-f usr/include/smbsrv/ndl/rpcpdu.ndl 0644 root bin
 f usr/include/smbsrv/ndl/samrpc.ndl 0644 root bin
 f usr/include/smbsrv/ndl/security.ndl 0644 root bin
 f usr/include/smbsrv/ndl/spoolss.ndl 0644 root bin
 f usr/include/smbsrv/ndl/srvsvc.ndl 0644 root bin
 f usr/include/smbsrv/ndl/svcctl.ndl 0644 root bin
 f usr/include/smbsrv/ndl/winreg.ndl 0644 root bin
-f usr/include/smbsrv/ndr.h 0644 root bin
 f usr/include/smbsrv/netbios.h 0644 root bin
 f usr/include/smbsrv/netrauth.h 0644 root bin
 f usr/include/smbsrv/nmpipes.h 0644 root bin
@@ -3454,7 +3751,6 @@ f usr/include/smbsrv/string.h 0644 root bin
 f usr/include/smbsrv/svrapi.h 0644 root bin
 f usr/include/smbsrv/winioctl.h 0644 root bin
 f usr/include/smbsrv/winsvc.h 0644 root bin
-f usr/include/smbsrv/wintypes.h 0644 root bin
 f usr/include/smhbaapi.h 0644 root bin
 f usr/include/spawn.h 0644 root bin
 f usr/include/stack_unwind.h 0644 root bin
@@ -3566,6 +3862,7 @@ f usr/include/sys/conf.h 0644 root bin
 f usr/include/sys/consdev.h 0644 root bin
 f usr/include/sys/console.h 0644 root bin
 f usr/include/sys/consplat.h 0644 root bin
+f usr/include/sys/containerof.h 0644 root bin
 d usr/include/sys/contract 0755 root bin
 f usr/include/sys/contract.h 0644 root bin
 f usr/include/sys/contract/device.h 0644 root bin
@@ -3580,6 +3877,7 @@ f usr/include/sys/corectl.h 0644 root bin
 f usr/include/sys/cpc_impl.h 0644 root bin
 f usr/include/sys/cpc_pcbe.h 0644 root bin
 f usr/include/sys/cpr.h 0644 root bin
+f usr/include/sys/cpu_uarray.h 0644 root bin
 f usr/include/sys/cpu.h 0644 root bin
 f usr/include/sys/cpucaps.h 0644 root bin
 f usr/include/sys/cpucaps_impl.h 0644 root bin
@@ -4090,9 +4388,6 @@ f usr/include/sys/multidata_impl.h 0644 root bin
 f usr/include/sys/mutex.h 0644 root bin
 f usr/include/sys/mutex_impl.h 0644 root bin
 f usr/include/sys/nbmlock.h 0644 root bin
-d usr/include/sys/ncall 0755 root bin
-f usr/include/sys/ncall/ncall.h 0644 root bin
-f usr/include/sys/ncall/ncall_module.h 0644 root bin
 f usr/include/sys/ndi_impldefs.h 0644 root bin
 f usr/include/sys/ndifm.h 0644 root bin
 f usr/include/sys/net80211.h 0644 root bin
@@ -4104,50 +4399,6 @@ f usr/include/sys/neti.h 0644 root bin
 f usr/include/sys/netstack.h 0644 root bin
 f usr/include/sys/nexusdefs.h 0644 root bin
 f usr/include/sys/note.h 0644 root bin
-f usr/include/sys/nsc_ddi.h 0644 root bin
-f usr/include/sys/nsc_thread.h 0644 root bin
-d usr/include/sys/nsctl 0755 root bin
-f usr/include/sys/nsctl/cfg.h 0644 root bin
-f usr/include/sys/nsctl/cfg_cluster.h 0644 root bin
-f usr/include/sys/nsctl/cfg_impl.h 0644 root bin
-f usr/include/sys/nsctl/cfg_lockd.h 0644 root bin
-f usr/include/sys/nsctl/contract.h 0644 root bin
-f usr/include/sys/nsctl/dsw.h 0644 root bin
-f usr/include/sys/nsctl/dsw_dev.h 0644 root bin
-f usr/include/sys/nsctl/librdc.h 0644 root bin
-f usr/include/sys/nsctl/model.h 0644 root bin
-f usr/include/sys/nsctl/ncall_inter.h 0644 root bin
-f usr/include/sys/nsctl/nsc_dev.h 0644 root bin
-f usr/include/sys/nsctl/nsc_disk.h 0644 root bin
-f usr/include/sys/nsctl/nsc_gen.h 0644 root bin
-f usr/include/sys/nsctl/nsc_hash.h 0644 root bin
-f usr/include/sys/nsctl/nsc_ioctl.h 0644 root bin
-f usr/include/sys/nsctl/nsc_mem.h 0644 root bin
-f usr/include/sys/nsctl/nsc_power.h 0644 root bin
-f usr/include/sys/nsctl/nsc_rmspin.h 0644 root bin
-f usr/include/sys/nsctl/nsctl.h 0644 root bin
-f usr/include/sys/nsctl/nsctl_inter.h 0644 root bin
-f usr/include/sys/nsctl/nsvers.h 0644 root bin
-f usr/include/sys/nsctl/rdc.h 0644 root bin
-f usr/include/sys/nsctl/rdc_bitmap.h 0644 root bin
-f usr/include/sys/nsctl/rdc_diskq.h 0644 root bin
-f usr/include/sys/nsctl/rdc_io.h 0644 root bin
-f usr/include/sys/nsctl/rdc_ioctl.h 0644 root bin
-f usr/include/sys/nsctl/rdc_prot.h 0644 root bin
-f usr/include/sys/nsctl/rdcerr.h 0644 root bin
-f usr/include/sys/nsctl/rdcrules.h 0644 root bin
-f usr/include/sys/nsctl/safestore.h 0644 root bin
-f usr/include/sys/nsctl/sd_bcache.h 0644 root bin
-f usr/include/sys/nsctl/sd_cache.h 0644 root bin
-f usr/include/sys/nsctl/sd_conf.h 0644 root bin
-f usr/include/sys/nsctl/sd_hash.h 0644 root bin
-f usr/include/sys/nsctl/sd_pcu.h 0644 root bin
-f usr/include/sys/nsctl/sd_trace.h 0644 root bin
-f usr/include/sys/nsctl/sdbc_ioctl.h 0644 root bin
-f usr/include/sys/nsctl/sv.h 0644 root bin
-f usr/include/sys/nsctl/sv_efi.h 0644 root bin
-f usr/include/sys/nsctl/sv_impl.h 0644 root bin
-f usr/include/sys/nskernd.h 0644 root bin
 f usr/include/sys/null.h 0644 root bin
 f usr/include/sys/nvpair.h 0644 root bin
 f usr/include/sys/nvpair_impl.h 0644 root bin
@@ -4481,15 +4732,6 @@ f usr/include/sys/ucred.h 0644 root bin
 f usr/include/sys/uio.h 0644 root bin
 f usr/include/sys/ulimit.h 0644 root bin
 f usr/include/sys/un.h 0644 root bin
-d usr/include/sys/unistat 0755 root bin
-f usr/include/sys/unistat/spcs_dtrinkets.h 0644 root bin
-f usr/include/sys/unistat/spcs_errors.h 0644 root bin
-f usr/include/sys/unistat/spcs_etext.h 0644 root bin
-f usr/include/sys/unistat/spcs_etrinkets.h 0644 root bin
-f usr/include/sys/unistat/spcs_s.h 0644 root bin
-f usr/include/sys/unistat/spcs_s_impl.h 0644 root bin
-f usr/include/sys/unistat/spcs_s_k.h 0644 root bin
-f usr/include/sys/unistat/spcs_s_u.h 0644 root bin
 f usr/include/sys/unistd.h 0644 root bin
 d usr/include/sys/usb 0755 root bin
 d usr/include/sys/usb/clients 0755 root bin
@@ -4796,6 +5038,8 @@ f usr/lib/adb/adbgen1 0755 root sys
 f usr/lib/adb/adbgen3 0755 root sys
 f usr/lib/adb/adbgen4 0755 root sys
 f usr/lib/adb/adbsub.o 0644 root sys
+d usr/lib/ahci 0755 root sys
+f usr/lib/ahci/ahciem 0555 root bin
 d usr/lib/adb/amd64 0755 root sys
 f usr/lib/adb/amd64/adbsub.o 0644 root sys
 d usr/lib/amd64 0755 root bin
@@ -4876,6 +5120,8 @@ s usr/lib/amd64/libcurses.so.1=../../../lib/amd64/libcurses.so.1
 s usr/lib/amd64/libcurses.so=../../../lib/amd64/libcurses.so.1
 f usr/lib/amd64/libdat.so.1 0755 root bin
 s usr/lib/amd64/libdat.so=libdat.so.1
+f usr/lib/amd64/libdemangle-sys.so.1 0755 root bin
+s usr/lib/amd64/libdemangle-sys.so=libdemangle-sys.so.1
 s usr/lib/amd64/libdevice.so.1=../../../lib/amd64/libdevice.so.1
 s usr/lib/amd64/libdevice.so=../../../lib/amd64/libdevice.so.1
 s usr/lib/amd64/libdevid.so.1=../../../lib/amd64/libdevid.so.1
@@ -5022,6 +5268,7 @@ f usr/lib/amd64/libpool.so.1 0755 root bin
 s usr/lib/amd64/libpool.so=libpool.so.1
 s usr/lib/amd64/libposix4.so.1=../../../lib/amd64/librt.so.1
 s usr/lib/amd64/libposix4.so=../../../lib/amd64/librt.so.1
+f usr/lib/amd64/libppt.so.1 0755 root bin
 s usr/lib/amd64/libproc.so.1=../../../lib/amd64/libproc.so.1
 s usr/lib/amd64/libproc.so=../../../lib/amd64/libproc.so.1
 f usr/lib/amd64/libproject.so.1 0755 root bin
@@ -5198,7 +5445,7 @@ f usr/lib/brand/bhyve/uninstall 0555 root sys
 f usr/lib/brand/bhyve/config.xml 0444 root sys
 f usr/lib/brand/bhyve/platform.xml 0444 root sys
 f usr/lib/brand/bhyve/statechange 0555 root sys
-h usr/lib/brand/bhyve/zhyve=usr/sbin/amd64/bhyve
+f usr/lib/brand/bhyve/zhyve 0555 root sys
 d usr/lib/brand/lx 0755 root bin
 s usr/lib/brand/lx/64=amd64
 d usr/lib/brand/lx/amd64 0755 root bin
@@ -5315,7 +5562,6 @@ f usr/lib/dl/dlled 0555 root bin
 f usr/lib/dl/dlrecv 0555 root bin
 f usr/lib/dl/dlsend 0555 root bin
 f usr/lib/dl/dltraninfo 0555 root bin
-f usr/lib/dscfglockd 0555 root bin
 d usr/lib/dtrace 0755 root bin
 d usr/lib/dtrace/64 0755 root bin
 f usr/lib/dtrace/64/drti.o 0644 root bin
@@ -5516,12 +5762,14 @@ d usr/lib/fm/topo/maps 0755 root bin
 f usr/lib/fm/topo/maps/xfp-hc-topology.xml 0444 root bin
 d usr/lib/fm/topo/plugins 0755 root bin
 f usr/lib/fm/topo/plugins/disk.so 0555 root bin
+f usr/lib/fm/topo/plugins/fac_prov_ahci.so 0555 root bin
 f usr/lib/fm/topo/plugins/fac_prov_ipmi.so 0555 root bin
 f usr/lib/fm/topo/plugins/fac_prov_mptsas.so 0555 root bin
 f usr/lib/fm/topo/plugins/ipmi.so 0555 root bin
 f usr/lib/fm/topo/plugins/nic.so 0555 root bin
 f usr/lib/fm/topo/plugins/ses.so 0555 root bin
 f usr/lib/fm/topo/plugins/smbios.so 0555 root bin
+f usr/lib/fm/topo/plugins/usb.so 0555 root bin
 f usr/lib/fm/topo/plugins/xfp.so 0555 root bin
 d usr/lib/fs 0755 root sys
 d usr/lib/fs/autofs 0755 root sys
@@ -5613,7 +5861,6 @@ f usr/lib/fs/ufs/fstyp.so.1 0555 root bin
 h usr/lib/fs/ufs/fstyp=usr/sbin/fstyp
 f usr/lib/fs/ufs/labelit 0555 root bin
 f usr/lib/fs/ufs/lockfs 0555 root bin
-f usr/lib/fs/ufs/mboot 0444 root sys
 f usr/lib/fs/ufs/mkfs 0555 root bin
 s usr/lib/fs/ufs/mount=../../../../etc/fs/ufs/mount
 f usr/lib/fs/ufs/ncheck 0555 root bin
@@ -6113,6 +6360,20 @@ f usr/lib/help/profiles/locale/RtZoneMngmnt.html 0444 root bin
 f usr/lib/help/profiles/locale/RtZoneSecurity.html 0444 root bin
 f usr/lib/hotplugd 0555 root bin
 f usr/lib/idmapd 0555 root bin
+d usr/lib/iconv 0755 root bin
+d usr/lib/iconv/amd64 0755 root bin
+f usr/lib/iconv/amd64/646%UTF-8.so 0755 root bin
+f usr/lib/iconv/amd64/UTF-8%646.so 0755 root bin
+f usr/lib/iconv/amd64/UTF-8%UCS-2.so 0755 root bin
+f usr/lib/iconv/amd64/UTF-8%UCS-2LE.so 0755 root bin
+f usr/lib/iconv/amd64/UCS-2%UTF-8.so 0755 root bin
+f usr/lib/iconv/amd64/UCS-2LE%UTF-8.so 0755 root bin
+f usr/lib/iconv/646%UTF-8.so 0755 root bin
+f usr/lib/iconv/UTF-8%646.so 0755 root bin
+f usr/lib/iconv/UTF-8%UCS-2.so 0755 root bin
+f usr/lib/iconv/UTF-8%UCS-2LE.so 0755 root bin
+f usr/lib/iconv/UCS-2%UTF-8.so 0755 root bin
+f usr/lib/iconv/UCS-2LE%UTF-8.so 0755 root bin
 d usr/lib/inet 0755 root bin
 d usr/lib/inet/amd64 0755 root bin
 f usr/lib/inet/amd64/in.iked 0555 root bin
@@ -6284,6 +6545,8 @@ s usr/lib/libcurses.so.1=../../lib/libcurses.so.1
 s usr/lib/libcurses.so=../../lib/libcurses.so.1
 f usr/lib/libdat.so.1 0755 root bin
 s usr/lib/libdat.so=libdat.so.1
+f usr/lib/libdemangle-sys.so.1 0755 root bin
+s usr/lib/libdemangle-sys.so=libdemangle-sys.so.1
 s usr/lib/libdevice.so.1=../../lib/libdevice.so.1
 s usr/lib/libdevice.so=../../lib/libdevice.so.1
 s usr/lib/libdevid.so.1=../../lib/libdevid.so.1
@@ -6309,8 +6572,6 @@ s usr/lib/libdns_sd.so=libdns_sd.so.1
 s usr/lib/libdoor.so.1=../../lib/libdoor.so.1
 s usr/lib/libdoor.so=../../lib/libdoor.so.1
 s usr/lib/libdwarf.so.1=../../lib/libdwarf.so.1
-f usr/lib/libdscfg.so.1 0755 root bin
-s usr/lib/libdscfg.so=libdscfg.so.1
 f usr/lib/libdtrace.so.1 0755 root bin
 s usr/lib/libdtrace.so=libdtrace.so.1
 f usr/lib/libdtrace_jni.so.1 0755 root bin
@@ -6424,6 +6685,7 @@ f usr/lib/libmenu.so.1 0755 root bin
 s usr/lib/libmenu.so=libmenu.so.1
 f usr/lib/libmilter.so.1 0755 root bin
 s usr/lib/libmilter.so=libmilter.so.1
+f usr/lib/libmlrpc.so.2 0755 root bin
 s usr/lib/libmp.so.1=../../lib/libmp.so.1
 s usr/lib/libmp.so.2=../../lib/libmp.so.2
 s usr/lib/libmp.so=../../lib/libmp.so.2
@@ -6439,8 +6701,6 @@ f usr/lib/libnisdb.so.2 0755 root bin
 s usr/lib/libnisdb.so=libnisdb.so.2
 f usr/lib/libnls.so.1 0755 root bin
 s usr/lib/libnls.so=libnls.so.1
-f usr/lib/libnsctl.so.1 0755 root bin
-s usr/lib/libnsctl.so=libnsctl.so.1
 s usr/lib/libnsl.so.1=../../lib/libnsl.so.1
 s usr/lib/libnsl.so=../../lib/libnsl.so.1
 f usr/lib/libnvfru.so.1 0755 root bin
@@ -6472,6 +6732,7 @@ s usr/lib/libposix4.so.1=../../lib/librt.so.1
 s usr/lib/libposix4.so=../../lib/librt.so.1
 f usr/lib/libpp.so.1 0755 root bin
 s usr/lib/libpp.so=libpp.so.1
+f usr/lib/libppt.so.1 0755 root bin
 s usr/lib/libproc.so.1=../../lib/libproc.so.1
 s usr/lib/libproc.so=../../lib/libproc.so.1
 f usr/lib/libproject.so.1 0755 root bin
@@ -6482,8 +6743,6 @@ f usr/lib/libraidcfg.so.1 0755 root bin
 s usr/lib/libraidcfg.so=libraidcfg.so.1
 s usr/lib/librcm.so.1=../../lib/librcm.so.1
 s usr/lib/librcm.so=../../lib/librcm.so.1
-f usr/lib/librdc.so.1 0755 root bin
-s usr/lib/librdc.so=librdc.so.1
 f usr/lib/librename.so.1 0755 root bin
 f usr/lib/libreparse.so.1 0755 root bin
 s usr/lib/libreparse.so=libreparse.so.1
@@ -6582,8 +6841,6 @@ s usr/lib/libtsol.so.2=../../lib/libtsol.so.2
 s usr/lib/libtsol.so=../../lib/libtsol.so.2
 s usr/lib/libumem.so.1=../../lib/libumem.so.1
 s usr/lib/libumem.so=../../lib/libumem.so.1
-f usr/lib/libunistat.so.1 0755 root bin
-s usr/lib/libunistat.so=libunistat.so.1
 s usr/lib/libuuid.so.1=../../lib/libuuid.so.1
 s usr/lib/libuuid.so=../../lib/libuuid.so.1
 s usr/lib/libuutil.so.1=../../lib/libuutil.so.1
@@ -9659,7 +9916,6 @@ f usr/lib/mdb/kvm/amd64/genunix.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/hook.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/i40e.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/idm.so 0555 root sys
-f usr/lib/mdb/kvm/amd64/ii.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/ip.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/ipc.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/ipp.so 0555 root sys
@@ -9676,19 +9932,16 @@ f usr/lib/mdb/kvm/amd64/mr_sas.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/nca.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/neti.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/nfs.so 0555 root sys
-f usr/lib/mdb/kvm/amd64/nsctl.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/nsmb.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/pmcs.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/ptm.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/qlc.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/random.so 0555 root sys
-f usr/lib/mdb/kvm/amd64/rdc.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/s1394.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/sata.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/scsi_vhci.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/sctp.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/sd.so 0555 root sys
-f usr/lib/mdb/kvm/amd64/sdbc.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/smbfs.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/smbsrv.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/sockfs.so 0555 root sys
@@ -9697,11 +9950,9 @@ f usr/lib/mdb/kvm/amd64/sppp.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/srpt.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/stmf.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/stmf_sbd.so 0555 root sys
-f usr/lib/mdb/kvm/amd64/sv.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/ufs.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/uhci.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/usba.so 0555 root sys
-f usr/lib/mdb/kvm/amd64/vmm.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/xhci.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/zfs.so 0555 root sys
 d usr/lib/mdb/proc 0755 root sys
@@ -9746,7 +9997,6 @@ f usr/lib/more.help 0644 root bin
 f usr/lib/mpss.so.1 0755 root bin
 f usr/lib/ncad_addr.so.1 0755 root bin
 s usr/lib/ncad_addr.so=ncad_addr.so.1
-f usr/lib/ncalladm 0555 root bin
 d usr/lib/ndmp 0755 root bin
 f usr/lib/ndmp/ndmpd 0555 root bin
 d usr/lib/netsvc 0755 root sys
@@ -9792,7 +10042,6 @@ f usr/lib/nfs/nfslogd 0555 root bin
 f usr/lib/nfs/nfsmapid 0555 root bin
 f usr/lib/nfs/rquotad 0555 root bin
 f usr/lib/nfs/statd 0555 root bin
-f usr/lib/nskernd 0555 root bin
 f usr/lib/nss_ad.so.1 0755 root bin
 s usr/lib/nss_compat.so.1=../../lib/nss_compat.so.1
 s usr/lib/nss_dns.so.1=../../lib/nss_dns.so.1
@@ -9839,10 +10088,7 @@ d usr/lib/raidcfg/amd64 0755 root bin
 f usr/lib/raidcfg/amd64/mpt.so.1 0755 root bin
 f usr/lib/raidcfg/mpt.so.1 0755 root bin
 d usr/lib/rcap 0755 root bin
-d usr/lib/rcap/amd64 0755 root bin
-f usr/lib/rcap/amd64/rcapd 0555 root bin
-d usr/lib/rcap/i86 0755 root bin
-h usr/lib/rcap/rcapd=usr/lib/isaexec
+f usr/lib/rcap/rcapd 0555 root bin
 d usr/lib/rcm 0755 root bin
 d usr/lib/rcm/modules 0755 root bin
 f usr/lib/rcm/modules/SUNW_aggr_rcm.so 0555 root bin
@@ -10091,15 +10337,6 @@ d usr/lib/smbfs 0755 root bin
 f usr/lib/smbfs/smbiod 0555 root bin
 f usr/lib/smbfs/smbiod-svc 0555 root bin
 d usr/lib/smbsrv 0755 root bin
-d usr/lib/smbsrv/amd64 0755 root bin
-f usr/lib/smbsrv/amd64/libmlrpc.so.1 0755 root bin
-s usr/lib/smbsrv/amd64/libmlrpc.so=libmlrpc.so.1
-f usr/lib/smbsrv/amd64/libmlsvc.so.1 0755 root bin
-s usr/lib/smbsrv/amd64/libmlsvc.so=libmlsvc.so.1
-f usr/lib/smbsrv/amd64/libsmb.so.1 0755 root bin
-s usr/lib/smbsrv/amd64/libsmb.so=libsmb.so.1
-f usr/lib/smbsrv/amd64/libsmbns.so.1 0755 root bin
-s usr/lib/smbsrv/amd64/libsmbns.so=libsmbns.so.1
 d usr/lib/smbsrv/dtrace 0755 root bin
 f usr/lib/smbsrv/dtrace/smbd-all.d 0555 root bin
 f usr/lib/smbsrv/dtrace/smbd-authsvc.d 0555 root bin
@@ -10108,14 +10345,9 @@ f usr/lib/smbsrv/dtrace/smbd-pipesvc.d 0555 root bin
 f usr/lib/smbsrv/dtrace/smbnode.d 0555 root bin
 f usr/lib/smbsrv/dtrace/smbsrv.d 0555 root bin
 f usr/lib/smbsrv/dtrace/smbvfs.d 0555 root bin
-f usr/lib/smbsrv/libmlrpc.so.1 0755 root bin
-s usr/lib/smbsrv/libmlrpc.so=libmlrpc.so.1
 f usr/lib/smbsrv/libmlsvc.so.1 0755 root bin
-s usr/lib/smbsrv/libmlsvc.so=libmlsvc.so.1
 f usr/lib/smbsrv/libsmb.so.1 0755 root bin
-s usr/lib/smbsrv/libsmb.so=libsmb.so.1
 f usr/lib/smbsrv/libsmbns.so.1 0755 root bin
-s usr/lib/smbsrv/libsmbns.so=libsmbns.so.1
 f usr/lib/smbsrv/smbd 0755 root bin
 d usr/lib/smedia 0755 root bin
 d usr/lib/smedia/amd64 0755 root bin
@@ -10132,8 +10364,6 @@ d usr/lib/smtp/sendmail 0555 root bin
 f usr/lib/smtp/sendmail/mailq 4555 root bin
 s usr/lib/smtp/sendmail/newaliases=sendmail
 f usr/lib/smtp/sendmail/sendmail 2555 root smmsp
-f usr/lib/sndrd 0555 root bin
-f usr/lib/sndrsyncd 0555 root bin
 d usr/lib/snmp 0755 root bin
 d usr/lib/spell 0755 root bin
 f usr/lib/spell/compress 0555 root bin
@@ -10261,14 +10491,34 @@ d usr/platform/i86pc/lib/fm/topo 0755 root sys
 d usr/platform/i86pc/lib/fm/topo/maps 0755 root sys
 f usr/platform/i86pc/lib/fm/topo/maps/Joyent-Compute-Platform-1101-disk-hc-topology.xml 0444 root sys
 s usr/platform/i86pc/lib/fm/topo/maps/Joyent-Compute-Platform-3101-hc-topology.xml=./SSG-2028R-ACR24L-hc-topology.xml
-s usr/platform/i86pc/lib/fm/topo/maps/Joyent-Compute-Platform-3102-hc-topology.xml=./SSG-2028R-ACR24L-hc-topology.xml 
+s usr/platform/i86pc/lib/fm/topo/maps/Joyent-Compute-Platform-3101-usb.usbtopo=./SSG-2028R-ACR24L-usb.usbtopo
+s usr/platform/i86pc/lib/fm/topo/maps/Joyent-Compute-Platform-3102-hc-topology.xml=./SSG-2028R-ACR24L-hc-topology.xml
+s usr/platform/i86pc/lib/fm/topo/maps/Joyent-Compute-Platform-3102-usb.usbtopo=./SSG-2028R-ACR24L-usb.usbtopo
+f usr/platform/i86pc/lib/fm/topo/maps/Joyent-Compute-Platform-3301-hc-topology.xml 0444 root sys
+s usr/platform/i86pc/lib/fm/topo/maps/Joyent-Compute-Platform-3302-hc-topology.xml=./Joyent-Compute-Platform-3301-hc-topology.xml
+f usr/platform/i86pc/lib/fm/topo/maps/Joyent-Compute-Platform-330x-chassis-hc-topology.xml 0444 root sys
+f usr/platform/i86pc/lib/fm/topo/maps/Joyent-Compute-Platform-330x-fan-hc-topology.xml 0444 root sys
+s usr/platform/i86pc/lib/fm/topo/maps/Joyent-M12G5-hc-topology.xml=./SSG-2029P-ACR24L-hc-topology.xml
+s usr/platform/i86pc/lib/fm/topo/maps/Joyent-M12G5-usb.usbtopo=./SSG-2029P-ACR24L-usb.usbtopo
 f usr/platform/i86pc/lib/fm/topo/maps/Joyent-Storage-Platform-7001-hc-topology.xml 0444 root sys
 f usr/platform/i86pc/lib/fm/topo/maps/Joyent-Storage-Platform-7001-chassis-hc-topology.xml 0444 root sys
 f usr/platform/i86pc/lib/fm/topo/maps/Joyent-Storage-Platform-7001-slot-hc-topology.xml 0444 root sys
+s usr/platform/i86pc/lib/fm/topo/maps/Joyent-S10G5-hc-topology.xml=./SSG-6049P-E1CR36L-hc-topology.xml
+s usr/platform/i86pc/lib/fm/topo/maps/Joyent-S10G5-usb.usbtopo=./SSG-6049P-E1CR36L-usb.usbtopo
+f usr/platform/i86pc/lib/fm/topo/maps/SSG-6049P-E1CR36L-chassis-hc-topology.xml 0444 root sys
+f usr/platform/i86pc/lib/fm/topo/maps/SSG-6049P-E1CR36L-hc-topology.xml 0444 root sys
+f usr/platform/i86pc/lib/fm/topo/maps/SSG-6049P-E1CR36L-slot-hc-topology.xml 0444 root sys
+f usr/platform/i86pc/lib/fm/topo/maps/SSG-6049P-E1CR36L-usb.usbtopo 0444 root sys
 f usr/platform/i86pc/lib/fm/topo/maps/SSG-2028R-ACR24L-hc-topology.xml 0444 root sys
 f usr/platform/i86pc/lib/fm/topo/maps/SSG-2028R-ACR24L-chassis-hc-topology.xml 0444 root sys
 f usr/platform/i86pc/lib/fm/topo/maps/SSG-2028R-ACR24L-disk-hc-topology.xml 0444 root sys
 f usr/platform/i86pc/lib/fm/topo/maps/SSG-2028R-ACR24L-slot-hc-topology.xml 0444 root sys
+f usr/platform/i86pc/lib/fm/topo/maps/SSG-2028R-ACR24L-usb.usbtopo 0444 root sys
+f usr/platform/i86pc/lib/fm/topo/maps/SSG-2029P-ACR24L-hc-topology.xml 0444 root sys
+f usr/platform/i86pc/lib/fm/topo/maps/SSG-2029P-ACR24L-chassis-hc-topology.xml 0444 root sys
+f usr/platform/i86pc/lib/fm/topo/maps/SSG-2029P-ACR24L-disk-hc-topology.xml 0444 root sys
+f usr/platform/i86pc/lib/fm/topo/maps/SSG-2029P-ACR24L-slot-hc-topology.xml 0444 root sys
+f usr/platform/i86pc/lib/fm/topo/maps/SSG-2029P-ACR24L-usb.usbtopo 0444 root sys
 f usr/platform/i86pc/lib/fm/topo/maps/chassis-hc-topology.xml 0444 root sys
 f usr/platform/i86pc/lib/fm/topo/maps/chip-hc-topology.xml 0444 root sys
 f usr/platform/i86pc/lib/fm/topo/maps/fan-hc-topology.xml 0444 root sys
@@ -10364,8 +10614,6 @@ f usr/sbin/acpixtract 0555 root bin
 f usr/sbin/add_drv 0555 root bin
 f usr/sbin/allocate 4555 root bin
 d usr/sbin/amd64 0755 root bin
-f usr/sbin/amd64/bhyve 0555 root sys
-f usr/sbin/amd64/bhyvectl 0555 root sys
 f usr/sbin/amd64/dtrace 0555 root bin
 f usr/sbin/amd64/intrstat 0555 root bin
 f usr/sbin/amd64/ipf 0555 root bin
@@ -10388,8 +10636,8 @@ h usr/sbin/audlinks=usr/sbin/devfsadm
 s usr/sbin/automount=../lib/fs/autofs/automount
 s usr/sbin/autopush=../../sbin/autopush
 s usr/sbin/beadm=../../sbin/beadm
-h usr/sbin/bhyve=usr/lib/isaexec
-h usr/sbin/bhyvectl=usr/lib/isaexec
+f usr/sbin/bhyve 0555 root sys
+f usr/sbin/bhyvectl 0555 root sys
 f usr/sbin/cfgadm 0555 root bin
 f usr/sbin/check-hostname 0555 root mail
 f usr/sbin/check-permissions 0555 root mail
@@ -10403,6 +10651,7 @@ f usr/sbin/consadmd 0555 root sys
 f usr/sbin/cpustat 0555 root bin
 f usr/sbin/cron 0555 root sys
 s usr/sbin/cryptoadm=../../sbin/cryptoadm
+f usr/sbin/cxgbetool 0555 root sys
 s usr/sbin/dcopy=clri
 h usr/sbin/deallocate=usr/sbin/allocate
 f usr/sbin/devfsadm 0755 root sys
@@ -10550,6 +10799,7 @@ f usr/sbin/poolbind 0555 root bin
 f usr/sbin/poolcfg 0555 root bin
 h usr/sbin/ports=usr/sbin/devfsadm
 h usr/sbin/poweroff=usr/sbin/halt
+f usr/sbin/pptadm 0555 root bin
 f usr/sbin/praudit 0555 root bin
 f usr/sbin/projadd 0555 root sys
 f usr/sbin/projdel 0555 root sys
@@ -10664,6 +10914,7 @@ d usr/sfw/bin 0755 root bin
 d usr/sfw/bin/amd64 0755 root bin
 d usr/share 0755 root sys
 d usr/share/hwdata 0755 root sys
+f usr/share/hwdata/efi.fixes 0444 root bin
 f usr/share/hwdata/pci.ids 0444 root bin
 d usr/share/lib 0755 root sys
 d usr/share/lib/dict 0755 root bin
@@ -11444,7 +11695,7 @@ f usr/share/lib/zoneinfo/Pacific/Gambier 0644 root bin
 f usr/share/lib/zoneinfo/Pacific/Guadalcanal 0644 root bin
 f usr/share/lib/zoneinfo/Pacific/Guam 0644 root bin
 f usr/share/lib/zoneinfo/Pacific/Honolulu 0644 root bin
-h usr/share/lib/zoneinfo/Pacific/Johnston=usr/share/lib/zoneinfo/Pacific/Honolulu 
+h usr/share/lib/zoneinfo/Pacific/Johnston=usr/share/lib/zoneinfo/Pacific/Honolulu
 f usr/share/lib/zoneinfo/Pacific/Kiritimati 0644 root bin
 f usr/share/lib/zoneinfo/Pacific/Kosrae 0644 root bin
 f usr/share/lib/zoneinfo/Pacific/Kwajalein 0644 root bin
@@ -12193,6 +12444,7 @@ f usr/share/man/man1m/poold.1m 0444 root bin
 f usr/share/man/man1m/poolstat.1m 0444 root bin
 f usr/share/man/man1m/ports.1m 0444 root bin
 s usr/share/man/man1m/poweroff.1m=halt.1m
+f usr/share/man/man1m/pptadm.1m 0444 root bin
 f usr/share/man/man1m/praudit.1m 0444 root bin
 f usr/share/man/man1m/projadd.1m 0444 root bin
 f usr/share/man/man1m/projdel.1m 0444 root bin
@@ -12422,6 +12674,7 @@ s usr/share/man/man2/getpmsg.2=getmsg.2
 s usr/share/man/man2/getppid.2=getpid.2
 f usr/share/man/man2/getppriv.2 0444 root bin
 s usr/share/man/man2/getprojid.2=settaskid.2
+f usr/share/man/man2/getrandom.2 0444 root bin
 s usr/share/man/man2/getrctl.2=setrctl.2
 f usr/share/man/man2/getrlimit.2 0444 root bin
 f usr/share/man/man2/getsid.2 0444 root bin
@@ -12668,6 +12921,7 @@ s usr/share/man/man3c/_setjmp.3c=_longjmp.3c
 f usr/share/man/man3c/_stack_grow.3c 0444 root bin
 f usr/share/man/man3c/a64l.3c 0444 root bin
 f usr/share/man/man3c/abort.3c 0444 root bin
+s usr/share/man/man3c/abort_handler_s.3c=set_constraint_handler_s.3c
 f usr/share/man/man3c/abs.3c 0444 root bin
 s usr/share/man/man3c/addrtosymstr.3c=walkcontext.3c
 f usr/share/man/man3c/addsev.3c 0444 root bin
@@ -12836,6 +13090,7 @@ f usr/share/man/man3c/bsearch.3c 0444 root bin
 f usr/share/man/man3c/bstring.3c 0444 root bin
 f usr/share/man/man3c/btowc.3c 0444 root bin
 s usr/share/man/man3c/btowc_l.3c=btowc.3c
+f usr/share/man/man3c/byteorder.3c 0444 root bin
 s usr/share/man/man3c/bzero.3c=bstring.3c
 s usr/share/man/man3c/calloc.3c=malloc.3c
 f usr/share/man/man3c/call_once.3c 0444 root bin
@@ -13091,6 +13346,9 @@ f usr/share/man/man3c/getmntent.3c 0444 root bin
 f usr/share/man/man3c/getnetgrent.3c 0444 root bin
 s usr/share/man/man3c/getnetgrent_r.3c=getnetgrent.3c
 f usr/share/man/man3c/getopt.3c 0444 root bin
+f usr/share/man/man3c/getopt_long.3c 0444 root bin
+s usr/share/man/man3c/getopt_long_clip.3c=getopt_long.3c
+s usr/share/man/man3c/getopt_long_only.3c=getopt_long.3c
 f usr/share/man/man3c/getpagesize.3c 0444 root bin
 f usr/share/man/man3c/getpagesizes.3c 0444 root bin
 f usr/share/man/man3c/getpass.3c 0444 root bin
@@ -13155,12 +13413,27 @@ s usr/share/man/man3c/htobe64.3c=endian.3c
 s usr/share/man/man3c/htole16.3c=endian.3c
 s usr/share/man/man3c/htole32.3c=endian.3c
 s usr/share/man/man3c/htole64.3c=endian.3c
+s usr/share/man/man3c/htonl.3c=byteorder.3c
+s usr/share/man/man3c/htonll.3c=byteorder.3c
+s usr/share/man/man3c/htons.3c=byteorder.3c
 f usr/share/man/man3c/iconv.3c 0444 root bin
 f usr/share/man/man3c/iconv_close.3c 0444 root bin
 f usr/share/man/man3c/iconv_open.3c 0444 root bin
+s usr/share/man/man3c/ignore_handler_s.3c=set_constraint_handler_s.3c
 f usr/share/man/man3c/imaxabs.3c 0444 root bin
 f usr/share/man/man3c/imaxdiv.3c 0444 root bin
 f usr/share/man/man3c/index.3c 0444 root bin
+f usr/share/man/man3c/inet.3c 0444 root bin
+s usr/share/man/man3c/inet6.3c=inet.3c
+s usr/share/man/man3c/inet_addr.3c=inet.3c
+s usr/share/man/man3c/inet_aton.3c=inet.3c
+s usr/share/man/man3c/inet_lnaof.3c=inet.3c
+s usr/share/man/man3c/inet_makeaddr.3c=inet.3c
+s usr/share/man/man3c/inet_netof.3c=inet.3c
+s usr/share/man/man3c/inet_network.3c=inet.3c
+s usr/share/man/man3c/inet_ntoa.3c=inet.3c
+s usr/share/man/man3c/inet_ntop.3c=inet.3c
+s usr/share/man/man3c/inet_pton.3c=inet.3c
 f usr/share/man/man3c/initgroups.3c 0444 root bin
 s usr/share/man/man3c/initstate.3c=random.3c
 f usr/share/man/man3c/inotify_init.3c 0444 root bin
@@ -13286,8 +13559,8 @@ s usr/share/man/man3c/mbsnrtowcs.3c=mbsrtowcs.3c
 s usr/share/man/man3c/mbsnrtowcs_l.3c=mbsrtowcs.3c
 f usr/share/man/man3c/mbsrtowcs.3c 0444 root bin
 s usr/share/man/man3c/mbsrtowcs_l.3c=mbsrtowcs.3c
-s usr/share/man/man3c/mbstowcs.3c=mbsrtowcs.3c
-s usr/share/man/man3c/mbstowcs_l.3c=mbsrtowcs.3c
+f usr/share/man/man3c/mbstowcs.3c 0444 root bin
+s usr/share/man/man3c/mbstowcs_l.3c=mbstowcs.3c
 f usr/share/man/man3c/mbtowc.3c 0444 root bin
 s usr/share/man/man3c/mbtowc_l.3c=mbtowc.3c
 s usr/share/man/man3c/memalign.3c=malloc.3c
@@ -13304,6 +13577,7 @@ s usr/share/man/man3c/memmem.3c=memory.3c
 s usr/share/man/man3c/memmove.3c=memory.3c
 f usr/share/man/man3c/memory.3c 0444 root bin
 s usr/share/man/man3c/memset.3c=memory.3c
+f usr/share/man/man3c/memset_s.3c 0444 root bin
 s usr/share/man/man3c/minor.3c=makedev.3c
 s usr/share/man/man3c/mkdtemp.3c=mkstemp.3c
 f usr/share/man/man3c/mkfifo.3c 0444 root bin
@@ -13354,6 +13628,9 @@ s usr/share/man/man3c/ngettext.3c=gettext.3c
 f usr/share/man/man3c/nl_langinfo.3c 0444 root bin
 s usr/share/man/man3c/nl_langinfo_l.3c=nl_langinfo.3c
 s usr/share/man/man3c/nrand48.3c=drand48.3c
+s usr/share/man/man3c/ntohl.3c=byteorder.3c
+s usr/share/man/man3c/ntohll.3c=byteorder.3c
+s usr/share/man/man3c/ntohs.3c=byteorder.3c
 f usr/share/man/man3c/offsetof.3c 0444 root bin
 f usr/share/man/man3c/opendir.3c 0444 root bin
 s usr/share/man/man3c/openlog.3c=syslog.3c
@@ -13437,6 +13714,7 @@ f usr/share/man/man3c/pthread_attr_get_np.3c 0444 root bin
 f usr/share/man/man3c/pthread_attr_getdetachstate.3c 0444 root bin
 f usr/share/man/man3c/pthread_attr_getguardsize.3c 0444 root bin
 f usr/share/man/man3c/pthread_attr_getinheritsched.3c 0444 root bin
+f usr/share/man/man3c/pthread_attr_getname_np.3c 0444 root bin
 f usr/share/man/man3c/pthread_attr_getschedparam.3c 0444 root bin
 f usr/share/man/man3c/pthread_attr_getschedpolicy.3c 0444 root bin
 f usr/share/man/man3c/pthread_attr_getscope.3c 0444 root bin
@@ -13447,6 +13725,7 @@ f usr/share/man/man3c/pthread_attr_init.3c 0444 root bin
 s usr/share/man/man3c/pthread_attr_setdetachstate.3c=pthread_attr_getdetachstate.3c
 s usr/share/man/man3c/pthread_attr_setguardsize.3c=pthread_attr_getguardsize.3c
 s usr/share/man/man3c/pthread_attr_setinheritsched.3c=pthread_attr_getinheritsched.3c
+s usr/share/man/man3c/pthread_attr_setname_np.3c=pthread_attr_getname_np.3c
 s usr/share/man/man3c/pthread_attr_setschedparam.3c=pthread_attr_getschedparam.3c
 s usr/share/man/man3c/pthread_attr_setschedpolicy.3c=pthread_attr_getschedpolicy.3c
 s usr/share/man/man3c/pthread_attr_setscope.3c=pthread_attr_getscope.3c
@@ -13481,6 +13760,7 @@ f usr/share/man/man3c/pthread_detach.3c 0444 root bin
 f usr/share/man/man3c/pthread_equal.3c 0444 root bin
 f usr/share/man/man3c/pthread_exit.3c 0444 root bin
 f usr/share/man/man3c/pthread_getconcurrency.3c 0444 root bin
+f usr/share/man/man3c/pthread_getname_np.3c 0444 root bin
 f usr/share/man/man3c/pthread_getschedparam.3c 0444 root bin
 f usr/share/man/man3c/pthread_getspecific.3c 0444 root bin
 f usr/share/man/man3c/pthread_join.3c 0444 root bin
@@ -13530,6 +13810,7 @@ f usr/share/man/man3c/pthread_self.3c 0444 root bin
 f usr/share/man/man3c/pthread_setcancelstate.3c 0444 root bin
 f usr/share/man/man3c/pthread_setcanceltype.3c 0444 root bin
 s usr/share/man/man3c/pthread_setconcurrency.3c=pthread_getconcurrency.3c
+s usr/share/man/man3c/pthread_setname_np.3c=pthread_getname_np.3c
 s usr/share/man/man3c/pthread_setschedparam.3c=pthread_getschedparam.3c
 f usr/share/man/man3c/pthread_setschedprio.3c 0444 root bin
 s usr/share/man/man3c/pthread_setspecific.3c=pthread_getspecific.3c
@@ -13652,6 +13933,7 @@ s usr/share/man/man3c/setattrat.3c=fgetattr.3c
 f usr/share/man/man3c/setbuf.3c 0444 root bin
 f usr/share/man/man3c/setbuffer.3c 0444 root bin
 f usr/share/man/man3c/setcat.3c 0444 root bin
+f usr/share/man/man3c/set_constraint_handler_s.3c 0444 root bin
 f usr/share/man/man3c/setenv.3c 0444 root bin
 s usr/share/man/man3c/setgrent.3c=getgrnam.3c
 s usr/share/man/man3c/sethostname.3c=gethostname.3c
@@ -13805,6 +14087,7 @@ s usr/share/man/man3c/thr_continue.3c=thr_suspend.3c
 f usr/share/man/man3c/thr_create.3c 0444 root bin
 f usr/share/man/man3c/thr_exit.3c 0444 root bin
 f usr/share/man/man3c/thr_getconcurrency.3c 0444 root bin
+f usr/share/man/man3c/thr_getname.3c 0444 root bin
 f usr/share/man/man3c/thr_getprio.3c 0444 root bin
 s usr/share/man/man3c/thr_getspecific.3c=thr_keycreate.3c
 f usr/share/man/man3c/thr_join.3c 0444 root bin
@@ -13815,6 +14098,7 @@ f usr/share/man/man3c/thr_main.3c 0444 root bin
 f usr/share/man/man3c/thr_min_stack.3c 0444 root bin
 f usr/share/man/man3c/thr_self.3c 0444 root bin
 s usr/share/man/man3c/thr_setconcurrency.3c=thr_getconcurrency.3c
+s usr/share/man/man3c/thr_setname.3c=thr_getname.3c
 s usr/share/man/man3c/thr_setprio.3c=thr_getprio.3c
 s usr/share/man/man3c/thr_setspecific.3c=thr_keycreate.3c
 f usr/share/man/man3c/thr_sigsetmask.3c 0444 root bin
@@ -14208,6 +14492,10 @@ s usr/share/man/man3contract/ct_tmpl_set_cookie.3contract=ct_tmpl_activate.3cont
 s usr/share/man/man3contract/ct_tmpl_set_critical.3contract=ct_tmpl_activate.3contract
 s usr/share/man/man3contract/ct_tmpl_set_informative.3contract=ct_tmpl_activate.3contract
 d usr/share/man/man3cpc 0755 root bin
+f usr/share/man/man3cpc/bdw_de_events.3cpc 0444 root bin
+f usr/share/man/man3cpc/bdw_events.3cpc 0444 root bin
+f usr/share/man/man3cpc/bdx_events.3cpc 0444 root bin
+f usr/share/man/man3cpc/bnl_events.3cpc 0444 root bin
 f usr/share/man/man3cpc/cpc.3cpc 0444 root bin
 f usr/share/man/man3cpc/cpc_access.3cpc 0444 root bin
 s usr/share/man/man3cpc/cpc_bind_cpu.3cpc=cpc_bind_curlwp.3cpc
@@ -14273,11 +14561,27 @@ s usr/share/man/man3cpc/cpc_walk_generic_events_pic.3cpc=cpc_npic.3cpc
 s usr/share/man/man3cpc/cpc_walk_names.3cpc=cpc_getcpuver.3cpc
 s usr/share/man/man3cpc/cpc_walk_requests.3cpc=cpc_set_create.3cpc
 f usr/share/man/man3cpc/generic_events.3cpc 0444 root bin
+f usr/share/man/man3cpc/glm_events.3cpc 0444 root bin
+f usr/share/man/man3cpc/glp_events.3cpc 0444 root bin
+f usr/share/man/man3cpc/hsw_events.3cpc 0444 root bin
+f usr/share/man/man3cpc/hsx_events.3cpc 0444 root bin
+f usr/share/man/man3cpc/ivb_events.3cpc 0444 root bin
+f usr/share/man/man3cpc/ivt_events.3cpc 0444 root bin
+f usr/share/man/man3cpc/jkt_events.3cpc 0444 root bin
+f usr/share/man/man3cpc/nhm_ep_events.3cpc 0444 root bin
+f usr/share/man/man3cpc/nhm_ex_events.3cpc 0444 root bin
 f usr/share/man/man3cpc/pctx_capture.3cpc 0444 root bin
 s usr/share/man/man3cpc/pctx_create.3cpc=pctx_capture.3cpc
 s usr/share/man/man3cpc/pctx_release.3cpc=pctx_capture.3cpc
 s usr/share/man/man3cpc/pctx_run.3cpc=pctx_capture.3cpc
 f usr/share/man/man3cpc/pctx_set_events.3cpc 0444 root bin
+f usr/share/man/man3cpc/skl_events.3cpc 0444 root bin
+f usr/share/man/man3cpc/skx_events.3cpc 0444 root bin
+f usr/share/man/man3cpc/slm_events.3cpc 0444 root bin
+f usr/share/man/man3cpc/snb_events.3cpc 0444 root bin
+f usr/share/man/man3cpc/wsm_ep_dp_events.3cpc 0444 root bin
+f usr/share/man/man3cpc/wsm_ep_sp_events.3cpc 0444 root bin
+f usr/share/man/man3cpc/wsm_ex_events.3cpc 0444 root bin
 d usr/share/man/man3curses 0755 root bin
 s usr/share/man/man3curses/addch.3curses=curs_addch.3curses
 s usr/share/man/man3curses/addchnstr.3curses=curs_addchstr.3curses
@@ -15037,7 +15341,7 @@ f usr/share/man/man3dlpi/dlpi_info.3dlpi 0444 root bin
 f usr/share/man/man3dlpi/dlpi_linkname.3dlpi 0444 root bin
 f usr/share/man/man3dlpi/dlpi_mactype.3dlpi 0444 root bin
 f usr/share/man/man3dlpi/dlpi_open.3dlpi 0444 root bin
-s usr/share/man/man3dlpi/dlpi_open_zone.3dlpi=dlpi_open.3dlpi 
+s usr/share/man/man3dlpi/dlpi_open_zone.3dlpi=dlpi_open.3dlpi
 s usr/share/man/man3dlpi/dlpi_promiscoff.3dlpi=dlpi_promiscon.3dlpi
 f usr/share/man/man3dlpi/dlpi_promiscon.3dlpi 0444 root bin
 f usr/share/man/man3dlpi/dlpi_recv.3dlpi 0444 root bin
@@ -15426,6 +15730,26 @@ s usr/share/man/man3head/ipc.3head=ipc.h.3head
 f usr/share/man/man3head/ipc.h.3head 0444 root bin
 s usr/share/man/man3head/iso646.3head=iso646.h.3head
 f usr/share/man/man3head/iso646.h.3head 0444 root bin
+s usr/share/man/man3head/LIST_CLASS_ENTRY.3head=queue.h.3head
+s usr/share/man/man3head/LIST_CLASS_HEAD.3head=queue.h.3head
+s usr/share/man/man3head/LIST_CONCAT.3head=queue.h.3head
+s usr/share/man/man3head/LIST_EMPTY.3head=queue.h.3head
+s usr/share/man/man3head/LIST_ENTRY.3head=queue.h.3head
+s usr/share/man/man3head/LIST_FIRST.3head=queue.h.3head
+s usr/share/man/man3head/LIST_FOREACH.3head=queue.h.3head
+s usr/share/man/man3head/LIST_FOREACH_FROM.3head=queue.h.3head
+s usr/share/man/man3head/LIST_FOREACH_FROM_SAFE.3head=queue.h.3head
+s usr/share/man/man3head/LIST_FOREACH_SAFE.3head=queue.h.3head
+s usr/share/man/man3head/LIST_HEAD.3head=queue.h.3head
+s usr/share/man/man3head/LIST_HEAD_INITIALIZER.3head=queue.h.3head
+s usr/share/man/man3head/LIST_INIT.3head=queue.h.3head
+s usr/share/man/man3head/LIST_INSERT_AFTER.3head=queue.h.3head
+s usr/share/man/man3head/LIST_INSERT_BEFORE.3head=queue.h.3head
+s usr/share/man/man3head/LIST_INSERT_HEAD.3head=queue.h.3head
+s usr/share/man/man3head/LIST_NEXT.3head=queue.h.3head
+s usr/share/man/man3head/LIST_PREV.3head=queue.h.3head
+s usr/share/man/man3head/LIST_REMOVE.3head=queue.h.3head
+s usr/share/man/man3head/LIST_SWAP.3head=queue.h.3head
 s usr/share/man/man3head/langinfo.3head=langinfo.h.3head
 f usr/share/man/man3head/langinfo.h.3head 0444 root bin
 s usr/share/man/man3head/libgen.3head=libgen.h.3head
@@ -15458,6 +15782,7 @@ s usr/share/man/man3head/pthread.3head=pthread.h.3head
 f usr/share/man/man3head/pthread.h.3head 0444 root bin
 s usr/share/man/man3head/pwd.3head=pwd.h.3head
 f usr/share/man/man3head/pwd.h.3head 0444 root bin
+f usr/share/man/man3head/queue.h.3head 0444 root bin
 s usr/share/man/man3head/regex.3head=regex.h.3head
 f usr/share/man/man3head/regex.h.3head 0444 root bin
 s usr/share/man/man3head/resource.3head=resource.h.3head
@@ -15480,10 +15805,52 @@ s usr/share/man/man3head/siginfo.3head=siginfo.h.3head
 f usr/share/man/man3head/siginfo.h.3head 0444 root bin
 s usr/share/man/man3head/signal.3head=signal.h.3head
 f usr/share/man/man3head/signal.h.3head 0444 root bin
+s usr/share/man/man3head/SLIST_CLASS_ENTRY.3head=queue.h.3head
+s usr/share/man/man3head/SLIST_CLASS_HEAD.3head=queue.h.3head
+s usr/share/man/man3head/SLIST_CONCAT.3head=queue.h.3head
+s usr/share/man/man3head/SLIST_EMPTY.3head=queue.h.3head
+s usr/share/man/man3head/SLIST_ENTRY.3head=queue.h.3head
+s usr/share/man/man3head/SLIST_FIRST.3head=queue.h.3head
+s usr/share/man/man3head/SLIST_FOREACH.3head=queue.h.3head
+s usr/share/man/man3head/SLIST_FOREACH_FROM.3head=queue.h.3head
+s usr/share/man/man3head/SLIST_FOREACH_FROM_SAFE.3head=queue.h.3head
+s usr/share/man/man3head/SLIST_FOREACH_SAFE.3head=queue.h.3head
+s usr/share/man/man3head/SLIST_HEAD.3head=queue.h.3head
+s usr/share/man/man3head/SLIST_HEAD_INITIALIZER.3head=queue.h.3head
+s usr/share/man/man3head/SLIST_INIT.3head=queue.h.3head
+s usr/share/man/man3head/SLIST_INSERT_AFTER.3head=queue.h.3head
+s usr/share/man/man3head/SLIST_INSERT_HEAD.3head=queue.h.3head
+s usr/share/man/man3head/SLIST_NEXT.3head=queue.h.3head
+s usr/share/man/man3head/SLIST_REMOVE.3head=queue.h.3head
+s usr/share/man/man3head/SLIST_REMOVE_AFTER.3head=queue.h.3head
+s usr/share/man/man3head/SLIST_REMOVE_HEAD.3head=queue.h.3head
+s usr/share/man/man3head/SLIST_SWAP.3head=queue.h.3head
 s usr/share/man/man3head/socket.3head=socket.h.3head
 f usr/share/man/man3head/socket.h.3head 0444 root bin
 s usr/share/man/man3head/spawn.3head=spawn.h.3head
 f usr/share/man/man3head/spawn.h.3head 0444 root bin
+s usr/share/man/man3head/STAILQ_CLASS_ENTRY.3head=queue.h.3head
+s usr/share/man/man3head/STAILQ_CLASS_HEAD.3head=queue.h.3head
+s usr/share/man/man3head/STAILQ_CONCAT.3head=queue.h.3head
+s usr/share/man/man3head/STAILQ_EMPTY.3head=queue.h.3head
+s usr/share/man/man3head/STAILQ_ENTRY.3head=queue.h.3head
+s usr/share/man/man3head/STAILQ_FIRST.3head=queue.h.3head
+s usr/share/man/man3head/STAILQ_FOREACH.3head=queue.h.3head
+s usr/share/man/man3head/STAILQ_FOREACH_FROM.3head=queue.h.3head
+s usr/share/man/man3head/STAILQ_FOREACH_FROM_SAFE.3head=queue.h.3head
+s usr/share/man/man3head/STAILQ_FOREACH_SAFE.3head=queue.h.3head
+s usr/share/man/man3head/STAILQ_HEAD.3head=queue.h.3head
+s usr/share/man/man3head/STAILQ_HEAD_INITIALIZER.3head=queue.h.3head
+s usr/share/man/man3head/STAILQ_INIT.3head=queue.h.3head
+s usr/share/man/man3head/STAILQ_INSERT_AFTER.3head=queue.h.3head
+s usr/share/man/man3head/STAILQ_INSERT_HEAD.3head=queue.h.3head
+s usr/share/man/man3head/STAILQ_INSERT_TAIL.3head=queue.h.3head
+s usr/share/man/man3head/STAILQ_LAST.3head=queue.h.3head
+s usr/share/man/man3head/STAILQ_NEXT.3head=queue.h.3head
+s usr/share/man/man3head/STAILQ_REMOVE.3head=queue.h.3head
+s usr/share/man/man3head/STAILQ_REMOVE_AFTER.3head=queue.h.3head
+s usr/share/man/man3head/STAILQ_REMOVE_HEAD.3head=queue.h.3head
+s usr/share/man/man3head/STAILQ_SWAP.3head=queue.h.3head
 s usr/share/man/man3head/stat.3head=stat.h.3head
 f usr/share/man/man3head/stat.h.3head 0444 root bin
 s usr/share/man/man3head/statvfs.3head=statvfs.h.3head
@@ -15506,6 +15873,32 @@ s usr/share/man/man3head/stropts.3head=stropts.h.3head
 f usr/share/man/man3head/stropts.h.3head 0444 root bin
 s usr/share/man/man3head/syslog.3head=syslog.h.3head
 f usr/share/man/man3head/syslog.h.3head 0444 root bin
+s usr/share/man/man3head/TAILQ_CLASS_ENTRY.3head=queue.h.3head
+s usr/share/man/man3head/TAILQ_CLASS_HEAD.3head=queue.h.3head
+s usr/share/man/man3head/TAILQ_CONCAT.3head=queue.h.3head
+s usr/share/man/man3head/TAILQ_EMPTY.3head=queue.h.3head
+s usr/share/man/man3head/TAILQ_ENTRY.3head=queue.h.3head
+s usr/share/man/man3head/TAILQ_FIRST.3head=queue.h.3head
+s usr/share/man/man3head/TAILQ_FOREACH.3head=queue.h.3head
+s usr/share/man/man3head/TAILQ_FOREACH_FROM.3head=queue.h.3head
+s usr/share/man/man3head/TAILQ_FOREACH_FROM_SAFE.3head=queue.h.3head
+s usr/share/man/man3head/TAILQ_FOREACH_REVERSE.3head=queue.h.3head
+s usr/share/man/man3head/TAILQ_FOREACH_REVERSE_FROM.3head=queue.h.3head
+s usr/share/man/man3head/TAILQ_FOREACH_REVERSE_FROM_SAFE.3head=queue.h.3head
+s usr/share/man/man3head/TAILQ_FOREACH_REVERSE_SAFE.3head=queue.h.3head
+s usr/share/man/man3head/TAILQ_FOREACH_SAFE.3head=queue.h.3head
+s usr/share/man/man3head/TAILQ_HEAD.3head=queue.h.3head
+s usr/share/man/man3head/TAILQ_HEAD_INITIALIZER.3head=queue.h.3head
+s usr/share/man/man3head/TAILQ_INIT.3head=queue.h.3head
+s usr/share/man/man3head/TAILQ_INSERT_AFTER.3head=queue.h.3head
+s usr/share/man/man3head/TAILQ_INSERT_BEFORE.3head=queue.h.3head
+s usr/share/man/man3head/TAILQ_INSERT_HEAD.3head=queue.h.3head
+s usr/share/man/man3head/TAILQ_INSERT_TAIL.3head=queue.h.3head
+s usr/share/man/man3head/TAILQ_LAST.3head=queue.h.3head
+s usr/share/man/man3head/TAILQ_NEXT.3head=queue.h.3head
+s usr/share/man/man3head/TAILQ_PREV.3head=queue.h.3head
+s usr/share/man/man3head/TAILQ_REMOVE.3head=queue.h.3head
+s usr/share/man/man3head/TAILQ_SWAP.3head=queue.h.3head
 s usr/share/man/man3head/tar.3head=tar.h.3head
 f usr/share/man/man3head/tar.h.3head 0444 root bin
 s usr/share/man/man3head/tcp.3head=tcp.h.3head
@@ -16784,6 +17177,7 @@ s usr/share/man/man3proc/Plwp_alt_stack.3proc=Plwp_stack.3proc
 f usr/share/man/man3proc/Plwp_getasrs.3proc 0444 root bin
 s usr/share/man/man3proc/Plwp_getfpregs.3proc=Plwp_getregs.3proc
 f usr/share/man/man3proc/Plwp_getgwindows.3proc 0444 root bin
+f usr/share/man/man3proc/Plwp_getname.3proc 0444 root bin
 f usr/share/man/man3proc/Plwp_getpsinfo.3proc 0444 root bin
 f usr/share/man/man3proc/Plwp_getregs.3proc 0444 root bin
 f usr/share/man/man3proc/Plwp_getspymaster.3proc 0444 root bin
@@ -17622,7 +18016,6 @@ d usr/share/man/man3socket 0755 root bin
 f usr/share/man/man3socket/accept.3socket 0444 root bin
 s usr/share/man/man3socket/accept4.3socket=accept.3socket
 f usr/share/man/man3socket/bind.3socket 0444 root bin
-f usr/share/man/man3socket/byteorder.3socket 0444 root bin
 f usr/share/man/man3socket/connect.3socket 0444 root bin
 s usr/share/man/man3socket/endnetent.3socket=getnetbyname.3socket
 s usr/share/man/man3socket/endprotoent.3socket=getprotobyname.3socket
@@ -17667,16 +18060,11 @@ s usr/share/man/man3socket/getservent_r.3socket=getservbyname.3socket
 f usr/share/man/man3socket/getsockname.3socket 0444 root bin
 f usr/share/man/man3socket/getsockopt.3socket 0444 root bin
 f usr/share/man/man3socket/getsourcefilter.3socket 0444 root bin
-s usr/share/man/man3socket/htonl.3socket=byteorder.3socket
-s usr/share/man/man3socket/htonll.3socket=byteorder.3socket
-s usr/share/man/man3socket/htons.3socket=byteorder.3socket
 f usr/share/man/man3socket/icmp6_filter.3socket 0444 root bin
 s usr/share/man/man3socket/if_freenameindex.3socket=if_nametoindex.3socket
 s usr/share/man/man3socket/if_indextoname.3socket=if_nametoindex.3socket
 s usr/share/man/man3socket/if_nameindex.3socket=if_nametoindex.3socket
 f usr/share/man/man3socket/if_nametoindex.3socket 0444 root bin
-f usr/share/man/man3socket/inet.3socket 0444 root bin
-s usr/share/man/man3socket/inet6.3socket=inet.3socket
 f usr/share/man/man3socket/inet6_opt.3socket 0444 root bin
 s usr/share/man/man3socket/inet6_opt_append.3socket=inet6_opt.3socket
 s usr/share/man/man3socket/inet6_opt_find.3socket=inet6_opt.3socket
@@ -17692,19 +18080,7 @@ s usr/share/man/man3socket/inet6_rth_init.3socket=inet6_rth.3socket
 s usr/share/man/man3socket/inet6_rth_reverse.3socket=inet6_rth.3socket
 s usr/share/man/man3socket/inet6_rth_segments.3socket=inet6_rth.3socket
 s usr/share/man/man3socket/inet6_rth_space.3socket=inet6_rth.3socket
-s usr/share/man/man3socket/inet_addr.3socket=inet.3socket
-s usr/share/man/man3socket/inet_aton.3socket=inet.3socket
-s usr/share/man/man3socket/inet_lnaof.3socket=inet.3socket
-s usr/share/man/man3socket/inet_makeaddr.3socket=inet.3socket
-s usr/share/man/man3socket/inet_netof.3socket=inet.3socket
-s usr/share/man/man3socket/inet_network.3socket=inet.3socket
-s usr/share/man/man3socket/inet_ntoa.3socket=inet.3socket
-s usr/share/man/man3socket/inet_ntop.3socket=inet.3socket
-s usr/share/man/man3socket/inet_pton.3socket=inet.3socket
 f usr/share/man/man3socket/listen.3socket 0444 root bin
-s usr/share/man/man3socket/ntohl.3socket=byteorder.3socket
-s usr/share/man/man3socket/ntohll.3socket=byteorder.3socket
-s usr/share/man/man3socket/ntohs.3socket=byteorder.3socket
 f usr/share/man/man3socket/rcmd.3socket 0444 root bin
 s usr/share/man/man3socket/rcmd_af.3socket=rcmd.3socket
 f usr/share/man/man3socket/recv.3socket 0444 root bin
@@ -18453,7 +18829,6 @@ f usr/share/man/man4/dialups.4 0444 root bin
 s usr/share/man/man4/dir.4=dir_ufs.4
 f usr/share/man/man4/dir_ufs.4 0444 root bin
 f usr/share/man/man4/driver.conf.4 0444 root bin
-f usr/share/man/man4/ds.log.4 0444 root bin
 s usr/share/man/man4/dumpdates.4=ufsdump.4
 f usr/share/man/man4/ethers.4 0444 root bin
 f usr/share/man/man4/exec_attr.4 0444 root bin
@@ -18570,7 +18945,6 @@ f usr/share/man/man4/publickey.4 0444 root bin
 s usr/share/man/man4/qop.4=mech.4
 f usr/share/man/man4/queuedefs.4 0444 root bin
 f usr/share/man/man4/rcmscript.4 0444 root bin
-f usr/share/man/man4/rdc.cf.4 0444 root bin
 f usr/share/man/man4/remote.4 0444 root bin
 f usr/share/man/man4/resolv.conf.4 0444 root bin
 s usr/share/man/man4/rhosts.4=hosts.equiv.4
@@ -18594,7 +18968,6 @@ f usr/share/man/man4/smb.4 0444 root bin
 f usr/share/man/man4/smbautohome.4 0444 root bin
 f usr/share/man/man4/smhba.conf.4 0444 root bin
 s usr/share/man/man4/snapshot_cache.4=devices.4
-f usr/share/man/man4/sndr.4 0444 root bin
 f usr/share/man/man4/sock2path.d.4 0444 root bin
 f usr/share/man/man4/space.4 0444 root bin
 s usr/share/man/man4/submit.cf.4=sendmail.4
@@ -18774,7 +19147,6 @@ f usr/share/man/man5/threads.5 0444 root bin
 f usr/share/man/man5/timerfd.5 0444 root bin
 f usr/share/man/man5/version.4th.5 0444 root bin
 f usr/share/man/man5/vgrindefs.5 0444 root bin
-f usr/share/man/man5/zfsloader.5 0444 root bin
 f usr/share/man/man5/zones.5 0444 root bin
 f usr/share/man/man5/zpool-features.5 0444 root bin
 d usr/share/man/man7 0755 root bin

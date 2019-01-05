@@ -132,7 +132,7 @@ static void	ipnet_input(mblk_t *);
 static int	ipnet_wput(queue_t *, mblk_t *);
 static int	ipnet_rsrv(queue_t *);
 static int	ipnet_open(queue_t *, dev_t *, int, int, cred_t *);
-static int	ipnet_close(queue_t *);
+static int	ipnet_close(queue_t *, int, cred_t *);
 static void	ipnet_ioctl(queue_t *, mblk_t *);
 static void	ipnet_iocdata(queue_t *, mblk_t *);
 static void 	ipnet_wputnondata(queue_t *, mblk_t *);
@@ -588,8 +588,9 @@ done:
 	return (err);
 }
 
+/* ARGSUSED */
 static int
-ipnet_close(queue_t *rq)
+ipnet_close(queue_t *rq, int flags __unused, cred_t *credp __unused)
 {
 	ipnet_t		*ipnet = rq->q_ptr;
 	ipnet_stack_t	*ips = ipnet->ipnet_ns->netstack_ipnet;
@@ -685,7 +686,8 @@ ipnet_ioctl(queue_t *q, mblk_t *mp)
 			qreply(q, mp);
 			break;
 		}
-		/* Fallthrough, we don't support I_STR with DLIOCIPNETINFO. */
+		/* We don't support I_STR with DLIOCIPNETINFO. */
+		/* FALLTHROUGH */
 	default:
 		miocnak(q, mp, 0, EINVAL);
 		break;

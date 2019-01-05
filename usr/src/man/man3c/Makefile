@@ -11,10 +11,11 @@
 
 #
 # Copyright 2011, Richard Lowe
-# Copyright 2017 Nexenta Systems, Inc.
+# Copyright 2018 Nexenta Systems, Inc.
 # Copyright 2013, OmniTI Computer Consulting, Inc. All rights reserved.
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
-# Copyright 2016 Joyent, Inc.
+# Copyright 2018 Joyent, Inc.
+# Copyright 2018 Jason King
 #
 
 include		$(SRC)/Makefile.master
@@ -59,6 +60,7 @@ MANFILES=	__fbufsize.3c					\
 		bsearch.3c					\
 		bstring.3c					\
 		btowc.3c					\
+		byteorder.3c					\
 		call_once.3c					\
 		catgets.3c					\
 		catopen.3c					\
@@ -176,6 +178,7 @@ MANFILES=	__fbufsize.3c					\
 		getmntent.3c					\
 		getnetgrent.3c					\
 		getopt.3c					\
+		getopt_long.3c					\
 		getpagesize.3c					\
 		getpagesizes.3c					\
 		getpass.3c					\
@@ -210,6 +213,7 @@ MANFILES=	__fbufsize.3c					\
 		imaxabs.3c					\
 		imaxdiv.3c					\
 		index.3c					\
+		inet.3c						\
 		initgroups.3c					\
 		inotify_init.3c					\
 		inotify_add_watch.3c				\
@@ -242,6 +246,7 @@ MANFILES=	__fbufsize.3c					\
 		mbtowc.3c					\
 		membar_ops.3c					\
 		memory.3c					\
+		memset_s.3c					\
 		mkfifo.3c					\
 		mkstemp.3c					\
 		mktemp.3c					\
@@ -305,6 +310,7 @@ MANFILES=	__fbufsize.3c					\
 		pthread_attr_getdetachstate.3c			\
 		pthread_attr_getguardsize.3c			\
 		pthread_attr_getinheritsched.3c			\
+		pthread_attr_getname_np.3c			\
 		pthread_attr_getschedparam.3c			\
 		pthread_attr_getschedpolicy.3c			\
 		pthread_attr_getscope.3c			\
@@ -330,6 +336,7 @@ MANFILES=	__fbufsize.3c					\
 		pthread_equal.3c				\
 		pthread_exit.3c					\
 		pthread_getconcurrency.3c			\
+		pthread_getname_np.3c				\
 		pthread_getschedparam.3c			\
 		pthread_getspecific.3c				\
 		pthread_join.3c					\
@@ -411,6 +418,7 @@ MANFILES=	__fbufsize.3c					\
 		sem_unlink.3c					\
 		sem_wait.3c					\
 		semaphore.3c					\
+		set_constraint_handler_s.3c			\
 		setbuf.3c					\
 		setbuffer.3c					\
 		setcat.3c					\
@@ -472,6 +480,7 @@ MANFILES=	__fbufsize.3c					\
 		termios.3c					\
 		thr_create.3c					\
 		thr_exit.3c					\
+		thr_getname.3c					\
 		thr_getconcurrency.3c				\
 		thr_getprio.3c					\
 		thr_join.3c					\
@@ -560,7 +569,7 @@ MANFILES=	__fbufsize.3c					\
 		wordexp.3c					\
 		wsprintf.3c					\
 		wsscanf.3c					\
-		wstring.3c					\
+		wstring.3c
 
 MANLINKS=	FD_CLR.3c				\
 		FD_ISSET.3c				\
@@ -580,6 +589,7 @@ MANLINKS=	FD_CLR.3c				\
 		_exithandle.3c				\
 		_flushlbf.3c				\
 		_setjmp.3c				\
+		abort_handler_s.3c			\
 		addrtosymstr.3c				\
 		aiowrite.3c				\
 		alloca.3c				\
@@ -851,6 +861,8 @@ MANLINKS=	FD_CLR.3c				\
 		getlogin_r.3c				\
 		getmntany.3c				\
 		getnetgrent_r.3c			\
+		getopt_long_only.3c			\
+		getopt_long_clip.3c			\
 		getpassphrase.3c			\
 		getpwent.3c				\
 		getpwent_r.3c				\
@@ -887,6 +899,20 @@ MANLINKS=	FD_CLR.3c				\
 		htole16.3c				\
 		htole32.3c				\
 		htole64.3c				\
+		htonl.3c				\
+		htonll.3c				\
+		htons.3c				\
+		ignore_handler_s.3c			\
+		inet6.3c				\
+		inet_addr.3c				\
+		inet_aton.3c				\
+		inet_lnaof.3c				\
+		inet_makeaddr.3c			\
+		inet_netof.3c				\
+		inet_network.3c				\
+		inet_ntoa.3c				\
+		inet_ntop.3c				\
+		inet_pton.3c				\
 		initstate.3c				\
 		innetgr.3c				\
 		isalnum.3c				\
@@ -1024,6 +1050,9 @@ MANLINKS=	FD_CLR.3c				\
 		ngettext.3c				\
 		nl_langinfo_l.3c			\
 		nrand48.3c				\
+		ntohl.3c				\
+		ntohll.3c				\
+		ntohs.3c				\
 		openlog.3c				\
 		pclose.3c				\
 		port_dissociate.3c			\
@@ -1069,6 +1098,7 @@ MANLINKS=	FD_CLR.3c				\
 		pthread_attr_setdetachstate.3c		\
 		pthread_attr_setguardsize.3c		\
 		pthread_attr_setinheritsched.3c		\
+		pthread_attr_setname_np.3c		\
 		pthread_attr_setschedparam.3c		\
 		pthread_attr_setschedpolicy.3c		\
 		pthread_attr_setscope.3c		\
@@ -1105,6 +1135,7 @@ MANLINKS=	FD_CLR.3c				\
 		pthread_rwlockattr_destroy.3c		\
 		pthread_rwlockattr_setpshared.3c	\
 		pthread_setconcurrency.3c		\
+		pthread_setname_np.3c			\
 		pthread_setschedparam.3c		\
 		pthread_setspecific.3c			\
 		pthread_spin_init.3c			\
@@ -1268,6 +1299,7 @@ MANLINKS=	FD_CLR.3c				\
 		thr_continue.3c				\
 		thr_getspecific.3c			\
 		thr_keycreate_once.3c			\
+		thr_setname.3c				\
 		thr_setconcurrency.3c			\
 		thr_setprio.3c				\
 		thr_setspecific.3c			\
@@ -1555,6 +1587,13 @@ explicit_bzero.3c			:= LINKSRC = bstring.3c
 
 btowc_l.3c				:= LINKSRC = btowc.3c
 
+htonl.3c				:= LINKSRC = byteorder.3c
+htonll.3c				:= LINKSRC = byteorder.3c
+htons.3c				:= LINKSRC = byteorder.3c
+ntohl.3c				:= LINKSRC = byteorder.3c
+ntohll.3c				:= LINKSRC = byteorder.3c
+ntohs.3c				:= LINKSRC = byteorder.3c
+
 canonicalize_file_name.3c		:= LINKSRC = realpath.3c
 
 catclose.3c				:= LINKSRC = catopen.3c
@@ -1803,6 +1842,9 @@ setnetgrent.3c				:= LINKSRC = getnetgrent.3c
 
 get_nprocs_conf.3c			:= LINKSRC = get_nprocs.3c
 
+getopt_long_clip.3c			:= LINKSRC = getopt_long.3c
+getopt_long_only.3c			:= LINKSRC = getopt_long.3c
+
 getpassphrase.3c			:= LINKSRC = getpass.3c
 
 setpriority.3c				:= LINKSRC = getpriority.3c
@@ -1880,6 +1922,17 @@ hcreate.3c				:= LINKSRC = hsearch.3c
 hdestroy.3c				:= LINKSRC = hsearch.3c
 
 rindex.3c				:= LINKSRC = index.3c
+
+inet6.3c				:= LINKSRC = inet.3c
+inet_addr.3c				:= LINKSRC = inet.3c
+inet_aton.3c				:= LINKSRC = inet.3c
+inet_lnaof.3c				:= LINKSRC = inet.3c
+inet_makeaddr.3c			:= LINKSRC = inet.3c
+inet_netof.3c				:= LINKSRC = inet.3c
+inet_network.3c				:= LINKSRC = inet.3c
+inet_ntoa.3c				:= LINKSRC = inet.3c
+inet_ntop.3c				:= LINKSRC = inet.3c
+inet_pton.3c				:= LINKSRC = inet.3c
 
 remque.3c				:= LINKSRC = insque.3c
 
@@ -2096,6 +2149,8 @@ pthread_attr_setguardsize.3c		:= LINKSRC = pthread_attr_getguardsize.3c
 
 pthread_attr_setinheritsched.3c		:= LINKSRC = pthread_attr_getinheritsched.3c
 
+pthread_attr_setname_np.3c		:= LINKSRC = pthread_attr_getname_np.3c
+
 pthread_attr_setschedparam.3c		:= LINKSRC = pthread_attr_getschedparam.3c
 
 pthread_attr_setschedpolicy.3c		:= LINKSRC = pthread_attr_getschedpolicy.3c
@@ -2129,6 +2184,8 @@ pthread_condattr_setpshared.3c		:= LINKSRC = pthread_condattr_getpshared.3c
 pthread_condattr_destroy.3c		:= LINKSRC = pthread_condattr_init.3c
 
 pthread_setconcurrency.3c		:= LINKSRC = pthread_getconcurrency.3c
+
+pthread_setname_np.3c			:= LINKSRC = pthread_getname_np.3c
 
 pthread_setschedparam.3c		:= LINKSRC = pthread_getschedparam.3c
 
@@ -2248,6 +2305,9 @@ sema_post.3c				:= LINKSRC = semaphore.3c
 sema_trywait.3c				:= LINKSRC = semaphore.3c
 sema_wait.3c				:= LINKSRC = semaphore.3c
 
+abort_handler_s.3c			:= LINKSRC = set_constraint_handler_s.3c
+ignore_handler_s.3c			:= LINKSRC = set_constraint_handler_s.3c
+
 setvbuf.3c				:= LINKSRC = setbuf.3c
 
 setlinebuf.3c				:= LINKSRC = setbuffer.3c
@@ -2360,6 +2420,8 @@ thr_keycreate_once.3c			:= LINKSRC = thr_keycreate.3c
 thr_setspecific.3c			:= LINKSRC = thr_keycreate.3c
 
 thr_continue.3c				:= LINKSRC = thr_suspend.3c
+
+thr_setname.3c				:= LINKSRC = thr_getname.3c
 
 timegm.3c				:= LINKSRC = mktime.3c
 

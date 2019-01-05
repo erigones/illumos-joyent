@@ -192,7 +192,9 @@ struct 	psm_ops {
 #if defined(PSMI_1_7)
 	int	(*psm_cpu_ops)(psm_cpu_request_t *reqp);
 
-	int	(*psm_cached_ipivect)(int ipl, int type);
+	int	(*psm_get_pir_ipivect)(void);
+	void	(*psm_send_pir_ipi)(processorid_t cpu);
+	void	(*psm_cmci_setup)(processorid_t cpu, boolean_t);
 #endif
 };
 

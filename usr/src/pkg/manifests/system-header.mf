@@ -24,8 +24,9 @@
 # Copyright (c) 2012 by Delphix. All rights reserved.
 # Copyright 2013 Saso Kiselkov. All rights reserved.
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
-# Copyright 2017 Nexenta Systems, Inc.
+# Copyright 2018 Nexenta Systems, Inc.
 # Copyright 2016 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
+# Copyright (c) 2018, Joyent, Inc.
 #
 
 set name=pkg.fmri value=pkg:/system/header@$(PKGVERS)
@@ -178,6 +179,7 @@ $(sparc_ONLY)dir path=usr/platform/sun4v/include/sys
 $(sparc_ONLY)dir path=usr/platform/sun4v/include/vm
 dir path=usr/share
 dir path=usr/share/man
+dir path=usr/share/man/man3
 dir path=usr/share/man/man3head
 dir path=usr/share/man/man4
 dir path=usr/share/man/man5
@@ -841,6 +843,7 @@ file path=usr/include/sys/conf.h
 file path=usr/include/sys/consdev.h
 file path=usr/include/sys/console.h
 file path=usr/include/sys/consplat.h
+file path=usr/include/sys/containerof.h
 file path=usr/include/sys/contract.h
 file path=usr/include/sys/contract/device.h
 file path=usr/include/sys/contract/device_impl.h
@@ -854,7 +857,9 @@ file path=usr/include/sys/corectl.h
 file path=usr/include/sys/cpc_impl.h
 file path=usr/include/sys/cpc_pcbe.h
 file path=usr/include/sys/cpr.h
+file path=usr/include/sys/cpu_uarray.h
 file path=usr/include/sys/cpu.h
+file path=usr/include/sys/cpu_uarray.h
 file path=usr/include/sys/cpucaps.h
 file path=usr/include/sys/cpucaps_impl.h
 file path=usr/include/sys/cpupart.h
@@ -919,6 +924,7 @@ file path=usr/include/sys/dirent.h
 file path=usr/include/sys/disp.h
 file path=usr/include/sys/dkbad.h
 file path=usr/include/sys/dkio.h
+file path=usr/include/sys/dkioc_free_util.h
 file path=usr/include/sys/dklabel.h
 $(sparc_ONLY)file path=usr/include/sys/dkmpio.h
 $(i386_ONLY)file path=usr/include/sys/dktp/altsctr.h
@@ -983,7 +989,7 @@ file path=usr/include/sys/feature_tests.h
 file path=usr/include/sys/fem.h
 file path=usr/include/sys/file.h
 file path=usr/include/sys/filio.h
-file path=usr/include/sys/firmload.h
+$(i386_ONLY)file path=usr/include/sys/firmload.h
 file path=usr/include/sys/flock.h
 file path=usr/include/sys/flock_impl.h
 $(sparc_ONLY)file path=usr/include/sys/fm/cpu/SPARC64-VI.h
@@ -1059,7 +1065,7 @@ file path=usr/include/sys/ftrace.h
 file path=usr/include/sys/fx.h
 file path=usr/include/sys/fxpriocntl.h
 file path=usr/include/sys/gfs.h
-file path=usr/include/sys/gfx_private.h
+$(i386_ONLY)file path=usr/include/sys/gfx_private.h
 file path=usr/include/sys/gld.h
 file path=usr/include/sys/gldpriv.h
 file path=usr/include/sys/group.h
@@ -1675,6 +1681,7 @@ $(i386_ONLY)file path=usr/platform/i86pc/include/sys/cram.h
 $(i386_ONLY)file path=usr/platform/i86pc/include/sys/ddi_subrdefs.h
 $(i386_ONLY)file path=usr/platform/i86pc/include/sys/debug_info.h
 $(i386_ONLY)file path=usr/platform/i86pc/include/sys/fastboot.h
+$(i386_ONLY)file path=usr/platform/i86pc/include/sys/ht.h
 $(i386_ONLY)file path=usr/platform/i86pc/include/sys/mach_mmu.h
 $(i386_ONLY)file path=usr/platform/i86pc/include/sys/machclock.h
 $(i386_ONLY)file path=usr/platform/i86pc/include/sys/machcpuvar.h
@@ -1730,6 +1737,7 @@ $(sparc_ONLY)file path=usr/platform/sun4u/include/sys/errclassify.h
 $(sparc_ONLY)file path=usr/platform/sun4u/include/sys/fhc.h
 $(sparc_ONLY)file path=usr/platform/sun4u/include/sys/gpio_87317.h
 $(sparc_ONLY)file path=usr/platform/sun4u/include/sys/hpc3130_events.h
+$(sparc_ONLY)file path=usr/platform/sun4u/include/sys/ht.h
 $(sparc_ONLY)file path=usr/platform/sun4u/include/sys/i2c/clients/hpc3130.h
 $(sparc_ONLY)file path=usr/platform/sun4u/include/sys/i2c/clients/i2c_client.h
 $(sparc_ONLY)file path=usr/platform/sun4u/include/sys/i2c/clients/lm75.h
@@ -1793,6 +1801,7 @@ $(sparc_ONLY)file path=usr/platform/sun4v/include/sys/dvma.h
 $(sparc_ONLY)file path=usr/platform/sun4v/include/sys/eeprom.h
 $(sparc_ONLY)file path=usr/platform/sun4v/include/sys/fcode.h
 $(sparc_ONLY)file path=usr/platform/sun4v/include/sys/hsvc.h
+$(sparc_ONLY)file path=usr/platform/sun4v/include/sys/ht.h
 $(sparc_ONLY)file path=usr/platform/sun4v/include/sys/hypervisor_api.h
 $(sparc_ONLY)file path=usr/platform/sun4v/include/sys/idprom.h
 $(sparc_ONLY)file path=usr/platform/sun4v/include/sys/intr.h
@@ -1872,6 +1881,7 @@ file path=usr/share/man/man3head/nl_types.h.3head
 file path=usr/share/man/man3head/poll.h.3head
 file path=usr/share/man/man3head/pthread.h.3head
 file path=usr/share/man/man3head/pwd.h.3head
+file path=usr/share/man/man3head/queue.h.3head
 file path=usr/share/man/man3head/regex.h.3head
 file path=usr/share/man/man3head/resource.h.3head
 file path=usr/share/man/man3head/sched.h.3head
@@ -2013,6 +2023,111 @@ $(sparc_ONLY)link path=usr/platform/SUNW,UltraSPARC-IIe-NetraCT-60/include \
     target=../sun4u/include
 $(sparc_ONLY)link path=usr/platform/SUNW,UltraSPARC-IIi-Netract/include \
     target=../sun4u/include
+link path=usr/share/man/man3head/LIST_CLASS_ENTRY.3head target=queue.h.3head
+link path=usr/share/man/man3head/LIST_CLASS_HEAD.3head target=queue.h.3head
+link path=usr/share/man/man3head/LIST_CONCAT.3head target=queue.h.3head
+link path=usr/share/man/man3head/LIST_EMPTY.3head target=queue.h.3head
+link path=usr/share/man/man3head/LIST_ENTRY.3head target=queue.h.3head
+link path=usr/share/man/man3head/LIST_FIRST.3head target=queue.h.3head
+link path=usr/share/man/man3head/LIST_FOREACH.3head target=queue.h.3head
+link path=usr/share/man/man3head/LIST_FOREACH_FROM.3head target=queue.h.3head
+link path=usr/share/man/man3head/LIST_FOREACH_FROM_SAFE.3head \
+    target=queue.h.3head
+link path=usr/share/man/man3head/LIST_FOREACH_SAFE.3head target=queue.h.3head
+link path=usr/share/man/man3head/LIST_HEAD.3head target=queue.h.3head
+link path=usr/share/man/man3head/LIST_HEAD_INITIALIZER.3head \
+    target=queue.h.3head
+link path=usr/share/man/man3head/LIST_INIT.3head target=queue.h.3head
+link path=usr/share/man/man3head/LIST_INSERT_AFTER.3head target=queue.h.3head
+link path=usr/share/man/man3head/LIST_INSERT_BEFORE.3head target=queue.h.3head
+link path=usr/share/man/man3head/LIST_INSERT_HEAD.3head target=queue.h.3head
+link path=usr/share/man/man3head/LIST_NEXT.3head target=queue.h.3head
+link path=usr/share/man/man3head/LIST_PREV.3head target=queue.h.3head
+link path=usr/share/man/man3head/LIST_REMOVE.3head target=queue.h.3head
+link path=usr/share/man/man3head/LIST_SWAP.3head target=queue.h.3head
+link path=usr/share/man/man3head/SLIST_CLASS_ENTRY.3head target=queue.h.3head
+link path=usr/share/man/man3head/SLIST_CLASS_HEAD.3head target=queue.h.3head
+link path=usr/share/man/man3head/SLIST_CONCAT.3head target=queue.h.3head
+link path=usr/share/man/man3head/SLIST_EMPTY.3head target=queue.h.3head
+link path=usr/share/man/man3head/SLIST_ENTRY.3head target=queue.h.3head
+link path=usr/share/man/man3head/SLIST_FIRST.3head target=queue.h.3head
+link path=usr/share/man/man3head/SLIST_FOREACH.3head target=queue.h.3head
+link path=usr/share/man/man3head/SLIST_FOREACH_FROM.3head target=queue.h.3head
+link path=usr/share/man/man3head/SLIST_FOREACH_FROM_SAFE.3head \
+    target=queue.h.3head
+link path=usr/share/man/man3head/SLIST_FOREACH_SAFE.3head target=queue.h.3head
+link path=usr/share/man/man3head/SLIST_HEAD.3head target=queue.h.3head
+link path=usr/share/man/man3head/SLIST_HEAD_INITIALIZER.3head \
+    target=queue.h.3head
+link path=usr/share/man/man3head/SLIST_INIT.3head target=queue.h.3head
+link path=usr/share/man/man3head/SLIST_INSERT_AFTER.3head target=queue.h.3head
+link path=usr/share/man/man3head/SLIST_INSERT_HEAD.3head target=queue.h.3head
+link path=usr/share/man/man3head/SLIST_NEXT.3head target=queue.h.3head
+link path=usr/share/man/man3head/SLIST_REMOVE.3head target=queue.h.3head
+link path=usr/share/man/man3head/SLIST_REMOVE_AFTER.3head target=queue.h.3head
+link path=usr/share/man/man3head/SLIST_REMOVE_HEAD.3head target=queue.h.3head
+link path=usr/share/man/man3head/SLIST_SWAP.3head target=queue.h.3head
+link path=usr/share/man/man3head/STAILQ_CLASS_ENTRY.3head target=queue.h.3head
+link path=usr/share/man/man3head/STAILQ_CLASS_HEAD.3head target=queue.h.3head
+link path=usr/share/man/man3head/STAILQ_CONCAT.3head target=queue.h.3head
+link path=usr/share/man/man3head/STAILQ_EMPTY.3head target=queue.h.3head
+link path=usr/share/man/man3head/STAILQ_ENTRY.3head target=queue.h.3head
+link path=usr/share/man/man3head/STAILQ_FIRST.3head target=queue.h.3head
+link path=usr/share/man/man3head/STAILQ_FOREACH.3head target=queue.h.3head
+link path=usr/share/man/man3head/STAILQ_FOREACH_FROM.3head \
+    target=queue.h.3head
+link path=usr/share/man/man3head/STAILQ_FOREACH_FROM_SAFE.3head \
+    target=queue.h.3head
+link path=usr/share/man/man3head/STAILQ_FOREACH_SAFE.3head \
+    target=queue.h.3head
+link path=usr/share/man/man3head/STAILQ_HEAD.3head target=queue.h.3head
+link path=usr/share/man/man3head/STAILQ_HEAD_INITIALIZER.3head \
+    target=queue.h.3head
+link path=usr/share/man/man3head/STAILQ_INIT.3head target=queue.h.3head
+link path=usr/share/man/man3head/STAILQ_INSERT_AFTER.3head \
+    target=queue.h.3head
+link path=usr/share/man/man3head/STAILQ_INSERT_HEAD.3head target=queue.h.3head
+link path=usr/share/man/man3head/STAILQ_INSERT_TAIL.3head target=queue.h.3head
+link path=usr/share/man/man3head/STAILQ_LAST.3head target=queue.h.3head
+link path=usr/share/man/man3head/STAILQ_NEXT.3head target=queue.h.3head
+link path=usr/share/man/man3head/STAILQ_REMOVE.3head target=queue.h.3head
+link path=usr/share/man/man3head/STAILQ_REMOVE_AFTER.3head \
+    target=queue.h.3head
+link path=usr/share/man/man3head/STAILQ_REMOVE_HEAD.3head target=queue.h.3head
+link path=usr/share/man/man3head/STAILQ_SWAP.3head target=queue.h.3head
+link path=usr/share/man/man3head/TAILQ_CLASS_ENTRY.3head target=queue.h.3head
+link path=usr/share/man/man3head/TAILQ_CLASS_HEAD.3head target=queue.h.3head
+link path=usr/share/man/man3head/TAILQ_CONCAT.3head target=queue.h.3head
+link path=usr/share/man/man3head/TAILQ_EMPTY.3head target=queue.h.3head
+link path=usr/share/man/man3head/TAILQ_ENTRY.3head target=queue.h.3head
+link path=usr/share/man/man3head/TAILQ_FIRST.3head target=queue.h.3head
+link path=usr/share/man/man3head/TAILQ_FOREACH.3head target=queue.h.3head
+link path=usr/share/man/man3head/TAILQ_FOREACH_FROM.3head target=queue.h.3head
+link path=usr/share/man/man3head/TAILQ_FOREACH_FROM_SAFE.3head \
+    target=queue.h.3head
+link path=usr/share/man/man3head/TAILQ_FOREACH_REVERSE.3head \
+    target=queue.h.3head
+link path=usr/share/man/man3head/TAILQ_FOREACH_REVERSE_FROM.3head \
+    target=queue.h.3head
+link path=usr/share/man/man3head/TAILQ_FOREACH_REVERSE_FROM_SAFE.3head \
+    target=queue.h.3head
+link path=usr/share/man/man3head/TAILQ_FOREACH_REVERSE_SAFE.3head \
+    target=queue.h.3head
+link path=usr/share/man/man3head/TAILQ_FOREACH_SAFE.3head target=queue.h.3head
+link path=usr/share/man/man3head/TAILQ_HEAD.3head target=queue.h.3head
+link path=usr/share/man/man3head/TAILQ_HEAD_INITIALIZER.3head \
+    target=queue.h.3head
+link path=usr/share/man/man3head/TAILQ_INIT.3head target=queue.h.3head
+link path=usr/share/man/man3head/TAILQ_INSERT_AFTER.3head target=queue.h.3head
+link path=usr/share/man/man3head/TAILQ_INSERT_BEFORE.3head \
+    target=queue.h.3head
+link path=usr/share/man/man3head/TAILQ_INSERT_HEAD.3head target=queue.h.3head
+link path=usr/share/man/man3head/TAILQ_INSERT_TAIL.3head target=queue.h.3head
+link path=usr/share/man/man3head/TAILQ_LAST.3head target=queue.h.3head
+link path=usr/share/man/man3head/TAILQ_NEXT.3head target=queue.h.3head
+link path=usr/share/man/man3head/TAILQ_PREV.3head target=queue.h.3head
+link path=usr/share/man/man3head/TAILQ_REMOVE.3head target=queue.h.3head
+link path=usr/share/man/man3head/TAILQ_SWAP.3head target=queue.h.3head
 link path=usr/share/man/man3head/acct.3head target=acct.h.3head
 link path=usr/share/man/man3head/aio.3head target=aio.h.3head
 link path=usr/share/man/man3head/ar.3head target=ar.h.3head

@@ -13,6 +13,7 @@
 # Copyright (c) 2012 by Delphix. All rights reserved.
 # Copyright 2014, OmniTI Computer Consulting, Inc. All rights reserved.
 # Copyright 2015 Garrett D'Amore <garrett@damore.org>
+# Copyright 2018 Joyent, Inc.
 #
 
 set name=pkg.fmri value=pkg:/system/test/libctest@$(PKGVERS)
@@ -91,6 +92,8 @@ file path=opt/libc-tests/tests/fnmatch.64 mode=0555
 file path=opt/libc-tests/tests/fpround_test mode=0555
 file path=opt/libc-tests/tests/fpround_test.$(ARCH) mode=0555
 file path=opt/libc-tests/tests/fpround_test.$(ARCH64) mode=0555
+file path=opt/libc-tests/tests/memset_s.32 mode=0555
+file path=opt/libc-tests/tests/memset_s.64 mode=0555
 file path=opt/libc-tests/tests/newlocale_test mode=0555
 file path=opt/libc-tests/tests/newlocale_test.$(ARCH) mode=0555
 file path=opt/libc-tests/tests/newlocale_test.$(ARCH64) mode=0555
@@ -98,6 +101,8 @@ file path=opt/libc-tests/tests/nl_langinfo_test mode=0555
 file path=opt/libc-tests/tests/nl_langinfo_test.$(ARCH) mode=0555
 file path=opt/libc-tests/tests/nl_langinfo_test.$(ARCH64) mode=0555
 file path=opt/libc-tests/tests/printf-6961.64 mode=0555
+file path=opt/libc-tests/tests/printf-9511.32 mode=0555
+file path=opt/libc-tests/tests/printf-9511.64 mode=0555
 file path=opt/libc-tests/tests/priv_gettext mode=0555
 file path=opt/libc-tests/tests/psignal mode=0555
 file path=opt/libc-tests/tests/psignal-5097.32 mode=0555
@@ -146,12 +151,15 @@ file path=opt/libc-tests/tests/regex/regex_test mode=0555
 file path=opt/libc-tests/tests/regex/testregex mode=0555
 file path=opt/libc-tests/tests/select/select.sh mode=0555
 file path=opt/libc-tests/tests/select/select_test mode=0555
+file path=opt/libc-tests/tests/set_constraint_handler_s.32 mode=0555
+file path=opt/libc-tests/tests/set_constraint_handler_s.64 mode=0555
 file path=opt/libc-tests/tests/strcoll-strxfrm-6907.32 mode=0555
 file path=opt/libc-tests/tests/strcoll-strxfrm-6907.64 mode=0555
 file path=opt/libc-tests/tests/strerror mode=0555
 file path=opt/libc-tests/tests/symbols/setup mode=0555
 file path=opt/libc-tests/tests/symbols/symbols_test.$(ARCH) mode=0555
 file path=opt/libc-tests/tests/symbols/symbols_test.$(ARCH64) mode=0555
+file path=opt/libc-tests/tests/thread_name mode=0555
 file path=opt/libc-tests/tests/timespec_get.32 mode=0555
 file path=opt/libc-tests/tests/timespec_get.64 mode=0555
 file path=opt/libc-tests/tests/wcsncasecmp-7344.32 mode=0555
@@ -202,6 +210,7 @@ hardlink path=opt/libc-tests/tests/symbols/wctype_h target=setup
 license lic_CDDL license=lic_CDDL
 license usr/src/test/libc-tests/tests/regex/THIRDPARTYLICENSE \
     license=usr/src/test/libc-tests/tests/regex/THIRDPARTYLICENSE
+depend fmri=locale/ar type=require
 depend fmri=locale/de type=require
 depend fmri=locale/en type=require
 depend fmri=locale/en-extra type=require

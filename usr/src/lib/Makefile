@@ -22,7 +22,7 @@
 #
 # Copyright (c) 1989, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright (c) 2012 by Delphix. All rights reserved.
-# Copyright 2017 Joyent, Inc.
+# Copyright 2018, Joyent, Inc.
 # Copyright (c) 2013 Gary Mills
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
 # Copyright (c) 2015 Gary Mills
@@ -30,6 +30,7 @@
 # Copyright 2018 Nexenta Systems, Inc.
 # Copyright (c) 2016, Chris Fraire <cfraire@me.com>.
 # Copyright 2017 RackTop Systems.
+# Copyirght 2018 Jason King
 #
 
 include ../Makefile.master
@@ -82,6 +83,7 @@ SUBDIRS +=				\
 	gss_mechs/mech_spnego	\
 	hal		\
 	hbaapi		\
+	iconv_modules	\
 	krb5		\
 	libadm		\
 	libads		\
@@ -106,6 +108,8 @@ SUBDIRS +=				\
 	libcryptoutil	\
 	libctf		\
 	libcurses	\
+	libcustr	\
+	libdemangle	\
 	libdevice	\
 	libdevid	\
 	libdevinfo	\
@@ -118,7 +122,6 @@ SUBDIRS +=				\
 	libdlpi		\
 	libdns_sd	\
 	libdoor		\
-	libdscfg	\
 	libdtrace	\
 	libdtrace_jni	\
 	libdwarf	\
@@ -166,12 +169,12 @@ SUBDIRS +=				\
 	libmapid	\
 	libmapmalloc	\
 	libmd5		\
+	libmlrpc	\
 	libmtmalloc	\
 	libmvec		\
 	libndmp		\
 	libnisdb	\
 	libnls		\
-	libnsctl	\
 	libnwam		\
 	libofmt		\
 	libpam		\
@@ -182,12 +185,12 @@ SUBDIRS +=				\
 	libpkg		\
 	libpool		\
 	libpp		\
+	libppt		\
 	libproc		\
 	libproject	\
 	libpthread	\
 	libraidcfg	\
 	librcm		\
-	librdc		\
 	librename	\
 	libreparse	\
 	libresolv	\
@@ -232,7 +235,6 @@ SUBDIRS +=				\
 	libtsnet	\
 	libtsol		\
 	libumem		\
-	libunistat	\
 	libuuid		\
 	libuutil	\
 	libvnd		\
@@ -279,6 +281,7 @@ SUBDIRS +=				\
 i386_SUBDIRS=		\
 	libfdisk	\
 	libsaveargs	\
+	libvmm		\
 	libvmmapi
 
 sparc_SUBDIRS=		\
@@ -389,6 +392,8 @@ HDRSUBDIRS=				\
 	libcryptoutil	\
 	libctf		\
 	libcurses	\
+	libcustr	\
+	libdemangle	\
 	libdevice	\
 	libdevid	\
 	libdevinfo	\
@@ -401,7 +406,6 @@ HDRSUBDIRS=				\
 	libdll		\
 	libdlpi		\
 	libdns_sd	\
-	libdscfg	\
 	libdtrace	\
 	libdtrace_jni	\
 	libelfsign	\
@@ -432,9 +436,9 @@ HDRSUBDIRS=				\
 	libmail		\
 	libmapid	\
 	libmd		\
+	libmlrpc	\
 	libmtmalloc	\
 	libndmp		\
-	libnsctl	\
 	libnsl		\
 	libnvpair	\
 	libnwam		\
@@ -446,10 +450,10 @@ HDRSUBDIRS=				\
 	libpicltree	\
 	libpool		\
 	libpp		\
+	libppt		\
 	libproc		\
 	libraidcfg	\
 	librcm		\
-	librdc		\
 	librename	\
 	libreparse	\
 	librestart	\
@@ -483,7 +487,6 @@ HDRSUBDIRS=				\
 	libtsnet	\
 	libtsol		\
 	libumem		\
-	libunistat	\
 	libuutil	\
 	libvnd		\
 	libvolmgt	\
@@ -504,11 +507,13 @@ HDRSUBDIRS=				\
 	smbsrv		\
 	smhba		\
 	udapl		\
+	varpd		\
 	$($(MACH)_HDRSUBDIRS)
 
 i386_HDRSUBDIRS=	\
 	libfdisk	\
 	libsaveargs	\
+	libvmm		\
 	libvmmapi
 
 sparc_HDRSUBDIRS=	\
@@ -583,10 +588,11 @@ dbusdeps:	libsecdb libtsol libinetutil libscf libuutil libgen libsmbios
 # libc libm libmd libmp libnsl libnvpair libsocket
 abi:		libctf libmapmalloc libproc
 auditd_plugins: libbsm libsecdb libgss libmtmalloc
-brand:		libzonecfg libmapmalloc libipadm libcmdutils libproc librpcsvc
+brand:		libzonecfg libmapmalloc libipadm libcustr libproc librpcsvc
 cfgadm_plugins:	libdevice libdevinfo libhotplug librcm hbaapi libkstat libscf
 fm:		libexacct libipmi libzfs scsi libdevinfo libdevid libcfgadm \
-		libcontract libsysevent ../cmd/sgs/libelf libdladm libsff
+		libcontract libsysevent ../cmd/sgs/libelf libdladm libsff \
+		libpcidb
 $(SPARC_BLD)fm:	libpri
 gss_mechs/mech_dh: libgss
 gss_mechs/mech_dummy: libgss
@@ -613,13 +619,12 @@ libdiskmgt:	libdevid libdevinfo libadm libefi libkstat libsysevent
 $(INTEL_BLD)libdiskmgt: libfdisk
 libdladm:	libdevinfo libinetutil libscf librcm libexacct libkstat \
 		libpool varpd
-libdll: 	libast
+libdll:		libast
 libdlpi:	libinetutil libdladm
 libds:		libsysevent
-libdscfg:	libnsctl libunistat libadm
 libdtrace:	libproc libgen libctf libmapmalloc
 libdtrace_jni:	libuutil libdtrace
-libefi:		libuuid
+libefi:		libuuid libsmbios
 libelfsign:	libcryptoutil libkmf ../cmd/sgs/libelf
 libeti:		libcurses
 libexacct/demo:	libexacct libproject
@@ -636,12 +641,13 @@ libinetsvc:	libscf
 libinstzones:	libzonecfg libcontract
 libipadm:	libinetutil libdlpi libdhcpagent libdladm libsecdb libdhcputil
 libipmp:	libinetutil
-libipsecutil:	libtecla libtsol
+libipsecutil:	libtecla libtsol libkmf
 libiscsit:	libstmf libuuid
-libkmf:		libcryptoutil pkcs11
+libkmf:		libcryptoutil pkcs11 libcustr
 libkvm:		../cmd/sgs/libelf
 libldap5:	libsasl
 libmapid:	libresolv2 libscf
+libmlrpc:	libsmbfs libuuid
 libndmp:	libscf
 libnisdb:	libldap5
 libnwam:	libscf libbsm libdladm libipadm
@@ -650,13 +656,13 @@ libpctx:	libproc
 libpkg:		libscf libadm
 libpool:	libscf libexacct
 libpp:		libast
+libppt:		libpcidb libdevinfo libcmdutils
 libproc:	../cmd/sgs/librtld_db ../cmd/sgs/libelf libctf
 $(INTEL_BLD)libproc: libsaveargs
 libproject:	libpool libproc libsecdb
 libprtdiag:	libkstat
 libprtdiag_psr:	libprtdiag
 libraidcfg:	libdevinfo
-librdc:		libnsctl libunistat libdscfg
 librestart:	libuutil libscf libpool libproject libsecdb libsysevent
 libsasl:	libgss pkcs11
 libsaveargs:	libdisasm
@@ -672,8 +678,8 @@ libsmbfs:	libkrb5 libsec libidmap pkcs11
 libsmbios:	libdevinfo
 libsrpt:	libstmf
 libstmf:	libscf
-libstmfproxy: 	libstmf libpthread
-libsum: 	libast
+libstmfproxy:	libstmf libpthread
+libsum:		libast
 libsun_ima:	libdevinfo libsysevent
 libsysevent:	libsecdb
 libtecla:	libcurses
@@ -684,12 +690,13 @@ libtsnet:	libtsol libsecdb
 libtsol:	libsecdb
 libuuid:	libdlpi
 libv12n:	libds libuuid
+libvmm:		libvmmapi
 libvolmgt:	libadm
 libvrrpadm:	libdladm libscf
 libvscan:	libscf libsecdb
 libzdoor:	libc libzonecfg libcontract
 libzfs:		libdevid libgen libuutil libadm libavl libefi libidmap \
-		libumem libtsol libzfs_core libcmdutils
+		libumem libtsol libzfs_core
 libzfs_jni:	libdiskmgt libzfs
 libzonecfg:	libuuid libsysevent libsec libbrand libpool libscf libproc \
 		libuutil libbsm libsecdb
@@ -705,7 +712,7 @@ passwdutil:	libsldap
 pkcs11:		libcryptoutil libgen libuuid
 policykit:	dbusdeps
 print:		libldap5 libmd5 libsendfile
-pylibbe: 	libbe libzfs
+pylibbe:	libbe libzfs
 pysolaris:	libsec libidmap
 pyzfs:		libzfs
 raidcfg_plugins: libraidcfg librcm libcfgadm libpicl libpicltree
@@ -714,13 +721,13 @@ sasl_plugins:	pkcs11 libgss libsasl
 scsi:		libfru libumem libdevid libdevinfo
 smbsrv:		libxnet libpthread librt libshare libidmap pkcs11 libsqlite \
 		libcryptoutil libreparse libcmdutils libresolv2 libsmbfs \
-		libuuid libfakekernel libads libgss libldap5 krb5
+		libuuid libfakekernel libads libgss libldap5 krb5 libmlrpc
 storage:	libdevice libdevinfo libdevid
 sun_fc:		libdevinfo libsysevent
 sun_sas:	libdevinfo libsysevent libkstat libdevid
 udapl:		libdevinfo libdladm
 varpd:		libavl libidspace libumem libnsl libnvpair libmd5 librename \
-		libbunyan libcmdutils
+		libbunyan libcustr
 
 #
 # The reason this rule checks for the existence of the

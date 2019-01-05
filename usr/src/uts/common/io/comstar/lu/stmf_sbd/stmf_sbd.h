@@ -21,11 +21,13 @@
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  *
- * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef	_STMF_SBD_H
 #define	_STMF_SBD_H
+
+#include <sys/dkio.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -228,7 +230,7 @@ typedef struct sbd_lu {
 	void		*sl_zvol_objset_hdl;
 	void		*sl_zvol_zil_hdl;
 	void		*sl_zvol_rl_hdl;
-	void		*sl_zvol_bonus_hdl;
+	void		*sl_zvol_dn_hdl;
 
 	/* Backing store */
 	char		*sl_data_filename;
@@ -300,7 +302,7 @@ sbd_status_t sbd_write_lu_info(sbd_lu_t *sl);
 sbd_status_t sbd_flush_data_cache(sbd_lu_t *sl, int fsync_done);
 sbd_status_t sbd_wcd_set(int wcd, sbd_lu_t *sl);
 void sbd_wcd_get(int *wcd, sbd_lu_t *sl);
-int sbd_unmap(sbd_lu_t *, uint64_t, uint64_t);
+int sbd_unmap(sbd_lu_t *sl, dkioc_free_list_t *dfl);
 
 #ifdef	__cplusplus
 }

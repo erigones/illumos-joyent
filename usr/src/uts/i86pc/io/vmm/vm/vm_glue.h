@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2017 Joyent, Inc.
+ * Copyright 2018 Joyent, Inc.
  */
 
 #ifndef	_VM_GLUE_
@@ -44,6 +44,7 @@ struct vmspace {
 
 	/* Implementation private */
 	kmutex_t	vms_lock;
+	boolean_t	vms_map_changing;
 	struct pmap	vms_pmap;
 	uintptr_t	vms_size;	/* fixed after creation */
 
@@ -53,13 +54,16 @@ struct vmspace {
 typedef pfn_t (*vm_pager_fn_t)(vm_object_t, uintptr_t, pfn_t *, uint_t *);
 
 struct vm_object {
-	kmutex_t	vmo_lock;
-	uint_t		vmo_refcnt;
+	uint_t		vmo_refcnt;	/* manipulated with atomic ops */
+
+	/* This group of fields are fixed at creation time */
 	objtype_t	vmo_type;
 	size_t		vmo_size;
-	vm_memattr_t	vmo_attr;
 	vm_pager_fn_t	vmo_pager;
 	void		*vmo_data;
+
+	kmutex_t	vmo_lock;	/* protects fields below */
+	vm_memattr_t	vmo_attr;
 };
 
 struct vm_page {
@@ -71,10 +75,10 @@ struct vm_page {
 /* Illumos-specific functions for setup and operation */
 int vm_segmap_obj(struct vmspace *, vm_object_t, struct as *, caddr_t *,
     uint_t, uint_t, uint_t);
-int vm_segmap_space(struct vmspace *, off_t , struct as *, caddr_t *, off_t,
+int vm_segmap_space(struct vmspace *, off_t, struct as *, caddr_t *, off_t,
     uint_t, uint_t, uint_t);
 void *vmspace_find_kva(struct vmspace *, uintptr_t, size_t);
 void vmm_arena_init(void);
-boolean_t vmm_arena_fini(void);
+void vmm_arena_fini(void);
 
 #endif /* _VM_GLUE_ */

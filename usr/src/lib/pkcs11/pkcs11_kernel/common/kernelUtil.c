@@ -372,11 +372,8 @@ free_key_attributes(crypto_key_t *key)
 	if (key->ck_format == CRYPTO_KEY_ATTR_LIST &&
 	    (key->ck_count > 0) && key->ck_attrs != NULL) {
 		for (i = 0; i < key->ck_count; i++) {
-			if (key->ck_attrs[i].oa_value != NULL) {
-				bzero(key->ck_attrs[i].oa_value,
-				    key->ck_attrs[i].oa_value_len);
-				free(key->ck_attrs[i].oa_value);
-			}
+			freezero(key->ck_attrs[i].oa_value,
+			    key->ck_attrs[i].oa_value_len);
 		}
 		free(key->ck_attrs);
 	}
@@ -1217,4 +1214,19 @@ get_mechanism_info(kernel_slot_t *pslot, CK_MECHANISM_TYPE type,
 	}
 
 	return (rv);
+}
+
+/*
+ * Unfortunately the kernel and PKCS#11 use a slightly different struct to
+ * specify CCM parameters.
+ */
+void
+p11_to_kernel_ccm_params(const CK_CCM_PARAMS *in, CK_AES_CCM_PARAMS *out)
+{
+	out->ulMACSize = in->ulMACLen;
+	out->ulNonceSize = in->ulNonceLen;
+	out->ulAuthDataSize = in->ulAADLen;
+	out->ulDataSize = in->ulDataLen;
+	out->nonce = in->pNonce;
+	out->authData = in->pAAD;
 }

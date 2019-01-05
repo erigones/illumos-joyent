@@ -29,6 +29,7 @@
 	    opt="ro,nodevices,nosub" type="lofs" />
 
 	<!-- Local filesystems to mount when booting the zone -->
+	<mount special="/proc" directory="/proc" type="proc" />
 	<mount special="swap" directory="/var/run" type="tmpfs"
 	    opt="size=50m"/>
 
@@ -55,6 +56,8 @@
 
 	<!-- Renamed devices to create under /dev -->
 	<device match="zcons/%z/zoneconsole" name="zconsole" />
+	<device match="zfd/%z/slave/1" name="zfd/1" />
+	<device match="zfd/%z/slave/2" name="zfd/2" />
 
 	<!-- Symlinks to create under /dev -->
 	<symlink source="console" target="zconsole" />

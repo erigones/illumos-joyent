@@ -22,6 +22,7 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  * Copyright (c) 2016 by Delphix. All rights reserved.
+ * Copyright 2018 Joyent, Inc.
  */
 
 /*
@@ -1729,7 +1730,7 @@ gld_wput(queue_t *q, mblk_t *mp)
 		 */
 		GLD_CLEAR_MBLK_VTAG(mp);
 		multidata = B_FALSE;
-		/* LINTED: E_CASE_FALLTHRU */
+		/* FALLTHROUGH */
 	case M_MULTIDATA:
 		/* Only call gld_start() directly if nothing queued ahead */
 		/* No guarantees about ordering with different threads */
@@ -3082,7 +3083,7 @@ gld_paccept(gld_t *gld, pktinfo_t *pktinfo)
 
 static void
 gld_passon(gld_t *gld, mblk_t *mp, pktinfo_t *pktinfo,
-	void (*send)(queue_t *qp, mblk_t *mp))
+    void (*send)(queue_t *qp, mblk_t *mp))
 {
 	boolean_t is_phys = GLD_IS_PHYS(gld);
 	int skiplen;
@@ -4550,8 +4551,7 @@ gld_unitdata(queue_t *q, mblk_t *mp)
 	ifp = ((gld_mac_pvt_t *)macinfo->gldm_mac_pvt)->interfacep;
 
 	/* grab any checksum information that may be present */
-	hcksum_retrieve(mp->b_cont, NULL, NULL, &start, &stuff, &end,
-	    &value, &flags);
+	mac_hcksum_get(mp->b_cont, &start, &stuff, &end, &value, &flags);
 
 	/*
 	 * Prepend a valid header for transmission
@@ -4567,8 +4567,7 @@ gld_unitdata(queue_t *q, mblk_t *mp)
 	}
 
 	/* apply any checksum information to the first block in the chain */
-	(void) hcksum_assoc(nmp, NULL, NULL, start, stuff, end, value,
-	    flags, 0);
+	mac_hcksum_set(nmp, start, stuff, end, value, flags);
 
 	GLD_CLEAR_MBLK_VTAG(nmp);
 	if (gld_start(q, nmp, GLD_WSRV, upri) == GLD_NORESOURCES) {

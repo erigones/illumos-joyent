@@ -11,13 +11,19 @@
 
 #
 # Copyright 2017 Nexenta Systems, Inc.
+# Copyright (c) 2018, Joyent, Inc.
 #
 
-SUBDIRS=	consfonts \
+COMMON_SUBDIRS=	consfonts \
 		hwdata \
 		locale \
+		perfmon \
 		terminfo \
 		zoneinfo
+
+i386_SUBDIRS=	ucode
+
+SUBDIRS = $(COMMON_SUBDIRS) $($(MACH)_SUBDIRS)
 
 MSGSUBDIRS= 	zoneinfo
 

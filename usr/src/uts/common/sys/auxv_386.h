@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2004, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2017, Joyent, Inc.
+ * Copyright (c) 2018, Joyent, Inc.
  */
 
 #ifndef	_SYS_AUXV_386_H
@@ -106,12 +106,26 @@ extern "C" {
 #define	AV_386_2_AVX512VPOPCDQ	0x20000	/* AVX512VPOPCNTDQ insns */
 #define	AV_386_2_AVX512_4NNIW	0x40000	/* AVX512 4NNIW insns */
 #define	AV_386_2_AVX512_4FMAPS	0x80000	/* AVX512 4FMAPS insns */
+#define	AV_386_2_SHA		0x100000 /* SHA insns */
 
 #define	FMT_AV_386_2							\
-	"\024avx512_4fmaps\023avx512_4nniw\022avx512vpopcntdq"		\
+	"\025sha\024avx512_4fmaps\023avx512_4nniw\022avx512vpopcntdq"	\
 	"\021avx512vbmi\020avx512vl\017avx512bw\016avx512cd"		\
 	"\015avx512er\014avx512pf\013avx512ifma\012avx512dq\011avx512f"	\
 	"\010rdseed\07adx\06avx2\05fma\04bmi2\03bmi1\02rdrand\01f16c"
+
+/*
+ * Flags used in AT_SUN_FPTYPE on x86.
+ *
+ * We don't currently support xsavec in illumos. However, when we do, then we
+ * should add this to the type list and extend our primary consumer (rtld) to
+ * use it. xsaveopt is not in this list because it is not appropriate for the
+ * stack based storage.
+ */
+#define	AT_386_FPINFO_NONE		0
+#define	AT_386_FPINFO_FXSAVE		1
+#define	AT_386_FPINFO_XSAVE		2
+#define	AT_386_FPINFO_XSAVE_AMD		3
 
 #ifdef __cplusplus
 }

@@ -17,10 +17,10 @@ include $(SRC)/Makefile.master
 
 ROOT_BOOT = $(ROOT)/boot
 
-CC=	$(GCC_ROOT)/bin/gcc
+CC=	$(GNUC_ROOT)/bin/gcc
 LD=	$(GNU_ROOT)/bin/gld
 DD=	/usr/bin/dd
-CFLAGS= -O2 -I../../..
+CFLAGS= -Os -I../../..
 CCASFLAGS= -Wa,--divide
 
 include ../Makefile.inc
@@ -49,7 +49,7 @@ FILEMODE=0444
 
 CFLAGS +=-I../common
 
-LOADERBIN= ../loader/zfsloader.bin
+LOADERBIN= ../loader/loader.bin
 
 CLEANFILES += ${BOOT}.tmp
 

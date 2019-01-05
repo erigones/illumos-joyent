@@ -23,6 +23,7 @@
  * Copyright (c) 2002, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2014 Toomas Soome <tsoome@me.com>
+ * Copyright 2018 OmniOS Community Edition (OmniOSce) Association.
  */
 
 #include <stdio.h>
@@ -30,6 +31,7 @@
 #include <errno.h>
 #include <strings.h>
 #include <unistd.h>
+#include <smbios.h>
 #include <uuid/uuid.h>
 #include <libintl.h>
 #include <sys/types.h>
@@ -42,39 +44,48 @@
 #include <sys/byteorder.h>
 #include <sys/ddi.h>
 
+/*
+ * The original conversion array used simple array index, but since
+ * we do need to take account of VTOC tag numbers from other systems,
+ * we need to provide tag values too, or the array will grow too large.
+ *
+ * Still we will fabricate the missing p_tag values.
+ */
 static struct uuid_to_ptag {
 	struct uuid	uuid;
+	ushort_t	p_tag;
 } conversion_array[] = {
-	{ EFI_UNUSED },
-	{ EFI_BOOT },
-	{ EFI_ROOT },
-	{ EFI_SWAP },
-	{ EFI_USR },
-	{ EFI_BACKUP },
-	{ 0 },			/* STAND is never used */
-	{ EFI_VAR },
-	{ EFI_HOME },
-	{ EFI_ALTSCTR },
-	{ 0 },			/* CACHE is never used */
-	{ EFI_RESERVED },
-	{ EFI_SYSTEM },
-	{ EFI_LEGACY_MBR },
-	{ EFI_SYMC_PUB },
-	{ EFI_SYMC_CDS },
-	{ EFI_MSFT_RESV },
-	{ EFI_DELL_BASIC },
-	{ EFI_DELL_RAID },
-	{ EFI_DELL_SWAP },
-	{ EFI_DELL_LVM },
-	{ EFI_DELL_RESV },
-	{ EFI_AAPL_HFS },
-	{ EFI_AAPL_UFS },
-	{ EFI_BIOS_BOOT },
-	{ EFI_FREEBSD_BOOT },
-	{ EFI_FREEBSD_SWAP },
-	{ EFI_FREEBSD_UFS },
-	{ EFI_FREEBSD_VINUM },
-	{ EFI_FREEBSD_ZFS }
+	{ EFI_UNUSED, V_UNASSIGNED },
+	{ EFI_BOOT, V_BOOT },
+	{ EFI_ROOT, V_ROOT },
+	{ EFI_SWAP, V_SWAP },
+	{ EFI_USR, V_USR },
+	{ EFI_BACKUP, V_BACKUP },
+	{ EFI_VAR, V_VAR },
+	{ EFI_HOME, V_HOME },
+	{ EFI_ALTSCTR, V_ALTSCTR },
+	{ EFI_RESERVED, V_RESERVED },
+	{ EFI_SYSTEM, V_SYSTEM },		/* V_SYSTEM is 0xc */
+	{ EFI_LEGACY_MBR, 0x10 },
+	{ EFI_SYMC_PUB, 0x11 },
+	{ EFI_SYMC_CDS, 0x12 },
+	{ EFI_MSFT_RESV, 0x13 },
+	{ EFI_DELL_BASIC, 0x14 },
+	{ EFI_DELL_RAID, 0x15 },
+	{ EFI_DELL_SWAP, 0x16 },
+	{ EFI_DELL_LVM, 0x17 },
+	{ EFI_DELL_RESV, 0x19 },
+	{ EFI_AAPL_HFS, 0x1a },
+	{ EFI_AAPL_UFS, 0x1b },
+	{ EFI_AAPL_ZFS, 0x1c },
+	{ EFI_AAPL_APFS, 0x1d },
+	{ EFI_BIOS_BOOT, V_BIOS_BOOT },		/* V_BIOS_BOOT is 0x18 */
+	{ EFI_FREEBSD_BOOT,  V_FREEBSD_BOOT },
+	{ EFI_FREEBSD_SWAP, V_FREEBSD_SWAP },
+	{ EFI_FREEBSD_UFS, V_FREEBSD_UFS },
+	{ EFI_FREEBSD_VINUM, V_FREEBSD_VINUM },
+	{ EFI_FREEBSD_ZFS, V_FREEBSD_ZFS },
+	{ EFI_FREEBSD_NANDFS, V_FREEBSD_NANDFS }
 };
 
 /*
@@ -114,6 +125,8 @@ int efi_debug = 1;
 #else
 int efi_debug = 0;
 #endif
+
+#define	EFI_FIXES_DB "/usr/share/hwdata/efi.fixes"
 
 extern unsigned int	efi_crc32(const unsigned char *, unsigned int);
 static int		efi_read(int, struct dk_gpt *);
@@ -207,6 +220,37 @@ efi_alloc_and_read(int fd, struct dk_gpt **vtoc)
 	int			rval;
 	uint32_t		nparts;
 	int			length;
+	struct mboot		*mbr;
+	struct ipart		*ipart;
+	diskaddr_t		capacity;
+	uint_t			lbsize;
+	int			i;
+
+	if (read_disk_info(fd, &capacity, &lbsize) != 0)
+		return (VT_ERROR);
+
+	if ((mbr = calloc(lbsize, 1)) == NULL)
+		return (VT_ERROR);
+
+	if ((ioctl(fd, DKIOCGMBOOT, (caddr_t)mbr)) == -1) {
+		free(mbr);
+		return (VT_ERROR);
+	}
+
+	if (mbr->signature != MBB_MAGIC) {
+		free(mbr);
+		return (VT_EINVAL);
+	}
+	ipart = (struct ipart *)(uintptr_t)mbr->parts;
+
+	/* Check if we have partition with ID EFI_PMBR */
+	for (i = 0; i < FD_NUMPART; i++) {
+		if (ipart[i].systid == EFI_PMBR)
+			break;
+	}
+	free(mbr);
+	if (i == FD_NUMPART)
+		return (VT_EINVAL);
 
 	/* figure out the number of entries that would fit into 16K */
 	nparts = EFI_MIN_ARRAY_SIZE / sizeof (efi_gpe_t);
@@ -528,7 +572,8 @@ efi_read(int fd, struct dk_gpt *vtoc)
 			if (bcmp(&vtoc->efi_parts[i].p_guid,
 			    &conversion_array[j].uuid,
 			    sizeof (struct uuid)) == 0) {
-				vtoc->efi_parts[i].p_tag = j;
+				vtoc->efi_parts[i].p_tag =
+				    conversion_array[j].p_tag;
 				break;
 			}
 		}
@@ -555,6 +600,104 @@ efi_read(int fd, struct dk_gpt *vtoc)
 	return (dki_info.dki_partition);
 }
 
+static void
+hardware_workarounds(int *slot, int *active)
+{
+	smbios_struct_t s_sys, s_mb;
+	smbios_info_t sys, mb;
+	smbios_hdl_t *shp;
+	char buf[0x400];
+	FILE *fp;
+	int err;
+
+	if ((fp = fopen(EFI_FIXES_DB, "rF")) == NULL)
+		return;
+
+	if ((shp = smbios_open(NULL, SMB_VERSION, 0, &err)) == NULL) {
+		if (efi_debug)
+			(void) fprintf(stderr,
+			    "libefi failed to load SMBIOS: %s\n",
+			    smbios_errmsg(err));
+		(void) fclose(fp);
+		return;
+	}
+
+	if (smbios_lookup_type(shp, SMB_TYPE_SYSTEM, &s_sys) == SMB_ERR ||
+	    smbios_info_common(shp, s_sys.smbstr_id, &sys) == SMB_ERR)
+		(void) memset(&sys, '\0', sizeof (sys));
+	if (smbios_lookup_type(shp, SMB_TYPE_BASEBOARD, &s_mb) == SMB_ERR ||
+	    smbios_info_common(shp, s_mb.smbstr_id, &mb) == SMB_ERR)
+		(void) memset(&mb, '\0', sizeof (mb));
+
+	while (fgets(buf, sizeof (buf), fp) != NULL) {
+		char *tok, *val, *end;
+
+		tok = buf + strspn(buf, " \t");
+		if (*tok == '#')
+			continue;
+		while (*tok != '\0') {
+			tok += strspn(tok, " \t");
+			if ((val = strchr(tok, '=')) == NULL)
+				break;
+			*val++ = '\0';
+			if (*val == '"')
+				end = strchr(++val, '"');
+			else
+				end = strpbrk(val, " \t\n");
+			if (end == NULL)
+				break;
+			*end++ = '\0';
+
+			if (strcmp(tok, "sys.manufacturer") == 0 &&
+			    (sys.smbi_manufacturer == NULL ||
+			    strcasecmp(val, sys.smbi_manufacturer)))
+				break;
+			if (strcmp(tok, "sys.product") == 0 &&
+			    (sys.smbi_product == NULL ||
+			    strcasecmp(val, sys.smbi_product)))
+				break;
+			if (strcmp(tok, "sys.version") == 0 &&
+			    (sys.smbi_version == NULL ||
+			    strcasecmp(val, sys.smbi_version)))
+				break;
+			if (strcmp(tok, "mb.manufacturer") == 0 &&
+			    (mb.smbi_manufacturer == NULL ||
+			    strcasecmp(val, mb.smbi_manufacturer)))
+				break;
+			if (strcmp(tok, "mb.product") == 0 &&
+			    (mb.smbi_product == NULL ||
+			    strcasecmp(val, mb.smbi_product)))
+				break;
+			if (strcmp(tok, "mb.version") == 0 &&
+			    (mb.smbi_version == NULL ||
+			    strcasecmp(val, mb.smbi_version)))
+				break;
+
+			if (strcmp(tok, "pmbr_slot") == 0) {
+				*slot = atoi(val);
+				if (*slot < 0 || *slot > 3)
+					*slot = 0;
+				if (efi_debug)
+					(void) fprintf(stderr,
+					    "Using slot %d\n", *slot);
+			}
+
+			if (strcmp(tok, "pmbr_active") == 0) {
+				*active = atoi(val);
+				if (*active < 0 || *active > 1)
+					*active = 0;
+				if (efi_debug)
+					(void) fprintf(stderr,
+					    "Using active %d\n", *active);
+			}
+
+			tok = end;
+		}
+	}
+	(void) fclose(fp);
+	smbios_close(shp);
+}
+
 /* writes a "protective" MBR */
 static int
 write_pmbr(int fd, struct dk_gpt *vtoc)
@@ -564,7 +707,11 @@ write_pmbr(int fd, struct dk_gpt *vtoc)
 	uchar_t		*cp;
 	diskaddr_t	size_in_lba;
 	uchar_t		*buf;
-	int		len;
+	int		len, slot, active;
+
+	slot = active = 0;
+
+	hardware_workarounds(&slot, &active);
 
 	len = (vtoc->efi_lbasize == 0) ? sizeof (mb) : vtoc->efi_lbasize;
 	buf = calloc(len, 1);
@@ -590,9 +737,9 @@ write_pmbr(int fd, struct dk_gpt *vtoc)
 	}
 
 	bzero(&mb.parts, sizeof (mb.parts));
-	cp = (uchar_t *)&mb.parts[0];
+	cp = (uchar_t *)&mb.parts[slot * sizeof (struct ipart)];
 	/* bootable or not */
-	*cp++ = 0;
+	*cp++ = active ? ACTIVE : NOTACTIVE;
 	/* beginning CHS; 0xffffff if not representable */
 	*cp++ = 0xff;
 	*cp++ = 0xff;
@@ -900,7 +1047,8 @@ efi_write(int fd, struct dk_gpt *vtoc)
 		    j < sizeof (conversion_array) /
 		    sizeof (struct uuid_to_ptag); j++) {
 
-			if (vtoc->efi_parts[i].p_tag == j) {
+			if (vtoc->efi_parts[i].p_tag ==
+			    conversion_array[j].p_tag) {
 				UUID_LE_CONVERT(
 				    efi_parts[i].efi_gpe_PartitionTypeGUID,
 				    conversion_array[j].uuid);

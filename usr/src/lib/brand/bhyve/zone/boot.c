@@ -28,6 +28,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/utsname.h>
 #include <unistd.h>
 #include <zone.h>
 
@@ -35,24 +36,28 @@
 #define	BHYVE_DIR		"var/run/bhyve"
 #define	BHYVE_ARGS_FILE		BHYVE_DIR "/" "zhyve.cmd"
 
-#define ZH_MAXARGS		100
+#define	ZH_MAXARGS		100
 
-#define	DEFAULT_BOOTROM		"/usr/share/bhyve/uefi-csm-rom.bin"
+#define	DEFAULT_BOOTROM		"/usr/share/bhyve/uefi-rom.bin"
+#define	DEFAULT_BOOTROM_CSM	"/usr/share/bhyve/uefi-csm-rom.bin"
 
 typedef enum {
-	PCI_SLOT_HOSTBRIDGE = 0,	/* Not used here, but reserved */
-	PCI_SLOT_LPC,
-	PCI_SLOT_CD,
+	PCI_SLOT_HOSTBRIDGE = 0,
+	PCI_SLOT_CD = 3,		/* Windows ahci allows slots 3 - 6 */
 	PCI_SLOT_BOOT_DISK,
 	PCI_SLOT_OTHER_DISKS,
-	PCI_SLOT_NICS
+	PCI_SLOT_NICS,
+	PCI_SLOT_FBUF = 30,
+	PCI_SLOT_LPC = 31,		/* Windows requires lpc in slot 31 */
 } pci_slot_t;
 
-boolean_t debug;
+static boolean_t debug;
+static const char *zonename;
+static const char *zonepath;
 
 #define	dprintf(x) if (debug) (void)printf x
 
-char *
+static char *
 get_zcfg_var(const char *rsrc, const char *inst, const char *prop)
 {
 	char envvar[MAXNAMELEN];
@@ -77,7 +82,7 @@ get_zcfg_var(const char *rsrc, const char *inst, const char *prop)
 	return (ret);
 }
 
-boolean_t
+static boolean_t
 is_env_true(const char *rsrc, const char *inst, const char *prop)
 {
 	char *val = get_zcfg_var(rsrc, inst, prop);
@@ -85,8 +90,17 @@ is_env_true(const char *rsrc, const char *inst, const char *prop)
 	return (val != NULL && strcmp(val, "true") == 0);
 }
 
-int
-add_arg(int *argc, char **argv, char *val)
+static boolean_t
+is_env_string(const char *rsrc, const char *inst, const char *prop,
+    const char *val)
+{
+	char *pval = get_zcfg_var(rsrc, inst, prop);
+
+	return (pval != NULL && strcmp(pval, val) == 0);
+}
+
+static int
+add_arg(int *argc, char **argv, const char *val)
 {
 	if (*argc >= ZH_MAXARGS) {
 		(void) printf("Error: too many arguments\n");
@@ -99,7 +113,46 @@ add_arg(int *argc, char **argv, char *val)
 	return (0);
 }
 
-int
+static int
+add_smbios(int *argc, char **argv)
+{
+	char smbios[MAXPATHLEN];
+	struct utsname utsname;
+	const char *version;
+	const char *uuid;
+
+	if ((uuid = getenv("_ZONECFG_uuid")) != NULL) {
+		if (add_arg(argc, argv, "-U") != 0 ||
+		    add_arg(argc, argv, uuid) != 0)
+			return (1);
+	}
+
+	/*
+	 * Look for something like joyent_20180329T120303Z.  A little mucky, but
+	 * it's exactly what sysinfo does.
+	 */
+	(void) uname(&utsname);
+	if (strncmp(utsname.version, "joyent_", strlen("joyent_")) == 0)
+		version = utsname.version + strlen("joyent_");
+	else
+		version = "?";
+
+	/*
+	 * This is based upon the SMBIOS values we expose to KVM guests.
+	 */
+	(void) snprintf(smbios, sizeof (smbios),
+	    "1,manufacturer=Joyent,product=SmartDC HVM,version=7.%s,"
+	    "serial=%s,sku=001,family=Virtual Machine",
+	    version, zonename);
+
+	if (add_arg(argc, argv, "-B") != 0 ||
+	    add_arg(argc, argv, smbios) != 0)
+		return (1);
+
+	return (0);
+}
+
+static int
 add_cpu(int *argc, char **argv)
 {
 	char *val;
@@ -113,7 +166,7 @@ add_cpu(int *argc, char **argv)
 	return (0);
 }
 
-int
+static int
 add_ram(int *argc, char **argv)
 {
 	char *val;
@@ -127,64 +180,188 @@ add_ram(int *argc, char **argv)
 	return (0);
 }
 
-int
-add_disks(int *argc, char **argv)
+static int
+parse_pcislot(const char *pcislot, uint_t *busp, uint_t *devp, uint_t *funcp)
 {
-	char *disks;
-	char *disk;
-	char *lasts;
-	int next_cd = 0;
-	int next_other = 0;
-	char slotconf[MAXNAMELEN];
-	char *boot = NULL;
+	char junk;
 
-	if ((disks = get_zcfg_var("device", "resources", NULL)) == NULL) {
-		return (0);
+	switch (sscanf(pcislot, "%u:%u:%u%c", busp, devp, funcp, &junk)) {
+	case 3:
+		break;
+	case 2:
+	case 1:
+		*funcp = *devp;
+		*devp = *busp;
+		*busp = 0;
+		break;
+	default:
+		(void) printf("Error: device %d has illegal PCI slot: %s\n",
+		    *devp, pcislot);
+		return (-1);
 	}
 
-	for (disk = strtok_r(disks, " ", &lasts); disk != NULL;
-	    disk = strtok_r(NULL, " ", &lasts)) {
-		int pcislot;
-		int pcifn;
-		char *path;
+	if (*busp > 255 || *devp > 31 || *funcp > 7) {
+		(void) printf("Error: device %d has illegal PCI slot: %s\n",
+		    *devp, pcislot);
+		return (-1);
+	}
 
-		/* zoneadmd is not careful about a trailing delimiter. */
-		if (disk[0] == '\0') {
-			continue;
-		}
+	return (0);
+}
 
-		if ((path = get_zcfg_var("device", disk, "path")) == NULL) {
-			(void) printf("Error: disk %s has no path\n", disk);
+/*
+ * In the initial implementation, slot assignment was dynamic on every boot.
+ * Now, each device resource can have a pci_slot property that will override
+ * dynamic assignment.  The original behavior is preserved, but no effort is
+ * made to detect or avoid conflicts between legacy behavior and new behavior.
+ * When used with vmadm, this is not an issue, as it will update the zone
+ * config at boot time to contain static assignments.
+ */
+static int
+add_disk(char *disk, char *path, char *slotconf, size_t slotconf_len)
+{
+	static char *boot = NULL;
+	static int next_cd = 0;
+	static int next_other = 0;
+	const char *model = "virtio-blk";
+	uint_t pcibus = 0, pcidev = 0, pcifn = 0;
+	const char *slotstr;
+	boolean_t isboot;
+
+	isboot = is_env_true("device", disk, "boot");
+	if (isboot) {
+		/* Allow at most one "primary" disk */
+		if (boot != NULL) {
+			(void) printf("Error: multiple boot disks: %s %s\n",
+			    boot, path);
 			return (-1);
 		}
+		boot = path;
+	}
 
-		/* Allow at most one "primary" disk */
-		if (is_env_true("device", disk, "boot")) {
-			if (boot != NULL) {
-				(void) printf("Error: "
-				    "multiple boot disks: %s %s\n",
-				    boot, path);
-				return (-1);
-			}
-			boot = path;
-			pcislot = PCI_SLOT_BOOT_DISK;
+	if ((slotstr = get_zcfg_var("device", disk, "pci_slot")) != NULL) {
+		if (parse_pcislot(slotstr, &pcibus, &pcidev, &pcifn) != 0) {
+			return (-1);
+		}
+	} else {
+		if (isboot) {
+			pcidev = PCI_SLOT_BOOT_DISK;
 			pcifn = 0;
-		} else if (is_env_true("device", disk, "cdrom")) {
-			pcislot = PCI_SLOT_CD;
+		} else if (is_env_string("device", disk, "media", "cdrom")) {
+			pcidev = PCI_SLOT_CD;
 			pcifn = next_cd;
 			next_cd++;
 		} else {
-			pcislot = PCI_SLOT_OTHER_DISKS;
+			pcidev = PCI_SLOT_OTHER_DISKS;
 			pcifn = next_other;
 			next_other++;
 		}
+	}
 
-		if (snprintf(slotconf, sizeof (slotconf),
-		    "%d:%d,virtio-blk,%s", pcislot, pcifn, path) >=
-		    sizeof (slotconf)) {
-			(void) printf("Error: disk path '%s' too long\n", path);
+	if (is_env_string("device", disk, "model", "virtio")) {
+		model = "virtio-blk";
+	} else if (is_env_string("device", disk, "model", "ahci")) {
+		if (is_env_string("device", disk, "media", "cdrom")) {
+			model = "ahci-cd";
+		} else {
+			model = "ahci-hd";
+		}
+	} else {
+		(void) printf("Error: unknown disk model '%s'\n", model);
+		return (-1);
+	}
+
+	if (snprintf(slotconf, slotconf_len, "%u:%u:%u,%s,%s",
+	    pcibus, pcidev, pcifn, model, path) >= slotconf_len) {
+		(void) printf("Error: disk path '%s' too long\n", path);
+		return (-1);
+	}
+
+	return (0);
+}
+
+static int
+add_ppt(int *argc, char **argv, char *ppt, char *path, char *slotconf,
+    size_t slotconf_len)
+{
+	static boolean_t wired = B_FALSE;
+	static boolean_t acpi = B_FALSE;
+	uint_t bus = 0, dev = 0, func = 0;
+	char *pcislot;
+
+	pcislot = get_zcfg_var("device", ppt, "pci_slot");
+
+	if (pcislot == NULL) {
+		(void) printf("Error: device %s has no PCI slot\n", ppt);
+		return (-1);
+	}
+
+	if (parse_pcislot(pcislot, &bus, &dev, &func) != 0) {
+		return (-1);
+	}
+
+	if (bus > 0) {
+		if (!acpi && add_arg(argc, argv, "-A") != 0)
+			return (-1);
+		acpi = B_TRUE;
+	}
+
+	if (!wired && add_arg(argc, argv, "-S") != 0)
+		return (-1);
+
+	wired = B_TRUE;
+
+	if (snprintf(slotconf, slotconf_len, "%d:%d:%d,passthru,%s",
+	    bus, dev, func, path) >= slotconf_len) {
+		(void) printf("Error: device path '%s' too long\n", path);
+		return (-1);
+	}
+
+	return (0);
+}
+
+static int
+add_devices(int *argc, char **argv)
+{
+	char *devices;
+	char *dev;
+	char *lasts;
+	char slotconf[MAXNAMELEN];
+
+	if ((devices = get_zcfg_var("device", "resources", NULL)) == NULL) {
+		return (0);
+	}
+
+	for (dev = strtok_r(devices, " ", &lasts); dev != NULL;
+	    dev = strtok_r(NULL, " ", &lasts)) {
+		int ret;
+		char *path;
+		char *model;
+
+		/* zoneadmd is not careful about a trailing delimiter. */
+		if (dev[0] == '\0') {
+			continue;
+		}
+
+		if ((path = get_zcfg_var("device", dev, "path")) == NULL) {
+			(void) printf("Error: device %s has no path\n", dev);
 			return (-1);
 		}
+
+		if ((model = get_zcfg_var("device", dev, "model")) == NULL) {
+			(void) printf("Error: device %s has no model\n", dev);
+			return (-1);
+		}
+
+		if (strcmp(model, "passthru") == 0) {
+			ret = add_ppt(argc, argv, dev, path, slotconf,
+			    sizeof (slotconf));
+		} else {
+			ret = add_disk(dev, path, slotconf, sizeof (slotconf));
+		}
+
+		if (ret != 0)
+			return (-1);
 
 		if (add_arg(argc, argv, "-s") != 0 ||
 		    add_arg(argc, argv, slotconf) != 0) {
@@ -195,7 +372,7 @@ add_disks(int *argc, char **argv)
 	return (0);
 }
 
-int
+static int
 add_nets(int *argc, char **argv)
 {
 	char *nets;
@@ -205,7 +382,7 @@ add_nets(int *argc, char **argv)
 	char slotconf[MAXNAMELEN];
 	char *primary = NULL;
 
-	if ((nets = get_zcfg_var("net", "resources", NULL))== NULL) {
+	if ((nets = get_zcfg_var("net", "resources", NULL)) == NULL) {
 		return (0);
 	}
 
@@ -249,7 +426,7 @@ add_nets(int *argc, char **argv)
 	return (0);
 }
 
-int
+static int
 add_lpc(int *argc, char **argv)
 {
 	char *lpcdevs[] = { "bootrom", "com1", "com2", NULL };
@@ -273,6 +450,11 @@ add_lpc(int *argc, char **argv)
 		}
 		if (i == bootrom_idx) {
 			found_bootrom = B_TRUE;
+			if (strcmp(val, "bios") == 0) {
+				val = DEFAULT_BOOTROM_CSM;
+			} else if (strcmp(val, "uefi") == 0) {
+				val = DEFAULT_BOOTROM;
+			}
 		}
 		if (snprintf(conf, sizeof (conf), "%s,%s", lpcdevs[i], val) >=
 		    sizeof (conf)) {
@@ -288,7 +470,7 @@ add_lpc(int *argc, char **argv)
 
 	if (!found_bootrom) {
 		if (add_arg(argc, argv, "-l") != 0 ||
-		    add_arg(argc, argv, "bootrom," DEFAULT_BOOTROM) != 0) {
+		    add_arg(argc, argv, "bootrom," DEFAULT_BOOTROM_CSM) != 0) {
 			return (-1);
 		}
 	}
@@ -296,14 +478,51 @@ add_lpc(int *argc, char **argv)
 	return (0);
 }
 
-int
-add_bhyve_opts(int *argc, char **argv)
+static int
+add_hostbridge(int *argc, char **argv)
+{
+	char conf[MAXPATHLEN];
+	char *model = NULL;
+	boolean_t raw_config = B_FALSE;
+
+	if ((model = get_zcfg_var("attr", "hostbridge", NULL)) != NULL) {
+		/* Easy bypass for doing testing */
+		if (strcmp("none", model) == 0) {
+			return (0);
+		}
+
+		if (strchr(model, '=') != NULL) {
+			/*
+			 * If the attribute contains '=', assume the creator
+			 * wants total control over the config.  Do not prepend
+			 * the value with 'model='.
+			 */
+			raw_config = B_TRUE;
+		}
+	}
+
+	/* Default to Natoma if nothing else is specified */
+	if (model == NULL) {
+		model = "i440fx";
+	}
+
+	(void) snprintf(conf, sizeof (conf), "%d,hostbridge,%s%s",
+	    PCI_SLOT_HOSTBRIDGE, raw_config ? "" : "model=", model);
+	if (add_arg(argc, argv, "-s") != 0 ||
+	    add_arg(argc, argv, conf) != 0) {
+		return (-1);
+	}
+	return (0);
+}
+
+static int
+add_bhyve_extra_opts(int *argc, char **argv)
 {
 	char *val;
 	char *tok;
 	char *lasts;
 
-	if ((val = get_zcfg_var("attr", "bhyve_opts", NULL)) == NULL) {
+	if ((val = get_zcfg_var("attr", "bhyve_extra_opts", NULL)) == NULL) {
 		return (0);
 	}
 
@@ -327,8 +546,44 @@ add_bhyve_opts(int *argc, char **argv)
 	return (0);
 }
 
+/*
+ * Adds the frame buffer and an xhci tablet to help with the pointer.
+ */
+static int
+add_fbuf(int *argc, char **argv)
+{
+	char conf[MAXPATHLEN];
+	int len;
+
+	/*
+	 * Do not add a frame buffer or tablet if VNC is disabled.
+	 */
+	if (is_env_string("attr", "vnc_port", NULL, "-1")) {
+		return (0);
+	}
+
+	len = snprintf(conf, sizeof (conf),
+	    "%d:0,fbuf,vga=off,unix=/tmp/vm.vnc", PCI_SLOT_FBUF);
+	assert(len < sizeof (conf));
+
+	if (add_arg(argc, argv, "-s") != 0 ||
+	    add_arg(argc, argv, conf) != 0) {
+		return (-1);
+	}
+
+	len = snprintf(conf, sizeof (conf), "%d:1,xhci,tablet", PCI_SLOT_FBUF);
+	assert(len < sizeof (conf));
+
+	if (add_arg(argc, argv, "-s") != 0 ||
+	    add_arg(argc, argv, conf) != 0) {
+		return (-1);
+	}
+
+	return (0);
+}
+
 /* Must be called last */
-int
+static int
 add_vmname(int *argc, char **argv)
 {
 	char buf[32];				/* VM_MAX_NAMELEN */
@@ -351,7 +606,7 @@ add_vmname(int *argc, char **argv)
  * paranoid and call fdsync() at the end.  That's not really need for this use
  * case because it is being written to tmpfs.
  */
-int
+static int
 full_write(int fd, char *buf, size_t buflen)
 {
 	ssize_t nwritten;
@@ -373,7 +628,7 @@ full_write(int fd, char *buf, size_t buflen)
 	return (0);
 }
 
-void
+static void
 init_debug(void)
 {
 	char *val = getenv("_ZONEADMD_brand_debug");
@@ -381,24 +636,45 @@ init_debug(void)
 	debug = (val != NULL && val[0] != '\0');
 }
 
+static int
+setup_reboot(void)
+{
+	zoneid_t	zoneid;
+
+	if ((zoneid = getzoneidbyname(zonename)) < 0) {
+		(void) printf("Error: bhyve zoneid (%s) does not exist\n",
+		    zonename);
+		return (-1);
+	}
+
+	if (zoneid == GLOBAL_ZONEID) {
+		(void) printf("Error: bhyve global zoneid (%s)\n", zonename);
+		return (-1);
+	}
+
+	if (zone_setattr(zoneid, ZONE_ATTR_INITRESTART0, NULL, 0) < 0) {
+		(void) printf("Error: bhyve zoneid %ld setattr failed: %s\n",
+		    zoneid, strerror(errno));
+		return (-1);
+	}
+
+	return (0);
+}
 
 int
 main(int argc, char **argv)
 {
 	int fd, err;
 	char *zhargv[ZH_MAXARGS] = {
-		"zhyve",	/* Squats on argv[0] */
+		"bhyve",	/* Squats on argv[0] */
 		"-H",		/* vmexit on halt isns */
-		"-B", "1,product=SmartDC HVM",
 		NULL };
-	int zhargc;
+	int zhargc = 2;
 	nvlist_t *nvl;
 	char *nvbuf = NULL;
 	size_t nvbuflen = 0;
 	char zoneroot[MAXPATHLEN];
 	int zrfd;
-	char *zonename;
-	char *zonepath;
 
 	init_debug();
 
@@ -410,16 +686,18 @@ main(int argc, char **argv)
 	zonename = argv[1];
 	zonepath = argv[2];
 
-	for (zhargc = 0; zhargv[zhargc] != NULL; zhargc++) {
-		dprintf(("def_arg: argv[%d]='%s'\n", zhargc, zhargv[zhargc]));
-	}
+	if (setup_reboot() < 0)
+		return (1);
 
-	if (add_lpc(&zhargc, (char **)&zhargv) != 0 ||
+	if (add_smbios(&zhargc, (char **)&zhargv) != 0 ||
+	    add_lpc(&zhargc, (char **)&zhargv) != 0 ||
+	    add_hostbridge(&zhargc, (char **)&zhargv) != 0 ||
 	    add_cpu(&zhargc, (char **)&zhargv) != 0 ||
 	    add_ram(&zhargc, (char **)&zhargv) != 0 ||
-	    add_disks(&zhargc, (char **)&zhargv) != 0 ||
+	    add_devices(&zhargc, (char **)&zhargv) != 0 ||
 	    add_nets(&zhargc, (char **)&zhargv) != 0 ||
-	    add_bhyve_opts(&zhargc, (char **)&zhargv) != 0 ||
+	    add_bhyve_extra_opts(&zhargc, (char **)&zhargv) != 0 ||
+	    add_fbuf(&zhargc, (char **)&zhargv) != 0 ||
 	    add_vmname(&zhargc, (char **)&zhargv) != 0) {
 		return (1);
 	}
@@ -430,7 +708,7 @@ main(int argc, char **argv)
 	 * exit.
 	 */
 	if (nvlist_alloc(&nvl, NV_UNIQUE_NAME, 0) != 0 ||
-	    nvlist_add_string_array(nvl, "zhyve_args", zhargv, zhargc) != 0) {
+	    nvlist_add_string_array(nvl, "bhyve_args", zhargv, zhargc) != 0) {
 		(void) printf("Error: failed to create nvlist: %s\n",
 		    strerror(errno));
 		return (1);
@@ -468,7 +746,7 @@ main(int argc, char **argv)
 	 */
 	if (mkdirat(zrfd, BHYVE_DIR, 0700) != 0 && errno != EEXIST) {
 		(void) printf("Error: failed to create directory %s "
-		    "in zone: %s\n" BHYVE_DIR, strerror(errno));
+		    "in zone: %s\n", BHYVE_DIR, strerror(errno));
 		return (1);
 	}
 

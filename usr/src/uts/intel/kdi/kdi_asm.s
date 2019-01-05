@@ -284,17 +284,27 @@
 	wrmsr
 
 	/*
+	 * In the trampoline we stashed the incoming %cr3. Copy this into
+	 * the kdiregs for restoration and later use.
+	 */
+	mov	%gs:(CPU_KPTI_DBG+KPTI_TR_CR3), %rdx
+	mov	%rdx, REG_OFF(KDIREG_CR3)(%rsp)
+	/*
 	 * Switch to the kernel's %cr3. From the early interrupt handler
 	 * until now we've been running on the "paranoid" %cr3 (that of kas
 	 * from early in boot).
 	 *
-	 * Hopefully it's not corrupt!
+	 * If we took the interrupt from somewhere already on the kas/paranoid
+	 * %cr3 though, don't change it (this could happen if kcr3 is corrupt
+	 * and we took a gptrap earlier from this very code).
 	 */
+	cmpq	%rdx, kpti_safe_cr3
+	je	.no_kcr3
 	mov	%gs:CPU_KPTI_KCR3, %rdx
-	cmp	$0, %rdx
-	je	.zero_kcr3
+	cmpq	$0, %rdx
+	je	.no_kcr3
 	mov	%rdx, %cr3
-.zero_kcr3:
+.no_kcr3:
 
 #endif	/* __xpv */
 
@@ -392,7 +402,11 @@
 	subq	$REG_OFF(KDIREG_TRAPNO), %rsp
 	KDI_SAVE_REGS(%rsp)
 
+	movq	%cr3, %rax
+	movq	%rax, REG_OFF(KDIREG_CR3)(%rsp)
+
 	movq	REG_OFF(KDIREG_SS)(%rsp), %rax
+	movq	%rax, REG_OFF(KDIREG_SAVPC)(%rsp)
 	xchgq	REG_OFF(KDIREG_RIP)(%rsp), %rax
 	movq	%rax, REG_OFF(KDIREG_SS)(%rsp)
 
@@ -413,6 +427,11 @@
 
 	movq	REG_OFF(KDIREG_RIP)(%rsp), %rcx
 	ADD_CRUMB(%rax, KRM_PC, %rcx, %rdx)
+	movq	REG_OFF(KDIREG_RSP)(%rsp), %rcx
+	ADD_CRUMB(%rax, KRM_SP, %rcx, %rdx)
+	ADD_CRUMB(%rax, KRM_TRAPNO, $-1, %rdx)
+
+	movq    $KDI_CPU_STATE_SLAVE, KRS_CPU_STATE(%rax)
 
 	pushq	%rax
 	jmp	kdi_save_common_state
@@ -439,8 +458,8 @@
 
 	pushq	%rdi
 	call	kdi_trap_pass
-	cmpq	$1, %rax
-	je	kdi_pass_to_kernel
+	testq	%rax, %rax
+	jnz	kdi_pass_to_kernel
 	popq	%rax /* cpusave in %rax */
 
 	SAVE_IDTGDT
@@ -519,6 +538,29 @@
 	KDI_RESTORE_DEBUGGING_STATE
 
 	movq	KRS_GREGS(%rdi), %rsp
+
+#if !defined(__xpv)
+	/*
+	 * If we're going back via tr_iret_kdi, then we want to copy the
+	 * final %cr3 we're going to back into the kpti_dbg area now.
+	 *
+	 * Since the trampoline needs to find the kpti_dbg too, we enter it
+	 * with %r13 set to point at that. The real %r13 (to restore before
+	 * the iret) we stash in the kpti_dbg itself.
+	 */
+	movq	%gs:CPU_SELF, %r13	/* can't leaq %gs:*, use self-ptr */
+	addq	$CPU_KPTI_DBG, %r13
+
+	movq	REG_OFF(KDIREG_R13)(%rsp), %rdx
+	movq	%rdx, KPTI_R13(%r13)
+
+	movq	REG_OFF(KDIREG_CR3)(%rsp), %rdx
+	movq	%rdx, KPTI_TR_CR3(%r13)
+
+	/* The trampoline will undo this later. */
+	movq	%r13, REG_OFF(KDIREG_R13)(%rsp)
+#endif
+
 	KDI_RESTORE_REGS(%rsp)
 	addq	$REG_OFF(KDIREG_RIP), %rsp	/* Discard state, trapno, err */
 	/*
@@ -526,24 +568,16 @@
 	 * for either kernel or userland.
 	 */
 #if !defined(__xpv)
-	jmp	tr_iret_auto
+	jmp	tr_iret_kdi
 #else
 	IRET
 #endif
 	/*NOTREACHED*/
 	SET_SIZE(kdi_resume)
 
-	ENTRY_NP(kdi_pass_to_kernel)
-
-	popq	%rdi /* cpusave */
-
-	movq	$KDI_CPU_STATE_NONE, KRS_CPU_STATE(%rdi)
 
 	/*
-	 * Find the trap and vector off the right kernel handler.  The trap
-	 * handler will expect the stack to be in trap order, with %rip being
-	 * the last entry, so we'll need to restore all our regs.  On i86xpv
-	 * we'll need to compensate for XPV_TRAP_POP.
+	 * We took a trap that should be handled by the kernel, not KMDB.
 	 *
 	 * We're hard-coding the three cases where KMDB has installed permanent
 	 * handlers, since after we KDI_RESTORE_REGS(), we don't have registers
@@ -551,15 +585,53 @@
 	 * through here at the same time.
 	 *
 	 * Note that we handle T_DBGENTR since userspace might have tried it.
+	 *
+	 * The trap handler will expect the stack to be in trap order, with %rip
+	 * being the last entry, so we'll need to restore all our regs.  On
+	 * i86xpv we'll need to compensate for XPV_TRAP_POP.
+	 *
+	 * %rax on entry is either 1 or 2, which is from kdi_trap_pass().
+	 * kdi_cmnint stashed the original %cr3 into KDIREG_CR3, then (probably)
+	 * switched us to the CPU's kf_kernel_cr3. But we're about to call, for
+	 * example:
+	 *
+	 * dbgtrap->trap()->tr_iret_kernel
+	 *
+	 * which, unlike, tr_iret_kdi, doesn't restore the original %cr3, so
+	 * we'll do so here if needed.
+	 *
+	 * This isn't just a matter of tidiness: for example, consider:
+	 *
+	 * hat_switch(oldhat=kas.a_hat, newhat=prochat)
+	 *  setcr3()
+	 *  reset_kpti()
+	 *   *brktrap* due to fbt on reset_kpti:entry
+	 *
+	 * Here, we have the new hat's %cr3, but we haven't yet updated
+	 * kf_kernel_cr3 (so its currently kas's). So if we don't restore here,
+	 * we'll stay on kas's cr3 value on returning from the trap: not good if
+	 * we fault on a userspace address.
 	 */
+	ENTRY_NP(kdi_pass_to_kernel)
+
+	popq	%rdi /* cpusave */
+	movq	$KDI_CPU_STATE_NONE, KRS_CPU_STATE(%rdi)
 	movq	KRS_GREGS(%rdi), %rsp
+
+	cmpq	$2, %rax
+	jne	no_restore_cr3
+	movq	REG_OFF(KDIREG_CR3)(%rsp), %r11
+	movq	%r11, %cr3
+
+no_restore_cr3:
 	movq	REG_OFF(KDIREG_TRAPNO)(%rsp), %rdi
+
 	cmpq	$T_SGLSTP, %rdi
-	je	1f
+	je	kdi_pass_dbgtrap
 	cmpq	$T_BPTFLT, %rdi
-	je	2f
+	je	kdi_pass_brktrap
 	cmpq	$T_DBGENTR, %rdi
-	je	3f
+	je	kdi_pass_invaltrap
 	/*
 	 * Hmm, unknown handler.  Somebody forgot to update this when they
 	 * added a new trap interposition... try to drop back into kmdb.
@@ -573,13 +645,13 @@
 	XPV_TRAP_PUSH; \
 	jmp	%cs:name
 
-1:
+kdi_pass_dbgtrap:
 	CALL_TRAP_HANDLER(dbgtrap)
 	/*NOTREACHED*/
-2:
+kdi_pass_brktrap:
 	CALL_TRAP_HANDLER(brktrap)
 	/*NOTREACHED*/
-3:
+kdi_pass_invaltrap:
 	CALL_TRAP_HANDLER(invaltrap)
 	/*NOTREACHED*/
 

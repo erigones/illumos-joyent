@@ -81,6 +81,12 @@ struct xen_evt_data {
 	ulong_t		evt_affinity[sizeof (ulong_t) * 8]; /* service on cpu */
 };
 
+enum fast_syscall_state {
+	FSS_DISABLED		= 0,
+	FSS_ASYSC_ENABLED	= (1 << 0),
+	FSS_SEP_ENABLED		= (1 << 1)
+};
+
 struct kpti_frame {
 	uint64_t	kf_lower_redzone;
 
@@ -134,6 +140,15 @@ struct kpti_frame {
 	uint64_t	kf_upper_redzone;
 };
 
+typedef struct cpu_ht {
+	lock_t ch_lock;
+	char ch_pad[56];
+	struct cpu *ch_sib;
+	volatile uint64_t ch_intr_depth;
+	volatile uint64_t ch_state;
+	volatile uint64_t ch_sibstate;
+} cpu_ht_t;
+
 /*
  * This first value, MACHCPU_SIZE is the size of all the members in the cpu_t
  * AND struct machcpu, before we get to the mcpu_pad and the kpti area.
@@ -141,9 +156,9 @@ struct kpti_frame {
  * page-tables, and hence must be page-aligned and page-sized. See
  * hat_pcp_setup().
  *
- * There is a CTASSERT in os/intr.c that checks these numbers.
+ * There are CTASSERTs in os/intr.c that verify this all works out.
  */
-#define	MACHCPU_SIZE	(572 + 1584)
+#define	MACHCPU_SIZE	(1568 + 696)
 #define	MACHCPU_PAD	(MMU_PAGESIZE - MACHCPU_SIZE)
 #define	MACHCPU_PAD2	(MMU_PAGESIZE - 16 - 3 * sizeof (struct kpti_frame))
 
@@ -152,6 +167,7 @@ struct	machcpu {
 	 * x_call fields - used for interprocessor cross calls
 	 */
 	struct xc_msg	*xc_msgbox;
+	struct xc_msg	*xc_curmsg;
 	struct xc_msg	*xc_free;
 	xc_data_t	xc_data;
 	uint32_t	xc_wait_cnt;
@@ -204,6 +220,8 @@ struct	machcpu {
 	uint16_t mcpu_idle_type;	/* CPU next idle type */
 	uint16_t max_cstates;		/* supported max cstates */
 
+	enum fast_syscall_state	mcpu_fast_syscall_state;
+
 	struct cpu_ucode_info	*mcpu_ucode_info;
 
 	void			*mcpu_pm_mach_state;
@@ -218,6 +236,8 @@ struct	machcpu {
 	 * The low order bits will be incremented on every interrupt.
 	 */
 	volatile uint32_t	mcpu_istamp;
+
+	cpu_ht_t		mcpu_ht;
 
 	char			mcpu_pad[MACHCPU_PAD];
 

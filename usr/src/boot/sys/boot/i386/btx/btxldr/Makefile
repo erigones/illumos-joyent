@@ -21,7 +21,7 @@ OBJS=	btxldr.o
 
 AS=	$(GNU_ROOT)/bin/gas
 LD=	$(GNU_ROOT)/bin/gld
-CC=	$(GCC_ROOT)/bin/gcc
+CC=	$(GNUC_ROOT)/bin/gcc
 
 LOADER_ADDRESS=0x200000
 CPPFLAGS=
@@ -32,13 +32,13 @@ CFLAGS += -DBTXLDR_VERBOSE
 
 LDFLAGS=-e start -Ttext ${LOADER_ADDRESS} -N -S --oformat binary
 
+all install:	$(PROG)
+
 $(PROG): $(OBJS)
 	$(LD) $(LDFLAGS) -o $@ $(OBJS)
 
 .S.o:
 	$(COMPILE.S) $(CPPFLAGS) $(CFLAGS) -c -o $@ $<
-
-all:	$(PROG)
 
 clobber: clean
 

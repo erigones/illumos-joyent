@@ -12,14 +12,15 @@
 #
 
 #
-# Copyright 2017 Joyent, Inc.
 # Copyright (c) 2012, 2016 by Delphix. All rights reserved.
 # Copyright (c) 2017, Chris Fraire <cfraire@me.com>.
+# Copyright 2018 Joyent, Inc.
 #
 
 import ConfigParser
 import os
 import logging
+import platform
 from logging.handlers import WatchedFileHandler
 from datetime import datetime
 from optparse import OptionParser
@@ -38,6 +39,13 @@ KILL = '/usr/bin/kill'
 TRUE = '/usr/bin/true'
 SUDO = '/usr/bin/sudo'
 SU = '/usr/bin/su'
+
+# The location of sudo(1) varies by illumos distribution.
+if os.path.isfile('/usr/bin/sudo'):
+    SUDO = '/usr/bin/sudo'
+else:
+    SUDO = '/opt/local/bin/sudo'
+
 
 # Custom class to reopen the log file in case it is forcibly closed by a test.
 class WatchedFileHandlerClosed(WatchedFileHandler):
@@ -81,6 +89,8 @@ class Result(object):
     def done(self, proc, killed):
         """
         Finalize the results of this Cmd.
+	Report SKIP for return codes 3,4 (NOTINUSE, UNSUPPORTED)
+	as defined in ../stf/include/stf.shlib
         """
         Result.total += 1
         m, s = divmod(time() - self.starttime, 60)
@@ -92,6 +102,9 @@ class Result(object):
         elif self.returncode is 0:
             self.result = 'PASS'
             Result.runresults['PASS'] += 1
+        elif self.returncode is 3 or self.returncode is 4:
+            self.result = 'SKIP'
+            Result.runresults['SKIP'] += 1
         elif self.returncode is not 0:
             self.result = 'FAIL'
             Result.runresults['FAIL'] += 1
@@ -588,6 +601,10 @@ class TestRun(object):
         self.outputdir = os.path.join(self.outputdir, self.timestamp)
 
         for section in config.sections():
+            if ('arch' in config.options(section) and
+                platform.machine() != config.get(section, 'arch')):
+                continue
+
             if 'tests' in config.options(section):
                 testgroup = TestGroup(section)
                 for prop in TestGroup.props:

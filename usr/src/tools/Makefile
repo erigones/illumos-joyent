@@ -37,17 +37,19 @@ include ../Makefile.master
 BOOT_SUBDIRS= \
 	cw \
 	.WAIT \
-	install.bin
+	install.bin \
+	.WAIT \
+	ctf
 
 COMMON_SUBDIRS= \
 	codereview \
 	codesign \
 	cscope-fast \
-	ctf \
 	env \
 	findunref \
 	lintdump \
 	make \
+	makesoftcore \
 	ndrgen \
 	onbld \
 	protocmp \
@@ -72,6 +74,7 @@ sparc_SUBDIRS= \
 
 i386_SUBDIRS=		\
 	aw		\
+	cpcgen		\
 	elfextract	\
 	mbh_patch	\
 	btxld
@@ -158,7 +161,5 @@ $(ROOTDIRS):
 
 $(ROOTONBLDLIBPY): $(ROOTDIRS)
 	$(RM) -r $@; $(SYMLINK) python$(PYTHON_VERSION) $@
-
-make: ctf
 
 FRC:

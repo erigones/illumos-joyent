@@ -666,7 +666,6 @@ static void	icmp_send_reply_v4(mblk_t *, ipha_t *, icmph_t *,
 mblk_t		*ip_dlpi_alloc(size_t, t_uscalar_t);
 char		*ip_dot_addr(ipaddr_t, char *);
 mblk_t		*ip_carve_mp(mblk_t **, ssize_t);
-int		ip_close(queue_t *, int);
 static char	*ip_dot_saddr(uchar_t *, char *);
 static void	ip_lrput(queue_t *, mblk_t *);
 ipaddr_t	ip_net_mask(ipaddr_t);
@@ -1655,7 +1654,7 @@ icmp_inbound_v4(mblk_t *mp, ip_recv_attr_t *ira)
 			/* Update DCE and adjust MTU is icmp header if needed */
 			icmp_inbound_too_big_v4(icmph, ira);
 		}
-		/* FALLTHRU */
+		/* FALLTHROUGH */
 	default:
 		icmp_inbound_error_fanout_v4(mp, icmph, ira);
 		break;
@@ -2283,8 +2282,8 @@ icmp_inbound_error_fanout_v4(mblk_t *mp, icmph_t *icmph, ip_recv_attr_t *ira)
 			return;
 		}
 		/* No self-encapsulated */
-		/* FALLTHRU */
 	}
+	/* FALLTHROUGH */
 	case IPPROTO_IPV6:
 		if ((connp = ipcl_iptun_classify_v4(&ripha.ipha_src,
 		    &ripha.ipha_dst, ipst)) != NULL) {
@@ -2298,7 +2297,7 @@ icmp_inbound_error_fanout_v4(mblk_t *mp, icmph_t *icmph, ip_recv_attr_t *ira)
 		 * No IP tunnel is interested, fallthrough and see
 		 * if a raw socket will want it.
 		 */
-		/* FALLTHRU */
+		/* FALLTHROUGH */
 	default:
 		ira->ira_flags |= IRAF_ICMP_ERROR;
 		ip_fanout_proto_v4(mp, &ripha, ira);
@@ -4129,6 +4128,8 @@ ip_modclose(ill_t *ill)
 	rw_destroy(&ill->ill_mcast_lock);
 	mutex_destroy(&ill->ill_mcast_serializer);
 	list_destroy(&ill->ill_nce);
+	cv_destroy(&ill->ill_dlpi_capab_cv);
+	mutex_destroy(&ill->ill_dlpi_capab_lock);
 
 	/*
 	 * Now we are done with the module close pieces that
@@ -4236,7 +4237,7 @@ ip_quiesce_conn(conn_t *connp)
 
 /* ARGSUSED */
 int
-ip_close(queue_t *q, int flags)
+ip_close(queue_t *q, int flags, cred_t *credp __unused)
 {
 	conn_t		*connp;
 
@@ -5938,7 +5939,7 @@ ip_modopen(queue_t *q, dev_t *devp, int flag, int sflag, cred_t *credp)
 	mutex_exit(&ipst->ips_ip_mi_lock);
 fail:
 	if (err) {
-		(void) ip_close(q, 0);
+		(void) ip_close(q, 0, credp);
 		return (err);
 	}
 	return (0);
@@ -6326,7 +6327,7 @@ ip_opt_set_multicast_group(conn_t *connp, t_scalar_t name,
 	case IP_ADD_MEMBERSHIP:
 	case IPV6_JOIN_GROUP:
 		mcast_opt = B_FALSE;
-		/* FALLTHRU */
+		/* FALLTHROUGH */
 	case MCAST_JOIN_GROUP:
 		fmode = MODE_IS_EXCLUDE;
 		optfn = ip_opt_add_group;
@@ -6335,7 +6336,7 @@ ip_opt_set_multicast_group(conn_t *connp, t_scalar_t name,
 	case IP_DROP_MEMBERSHIP:
 	case IPV6_LEAVE_GROUP:
 		mcast_opt = B_FALSE;
-		/* FALLTHRU */
+		/* FALLTHROUGH */
 	case MCAST_LEAVE_GROUP:
 		fmode = MODE_IS_INCLUDE;
 		optfn = ip_opt_delete_group;
@@ -6440,7 +6441,7 @@ ip_opt_set_multicast_sources(conn_t *connp, t_scalar_t name,
 	switch (name) {
 	case IP_BLOCK_SOURCE:
 		mcast_opt = B_FALSE;
-		/* FALLTHRU */
+		/* FALLTHROUGH */
 	case MCAST_BLOCK_SOURCE:
 		fmode = MODE_IS_EXCLUDE;
 		optfn = ip_opt_add_group;
@@ -6448,7 +6449,7 @@ ip_opt_set_multicast_sources(conn_t *connp, t_scalar_t name,
 
 	case IP_UNBLOCK_SOURCE:
 		mcast_opt = B_FALSE;
-		/* FALLTHRU */
+		/* FALLTHROUGH */
 	case MCAST_UNBLOCK_SOURCE:
 		fmode = MODE_IS_EXCLUDE;
 		optfn = ip_opt_delete_group;
@@ -6456,7 +6457,7 @@ ip_opt_set_multicast_sources(conn_t *connp, t_scalar_t name,
 
 	case IP_ADD_SOURCE_MEMBERSHIP:
 		mcast_opt = B_FALSE;
-		/* FALLTHRU */
+		/* FALLTHROUGH */
 	case MCAST_JOIN_SOURCE_GROUP:
 		fmode = MODE_IS_INCLUDE;
 		optfn = ip_opt_add_group;
@@ -6464,7 +6465,7 @@ ip_opt_set_multicast_sources(conn_t *connp, t_scalar_t name,
 
 	case IP_DROP_SOURCE_MEMBERSHIP:
 		mcast_opt = B_FALSE;
-		/* FALLTHRU */
+		/* FALLTHROUGH */
 	case MCAST_LEAVE_SOURCE_GROUP:
 		fmode = MODE_IS_INCLUDE;
 		optfn = ip_opt_delete_group;
@@ -7963,7 +7964,7 @@ ip_rput_notdata(ill_t *ill, mblk_t *mp)
 			putnext(ill->ill_rq, mp);
 			return;
 		}
-		/* FALLTHRU */
+		/* FALLTHROUGH */
 	case M_ERROR:
 	case M_HANGUP:
 		mutex_enter(&ill->ill_lock);
@@ -7990,7 +7991,7 @@ ip_rput_notdata(ill_t *ill, mblk_t *mp)
 		default:
 			break;
 		}
-		/* FALLTHRU */
+		/* FALLTHROUGH */
 	default:
 		putnext(ill->ill_rq, mp);
 		return;
@@ -8200,7 +8201,6 @@ ip_rput_dlpi_writer(ipsq_t *ipsq, queue_t *q, mblk_t *mp, void *dummy_arg)
 	conn_t		*connp = NULL;
 	t_uscalar_t	paddrreq;
 	mblk_t		*mp_hw;
-	boolean_t	success;
 	boolean_t	ioctl_aborted = B_FALSE;
 	boolean_t	log = B_TRUE;
 
@@ -8300,7 +8300,8 @@ ip_rput_dlpi_writer(ipsq_t *ipsq, queue_t *q, mblk_t *mp, void *dummy_arg)
 			ill->ill_state_flags &= ~ILL_DOWN_IN_PROGRESS;
 			mutex_exit(&ill->ill_lock);
 			/*
-			 * Something went wrong with the bind.  We presumably
+			 * Something went wrong with the bind. If this was the
+			 * result of a DL_NOTE_REPLUMB, then we presumably
 			 * have an IOCTL hanging out waiting for completion.
 			 * Find it, take down the interface that was coming
 			 * up, and complete the IOCTL with the error noted.
@@ -8317,6 +8318,15 @@ ip_rput_dlpi_writer(ipsq_t *ipsq, queue_t *q, mblk_t *mp, void *dummy_arg)
 
 				(void) ipif_down(ipif, NULL, NULL);
 				/* error is set below the switch */
+			} else {
+				/*
+				 * There's no pending IOCTL, so the bind was
+				 * most likely started by ill_dl_up(). We save
+				 * the error and let it take care of responding
+				 * to the IOCTL.
+				 */
+				ill->ill_dl_bind_err = dlea->dl_unix_errno ?
+				    dlea->dl_unix_errno : ENXIO;
 			}
 			break;
 		case DL_ENABMULTI_REQ:
@@ -8440,55 +8450,7 @@ ip_rput_dlpi_writer(ipsq_t *ipsq, queue_t *q, mblk_t *mp, void *dummy_arg)
 		DTRACE_PROBE1(ip__rput__dlpi__bind__ack, ill_t *, ill);
 		ill_nic_event_dispatch(ill, 0, NE_UP, NULL, 0);
 
-		/*
-		 * Now bring up the resolver; when that is complete, we'll
-		 * create IREs.  Note that we intentionally mirror what
-		 * ipif_up() would have done, because we got here by way of
-		 * ill_dl_up(), which stopped ipif_up()'s processing.
-		 */
-		if (ill->ill_isv6) {
-			/*
-			 * v6 interfaces.
-			 * Unlike ARP which has to do another bind
-			 * and attach, once we get here we are
-			 * done with NDP
-			 */
-			(void) ipif_resolver_up(ipif, Res_act_initial);
-			if ((err = ipif_ndp_up(ipif, B_TRUE)) == 0)
-				err = ipif_up_done_v6(ipif);
-		} else if (ill->ill_net_type == IRE_IF_RESOLVER) {
-			/*
-			 * ARP and other v4 external resolvers.
-			 * Leave the pending mblk intact so that
-			 * the ioctl completes in ip_rput().
-			 */
-			if (connp != NULL)
-				mutex_enter(&connp->conn_lock);
-			mutex_enter(&ill->ill_lock);
-			success = ipsq_pending_mp_add(connp, ipif, q, mp1, 0);
-			mutex_exit(&ill->ill_lock);
-			if (connp != NULL)
-				mutex_exit(&connp->conn_lock);
-			if (success) {
-				err = ipif_resolver_up(ipif, Res_act_initial);
-				if (err == EINPROGRESS) {
-					freemsg(mp);
-					return;
-				}
-				mp1 = ipsq_pending_mp_get(ipsq, &connp);
-			} else {
-				/* The conn has started closing */
-				err = EINTR;
-			}
-		} else {
-			/*
-			 * This one is complete. Reply to pending ioctl.
-			 */
-			(void) ipif_resolver_up(ipif, Res_act_initial);
-			err = ipif_up_done(ipif);
-		}
-
-		if ((err == 0) && (ill->ill_up_ipifs)) {
+		if (ill->ill_up_ipifs) {
 			err = ill_up_ipifs(ill, q, mp1);
 			if (err == EINPROGRESS) {
 				freemsg(mp);
@@ -8496,25 +8458,6 @@ ip_rput_dlpi_writer(ipsq_t *ipsq, queue_t *q, mblk_t *mp, void *dummy_arg)
 			}
 		}
 
-		/*
-		 * If we have a moved ipif to bring up, and everything has
-		 * succeeded to this point, bring it up on the IPMP ill.
-		 * Otherwise, leave it down -- the admin can try to bring it
-		 * up by hand if need be.
-		 */
-		if (ill->ill_move_ipif != NULL) {
-			if (err != 0) {
-				ill->ill_move_ipif = NULL;
-			} else {
-				ipif = ill->ill_move_ipif;
-				ill->ill_move_ipif = NULL;
-				err = ipif_up(ipif, q, mp1);
-				if (err == EINPROGRESS) {
-					freemsg(mp);
-					return;
-				}
-			}
-		}
 		break;
 
 	case DL_NOTIFY_IND: {
@@ -9095,7 +9038,7 @@ ip_forward_options(mblk_t *mp, ipha_t *ipha, ill_t *dst_ill,
 					/* Not for us */
 					break;
 				}
-				/* FALLTHRU */
+				/* FALLTHROUGH */
 			case IPOPT_TS_TSANDADDR:
 				off = IP_ADDR_LEN + IPOPT_TS_TIMELEN;
 				break;
@@ -9131,7 +9074,7 @@ ip_forward_options(mblk_t *mp, ipha_t *ipha, ill_t *dst_ill,
 				}
 				bcopy(&ifaddr, (char *)opt + off, IP_ADDR_LEN);
 				opt[IPOPT_OFFSET] += IP_ADDR_LEN;
-				/* FALLTHRU */
+				/* FALLTHROUGH */
 			case IPOPT_TS_TSONLY:
 				off = opt[IPOPT_OFFSET] - 1;
 				/* Compute # of milliseconds since midnight */
@@ -9322,7 +9265,7 @@ ip_input_local_options(mblk_t *mp, ipha_t *ipha, ip_recv_attr_t *ira)
 					/* Not for us */
 					break;
 				}
-				/* FALLTHRU */
+				/* FALLTHROUGH */
 			case IPOPT_TS_TSANDADDR:
 				off = IP_ADDR_LEN + IPOPT_TS_TIMELEN;
 				break;
@@ -9357,7 +9300,7 @@ ip_input_local_options(mblk_t *mp, ipha_t *ipha, ip_recv_attr_t *ira)
 				}
 				bcopy(&ifaddr, (char *)opt + off, IP_ADDR_LEN);
 				opt[IPOPT_OFFSET] += IP_ADDR_LEN;
-				/* FALLTHRU */
+				/* FALLTHROUGH */
 			case IPOPT_TS_TSONLY:
 				off = opt[IPOPT_OFFSET] - 1;
 				/* Compute # of milliseconds since midnight */
@@ -12010,7 +11953,7 @@ ip_output_local_options(ipha_t *ipha, ip_stack_t *ipst)
 					/* Not for us */
 					break;
 				}
-				/* FALLTHRU */
+				/* FALLTHROUGH */
 			case IPOPT_TS_TSANDADDR:
 				off = IP_ADDR_LEN + IPOPT_TS_TIMELEN;
 				break;
@@ -12039,7 +11982,7 @@ ip_output_local_options(ipha_t *ipha, ip_stack_t *ipst)
 				dst = htonl(INADDR_LOOPBACK);
 				bcopy(&dst, (char *)opt + off, IP_ADDR_LEN);
 				opt[IPOPT_OFFSET] += IP_ADDR_LEN;
-				/* FALLTHRU */
+				/* FALLTHROUGH */
 			case IPOPT_TS_TSONLY:
 				off = opt[IPOPT_OFFSET] - 1;
 				/* Compute # of milliseconds since midnight */

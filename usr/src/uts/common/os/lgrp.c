@@ -21,6 +21,7 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ * Copyright 2018 Joyent, Inc.
  */
 
 /*
@@ -90,6 +91,7 @@
 #include <sys/pg.h>
 #include <sys/promif.h>
 #include <sys/sdt.h>
+#include <sys/ht.h>
 
 lgrp_gen_t	lgrp_gen = 0;		/* generation of lgroup hierarchy */
 lgrp_t *lgrp_table[NLGRPS_MAX]; /* table of all initialized lgrp_t structs */
@@ -519,6 +521,8 @@ static void
 lgrp_main_mp_init(void)
 {
 	klgrpset_t changed;
+
+	ht_init();
 
 	/*
 	 * Update lgroup topology (if necessary)
@@ -3731,7 +3735,7 @@ lgrp_mem_choose(struct seg *seg, caddr_t vaddr, size_t pgsz)
 				    LGRP_NUM_DEFAULT, 1);
 			break;
 		}
-		/* LINTED fallthrough on case statement */
+		/* FALLTHROUGH */
 	case LGRP_MEM_POLICY_RANDOM:
 
 		/*
@@ -3784,7 +3788,7 @@ lgrp_mem_choose(struct seg *seg, caddr_t vaddr, size_t pgsz)
 		klgrpset_copy(lgrpset, curproc->p_lgrpset);
 		stat = LGRP_NUM_RANDOM_PROC;
 
-		/* LINTED fallthrough on case statement */
+		/* FALLTHROUGH */
 	case LGRP_MEM_POLICY_RANDOM_PSET:
 
 		if (!stat)

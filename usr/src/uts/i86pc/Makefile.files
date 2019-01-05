@@ -64,9 +64,13 @@ CORE_OBJS +=			\
 	hardclk.o		\
 	hat_i86.o		\
 	hat_kdi.o		\
+	hma.o			\
+	hma_asm.o		\
+	hma_fpu.o		\
 	hment.o			\
 	hold_page.o		\
 	hrtimers.o		\
+	ht.o			\
 	htable.o		\
 	hypercall.o		\
 	hypersubr.o		\
@@ -98,7 +102,6 @@ CORE_OBJS +=			\
 	memscrub.o		\
 	mpcore.o		\
 	notes.o			\
-	pc_hvm.o		\
 	pci_bios.o		\
 	pci_cfgacc.o		\
 	pci_cfgacc_x86.o	\
@@ -223,6 +226,7 @@ ACPIDEV_OBJS += acpidev_drv.o \
 	acpidev_memory.o \
 	acpidev_pci.o \
 	acpidev_resource.o \
+	acpidev_usbport.o \
 	acpidev_util.o
 
 DRMACH_ACPI_OBJS += drmach_acpi.o dr_util.o drmach_err.o
@@ -262,6 +266,7 @@ VMM_OBJS += vmm.o \
 	vmx.o \
 	vmx_support.o \
 	vtd.o \
+	vtd_sol.o \
 	svm.o \
 	svm_msr.o \
 	npt.o \
@@ -291,7 +296,7 @@ INC_PATH	+= -I$(UTSBASE)/i86xpv -I$(UTSBASE)/common/xen
 # since only C headers are included when #defined(__lint) is true.
 #
 
-ASSYM_DEPS      += 		\
+ASSYM_DEPS      +=		\
 	copy.o			\
 	desctbls_asm.o		\
 	ddi_i86_asm.o		\

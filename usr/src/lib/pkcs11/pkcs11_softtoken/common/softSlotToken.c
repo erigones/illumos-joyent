@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2018, Joyent, Inc.
  */
 
 #include <strings.h>
@@ -59,6 +60,8 @@ static CK_MECHANISM_TYPE soft_mechanisms[] = {
 	CKM_AES_CMAC,
 	CKM_AES_ECB,
 	CKM_AES_KEY_GEN,
+	CKM_AES_GCM,
+	CKM_AES_CCM,
 	CKM_BLOWFISH_CBC,
 	CKM_BLOWFISH_KEY_GEN,
 	CKM_SHA_1,
@@ -170,6 +173,12 @@ static CK_MECHANISM_INFO soft_mechanism_info[] = {
 		CKF_WRAP|CKF_UNWRAP},		/* CKM_AES_ECB */
 	{AES_MINBYTES, AES_MAXBYTES,
 		CKF_GENERATE},			/* CKM_AES_KEY_GEN */
+	{AES_MINBYTES, AES_MAXBYTES,
+		CKF_ENCRYPT|CKF_DECRYPT|
+		CKF_WRAP|CKF_UNWRAP},		/* CKM_AES_GCM */
+	{AES_MINBYTES, AES_MAXBYTES,
+		CKF_ENCRYPT|CKF_DECRYPT|
+		CKF_WRAP|CKF_UNWRAP},		/* CKM_AES_CCM */
 	{BLOWFISH_MINBYTES, BLOWFISH_MAXBYTES,
 		CKF_ENCRYPT|CKF_DECRYPT|
 		CKF_WRAP|CKF_UNWRAP},		/* CKM_BLOWFISH_ECB */
@@ -337,8 +346,11 @@ C_GetTokenInfo(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR pInfo)
 			pInfo->flags |= CKF_USER_PIN_TO_BE_CHANGED;
 	}
 
-	if (ks_cryptpin)
-		free(ks_cryptpin);
+	if (ks_cryptpin != NULL) {
+		size_t cplen = strlen(ks_cryptpin) + 1;
+
+		freezero(ks_cryptpin, cplen);
+	}
 
 	/* Provide information about a token in the provided buffer */
 	(void) strncpy((char *)pInfo->label, SOFT_TOKEN_LABEL, 32);

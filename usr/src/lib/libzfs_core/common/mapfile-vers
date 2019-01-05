@@ -19,7 +19,7 @@
 # CDDL HEADER END
 #
 # Copyright (c) 2006, 2010, Oracle and/or its affiliates. All rights reserved.
-# Copyright (c) 2012, 2016 by Delphix. All rights reserved.
+# Copyright (c) 2012, 2017 by Delphix. All rights reserved.
 # Copyright 2017 RackTop Systems.
 #
 # MAPFILE HEADER START
@@ -37,6 +37,26 @@
 
 $mapfile_version 2
 
+SYMBOL_VERSION ILLUMOS_0.4 {
+	global:
+
+	lzc_destroy;
+	lzc_rename;
+} ILLUMOS_0.3;
+
+SYMBOL_VERSION ILLUMOS_0.3 {
+	global:
+
+	lzc_initialize;
+} ILLUMOS_0.2;
+
+SYMBOL_VERSION ILLUMOS_0.2 {
+	global:
+
+	lzc_pool_checkpoint;
+	lzc_pool_checkpoint_discard;
+} ILLUMOS_0.1;
+
 SYMBOL_VERSION ILLUMOS_0.1 {
     global:
 
@@ -46,7 +66,6 @@ SYMBOL_VERSION ILLUMOS_0.1 {
 	lzc_channel_program;
 	lzc_channel_program_nosync;
 	lzc_clone;
-	lzc_promote;
 	lzc_create;
 	lzc_destroy_bookmarks;
 	lzc_destroy_snaps;
@@ -54,6 +73,7 @@ SYMBOL_VERSION ILLUMOS_0.1 {
 	lzc_get_bookmarks;
 	lzc_get_holds;
 	lzc_hold;
+	lzc_promote;
 	lzc_receive;
 	lzc_receive_resumable;
 	lzc_receive_with_header;

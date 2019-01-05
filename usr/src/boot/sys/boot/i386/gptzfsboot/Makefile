@@ -21,7 +21,7 @@ include $(SRC)/boot/Makefile.version
 
 AS=	$(GNU_ROOT)/bin/gas
 LD=	$(GNU_ROOT)/bin/gld
-CC=	$(GCC_ROOT)/bin/gcc
+CC=	$(GNUC_ROOT)/bin/gcc
 OBJCOPY=	$(GNU_ROOT)/bin/gobjcopy
 
 PROG=		gptzfsboot
@@ -46,13 +46,13 @@ CFLAGS=	-nostdinc -DBOOTPROG=\"gptzfsboot\" \
 	-DSIOSPD=${BOOT_COMCONSOLE_SPEED} \
 	-I../../../../include \
 	-I../../../../lib/libstand \
+	-I../../../../lib/libz \
 	-I../../common \
 	-I../common \
 	-I../../zfs \
 	-I../../../cddl/boot/zfs \
 	-I../btx/lib -I. \
 	-I../../.. \
-	-I../../../sys \
 	-I../libi386 \
 	-Wall -Waggregate-return -Wbad-function-cast -Wcast-align \
 	-Wmissing-declarations -Wmissing-prototypes -Wnested-externs \
@@ -64,8 +64,8 @@ CFLAGS +=	-fno-reorder-functions
 
 LD_FLAGS=-static -N --gc-sections
 CCASFLAGS=-Wa,--divide
-LIBSTAND=	../../libstand/i386/libstand.a
-LIBZFSBOOT=	../../zfs/i386/libzfsboot.a
+LIBSTAND=	../../libstand/$(MACH)/libstand.a
+LIBZFSBOOT=	../../zfs/$(MACH)/libzfsboot.a
 
 include ../Makefile.inc
 
@@ -77,7 +77,10 @@ install: all $(ROOTBOOTPROG)
 
 OBJS =	multiboot.o zfsboot.o sio.o cons.o panic.o devopen.o \
 	part.o biosmem.o smbios.o biosdisk.o devicename.o disk.o bcache.o \
-	time.o crc32.o
+	time.o zfs_cmd.o
+
+smbios.o := CPPFLAGS += -DSMBIOS_SERIAL_NUMBERS
+smbios.o := CPPFLAGS += -DSMBIOS_LITTLE_ENDIAN_UUID
 
 CLEANFILES=	gptzfsboot $(OBJS)
 
@@ -125,15 +128,16 @@ biosmem.o: ../libi386/biosmem.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ ../libi386/$*.c
 
 smbios.o: ../libi386/smbios.c
-	$(CC) $(CFLAGS) $(CPPFLAGS) \
-		-DSMBIOS_SERIAL_NUMBERS -DSMBIOS_LITTLE_ENDIAN_UUID \
-		-c -o $@ ../libi386/$*.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ ../libi386/$*.c
 
 devicename.o: ../libi386/devicename.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ ../libi386/$*.c
 
 time.o: ../libi386/time.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ ../libi386/$*.c
+
+multiboot.o: ../../common/multiboot.S
+	$(CC) $(CFLAGS) $(CCASFLAGS) -c -o $@ ../../common/$*.S
 
 .S.o:
 	$(CC) $(CFLAGS) $(CCASFLAGS) -c -o $@ $<

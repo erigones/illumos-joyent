@@ -10,13 +10,12 @@
 #
 
 #
-# Copyright 2015 Joyent, Inc.
+# Copyright 2018 Joyent, Inc.
 #
 
 PROG= varpd
 OBJS = varpd.o
 SRCS = $(OBJS:%.o=../%.c)
-SVCMETHOD = svc-varpd
 MANIFEST = varpd.xml
 ROOTLIBVARPD = $(ROOTLIB)/varpd
 ROOTLIBVARPDPROG=	$(PROG:%=$(ROOTLIBVARPD)/%)
@@ -43,6 +42,8 @@ C99LMODE=	-Xc99=%all
 
 .KEEP_STATE:
 
+all: $(PROG)
+
 $(PROG): $(OBJS)
 	$(LINK.c) -o $@ $(OBJS) $(LDLIBS)
 	$(POST_PROCESS)
@@ -61,7 +62,7 @@ check: $(CHKMANIFEST)
 clobber: clean
 	$(RM) $(PROG)
 
-install: $(PROG) $(ROOTLIBVARPDPROG) $(ROOTMANIFEST) $(ROOTSVCMETHOD)
+install: $(PROG) $(ROOTLIBVARPDPROG) $(ROOTMANIFEST)
 
 $(ROOTLIBVARPD):
 	$(INS.dir)

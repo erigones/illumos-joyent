@@ -22,6 +22,7 @@
  * Copyright 2007 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright (c) 2018, Joyent, Inc.
  */
 
 #include <stdlib.h>
@@ -562,8 +563,10 @@ soft_sign_verify_cleanup(soft_session_t *session_p, boolean_t sign,
 	case CKM_SHA384_HMAC:
 	case CKM_SHA512_HMAC_GENERAL:
 	case CKM_SHA512_HMAC:
-		if (active_op->context != NULL)
-			bzero(active_op->context, sizeof (soft_hmac_ctx_t));
+		if (active_op->context != NULL) {
+			explicit_bzero(active_op->context,
+			    sizeof (soft_hmac_ctx_t));
+		}
 		break;
 	case CKM_DES_MAC_GENERAL:
 	case CKM_DES_MAC:
@@ -572,19 +575,23 @@ soft_sign_verify_cleanup(soft_session_t *session_p, boolean_t sign,
 			session_p->encrypt.context = NULL;
 			session_p->encrypt.flags = 0;
 		}
-		if (active_op->context != NULL)
-			bzero(active_op->context, sizeof (soft_des_ctx_t));
+		if (active_op->context != NULL) {
+			explicit_bzero(active_op->context,
+			    sizeof (soft_des_ctx_t));
+		}
 		break;
 
 	case CKM_AES_CMAC_GENERAL:
 	case CKM_AES_CMAC:
 		if (session_p->encrypt.context != NULL) {
-			free(session_p->encrypt.context);
+			soft_aes_free_ctx(session_p->encrypt.context);
 			session_p->encrypt.context = NULL;
 			session_p->encrypt.flags = 0;
 		}
-		if (active_op->context != NULL)
-			bzero(active_op->context, sizeof (soft_aes_ctx_t));
+		if (active_op->context != NULL) {
+			explicit_bzero(active_op->context,
+			    sizeof (soft_aes_sign_ctx_t));
+		}
 		break;
 
 	}

@@ -29,6 +29,7 @@
 
 #include <sys/param.h>
 #include <sys/disk.h>
+#include <stand.h>
 
 #include <libzfs.h>
 
@@ -58,6 +59,22 @@ efizfs_get_handle_by_guid(uint64_t guid)
 		}
 	}
 	return (NULL);
+}
+
+bool
+efizfs_get_guid_by_handle(EFI_HANDLE handle, uint64_t *guid)
+{
+	zfsinfo_t *zi;
+
+	if (guid == NULL)
+		return (false);
+	STAILQ_FOREACH(zi, &zfsinfo, zi_link) {
+		if (zi->zi_handle == handle) {
+			*guid = zi->zi_pool_guid;
+			return (true);
+		}
+	}
+	return (false);
 }
 
 static void
@@ -103,14 +120,4 @@ efi_zfs_probe(void)
 
 		}
 	}
-}
-
-uint64_t
-ldi_get_size(void *priv)
-{
-	int fd = (uintptr_t) priv;
-	uint64_t size;
-
-	ioctl(fd, DIOCGMEDIASIZE, &size);
-	return (size);
 }

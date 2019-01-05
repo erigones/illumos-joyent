@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ *
  * Copyright (c) 2015 Tycho Nightingale <tycho.nightingale@pluribusnetworks.com>
  * All rights reserved.
  *
@@ -25,7 +27,7 @@
  */
 
 /*
- * Copyright 2017 Joyent, Inc.
+ * Copyright 2018 Joyent, Inc.
  */
 
 #include <sys/cdefs.h>
@@ -367,7 +369,11 @@ vga_mem_rd_handler(struct vmctx *ctx, uint64_t addr, void *arg1)
 		/*
 		 * monochrome text mode: base 0xb0000 size 32kb
 		 */
+#ifdef __FreeBSD__
 		assert(0);
+#else
+		abort();
+#endif
 	case 0x3:
 		/*
 		 * color text mode and CGA: base 0xb8000 size 32kb
@@ -431,7 +437,11 @@ vga_mem_wr_handler(struct vmctx *ctx, uint64_t addr, uint8_t val, void *arg1)
 		/*
 		 * monochrome text mode: base 0xb0000 size 32kb
 		 */
+#ifdef __FreeBSD__
 		assert(0);
+#else
+		abort();
+#endif
 	case 0x3:
 		/*
 		 * color text mode and CGA: base 0xb8000 size 32kb
@@ -1085,7 +1095,7 @@ vga_port_out_handler(struct vmctx *ctx, int in, int port, int bytes,
 				sc->vga_atc.atc_color_select_45 =
 					(val & ATC_CS_C45) << 4;
 				sc->vga_atc.atc_color_select_67 =
-					(val & ATC_CS_C67) << 6;
+					((val & ATC_CS_C67) >> 2) << 6;
 				break;
 			default:
 				//printf("XXX VGA ATC: outb 0x%04x, 0x%02x at index %d\n", port, val, sc->vga_atc.atc_index);

@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2015, Joyent, Inc.
+ * Copyright 2018 Joyent, Inc.
  * Copyright 2017 OmniTI Computer Consulting, Inc. All rights reserved.
  */
 
@@ -57,6 +57,7 @@
 #include <sys/sdt.h>
 #include <sys/pattr.h>
 #include <sys/strsun.h>
+#include <sys/vlan.h>
 
 /*
  * MAC Provider Interface.
@@ -687,7 +688,7 @@ mac_trill_snoop(mac_handle_t mh, mblk_t *mp)
 	mac_impl_t *mip = (mac_impl_t *)mh;
 
 	if (mip->mi_promisc_list != NULL)
-		mac_promisc_dispatch(mip, mp, NULL, B_FALSE);
+		mac_promisc_dispatch(mip, mp, NULL);
 }
 
 /*
@@ -701,19 +702,18 @@ mac_rx_common(mac_handle_t mh, mac_resource_handle_t mrh, mblk_t *mp_chain)
 	mac_ring_t		*mr = (mac_ring_t *)mrh;
 	mac_soft_ring_set_t 	*mac_srs;
 	mblk_t			*bp = mp_chain;
-	boolean_t		hw_classified = B_FALSE;
 
 	/*
 	 * If there are any promiscuous mode callbacks defined for
 	 * this MAC, pass them a copy if appropriate.
 	 */
 	if (mip->mi_promisc_list != NULL)
-		mac_promisc_dispatch(mip, mp_chain, NULL, B_FALSE);
+		mac_promisc_dispatch(mip, mp_chain, NULL);
 
 	if (mr != NULL) {
 		/*
 		 * If the SRS teardown has started, just return. The 'mr'
-		 * continues to be valid until the driver unregisters the mac.
+		 * continues to be valid until the driver unregisters the MAC.
 		 * Hardware classified packets will not make their way up
 		 * beyond this point once the teardown has started. The driver
 		 * is never passed a pointer to a flow entry or SRS or any
@@ -726,11 +726,25 @@ mac_rx_common(mac_handle_t mh, mac_resource_handle_t mrh, mblk_t *mp_chain)
 			freemsgchain(mp_chain);
 			return;
 		}
-		if (mr->mr_classify_type == MAC_HW_CLASSIFIER) {
-			hw_classified = B_TRUE;
+
+		/*
+		 * The ring is in passthru mode; pass the chain up to
+		 * the pseudo ring.
+		 */
+		if (mr->mr_classify_type == MAC_PASSTHRU_CLASSIFIER) {
 			MR_REFHOLD_LOCKED(mr);
+			mutex_exit(&mr->mr_lock);
+			mr->mr_pt_fn(mr->mr_pt_arg1, mr->mr_pt_arg2, mp_chain,
+			    B_FALSE);
+			MR_REFRELE(mr);
+			return;
 		}
-		mutex_exit(&mr->mr_lock);
+
+		/*
+		 * The passthru callback should only be set when in
+		 * MAC_PASSTHRU_CLASSIFIER mode.
+		 */
+		ASSERT3P(mr->mr_pt_fn, ==, NULL);
 
 		/*
 		 * We check if an SRS is controlling this ring.
@@ -738,19 +752,24 @@ mac_rx_common(mac_handle_t mh, mac_resource_handle_t mrh, mblk_t *mp_chain)
 		 * routine otherwise we need to go through mac_rx_classify
 		 * to reach the right place.
 		 */
-		if (hw_classified) {
+		if (mr->mr_classify_type == MAC_HW_CLASSIFIER) {
+			MR_REFHOLD_LOCKED(mr);
+			mutex_exit(&mr->mr_lock);
+			ASSERT3P(mr->mr_srs, !=, NULL);
 			mac_srs = mr->mr_srs;
+
 			/*
-			 * This is supposed to be the fast path.
-			 * All packets received though here were steered by
-			 * the hardware classifier, and share the same
-			 * MAC header info.
+			 * This is the fast path. All packets received
+			 * on this ring are hardware classified and
+			 * share the same MAC header info.
 			 */
 			mac_srs->srs_rx.sr_lower_proc(mh,
 			    (mac_resource_handle_t)mac_srs, mp_chain, B_FALSE);
 			MR_REFRELE(mr);
 			return;
 		}
+
+		mutex_exit(&mr->mr_lock);
 		/* We'll fall through to software classification */
 	} else {
 		flow_entry_t *flent;
@@ -1476,7 +1495,8 @@ mac_prop_info_set_perm(mac_prop_info_handle_t ph, uint8_t perm)
 	pr->pr_flags |= MAC_PROP_INFO_PERM;
 }
 
-void mac_hcksum_get(mblk_t *mp, uint32_t *start, uint32_t *stuff,
+void
+mac_hcksum_get(const mblk_t *mp, uint32_t *start, uint32_t *stuff,
     uint32_t *end, uint32_t *value, uint32_t *flags_ptr)
 {
 	uint32_t flags;
@@ -1501,8 +1521,9 @@ void mac_hcksum_get(mblk_t *mp, uint32_t *start, uint32_t *stuff,
 		*flags_ptr = flags;
 }
 
-void mac_hcksum_set(mblk_t *mp, uint32_t start, uint32_t stuff,
-    uint32_t end, uint32_t value, uint32_t flags)
+void
+mac_hcksum_set(mblk_t *mp, uint32_t start, uint32_t stuff, uint32_t end,
+    uint32_t value, uint32_t flags)
 {
 	ASSERT(DB_TYPE(mp) == M_DATA);
 
@@ -1511,6 +1532,31 @@ void mac_hcksum_set(mblk_t *mp, uint32_t start, uint32_t stuff,
 	DB_CKSUMEND(mp) = (intptr_t)end;
 	DB_CKSUMFLAGS(mp) = (uint16_t)flags;
 	DB_CKSUM16(mp) = (uint16_t)value;
+}
+
+void
+mac_hcksum_clone(const mblk_t *src, mblk_t *dst)
+{
+	ASSERT3U(DB_TYPE(src), ==, M_DATA);
+	ASSERT3U(DB_TYPE(dst), ==, M_DATA);
+
+	/*
+	 * Do these assignments unconditionally, rather than only when
+	 * flags is non-zero. This protects a situation where zeroed
+	 * hcksum data does not make the jump onto an mblk_t with
+	 * stale data in those fields. It's important to copy all
+	 * possible flags (HCK_* as well as HW_*) and not just the
+	 * checksum specific flags. Dropping flags during a clone
+	 * could result in dropped packets. If the caller has good
+	 * reason to drop those flags then it should do it manually,
+	 * after the clone.
+	 */
+	DB_CKSUMFLAGS(dst) = DB_CKSUMFLAGS(src);
+	DB_CKSUMSTART(dst) = DB_CKSUMSTART(src);
+	DB_CKSUMSTUFF(dst) = DB_CKSUMSTUFF(src);
+	DB_CKSUMEND(dst) = DB_CKSUMEND(src);
+	DB_CKSUM16(dst) = DB_CKSUM16(src);
+	DB_LSOMSS(dst) = DB_LSOMSS(src);
 }
 
 void

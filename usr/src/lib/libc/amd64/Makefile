@@ -21,10 +21,10 @@
 
 #
 # Copyright (c) 2004, 2010, Oracle and/or its affiliates. All rights reserved.
-# Copyright (c) 2017, Joyent, Inc.
 # Copyright (c) 2013, OmniTI Computer Consulting, Inc. All rights reserved.
 # Copyright 2013 Garrett D'Amore <garrett@damore.org>
-# Copyright 2017 Nexenta Systems, Inc.
+# Copyright 2018 Nexenta Systems, Inc.
+# Copyright 2018 Joyent, Inc.
 #
 
 LIBCBASE=	.
@@ -467,6 +467,7 @@ PORTGEN=			\
 	malloc.o		\
 	memalign.o		\
 	memmem.o		\
+	memset_s.o		\
 	mkdev.o			\
 	mkdtemp.o		\
 	mkfifo.o		\
@@ -524,6 +525,7 @@ PORTGEN=			\
 	scandir.o		\
 	seekdir.o		\
 	select.o		\
+	set_constraint_handler_s.o \
 	setlabel.o		\
 	setpriority.o		\
 	settimeofday.o		\
@@ -596,6 +598,14 @@ PORTGEN=			\
 	xgetwidth.o		\
 	xpg4.o			\
 	xpg6.o
+
+PORTINET=			\
+	inet_lnaof.o		\
+	inet_makeaddr.o		\
+	inet_network.o		\
+	inet_ntoa.o		\
+	inet_ntop.o		\
+	inet_pton.o
 
 PORTPRINT_W=			\
 	doprnt_w.o
@@ -963,6 +973,7 @@ MOSTOBJS=			\
 	$(PORTGEN64)		\
 	$(PORTI18N)		\
 	$(PORTI18N_COND)	\
+	$(PORTINET)		\
 	$(PORTLOCALE)		\
 	$(PORTPRINT)		\
 	$(PORTPRINT_W)		\
@@ -1096,6 +1107,7 @@ SRCS=							\
 	$(PORTFP:%.o=$(LIBCDIR)/port/fp/%.c)		\
 	$(PORTGEN:%.o=$(LIBCDIR)/port/gen/%.c)		\
 	$(PORTI18N:%.o=$(LIBCDIR)/port/i18n/%.c)	\
+	$(PORTINET:%.o=$(LIBCDIR)/port/inet/%.c)	\
 	$(PORTLOCALE:%.o=$(LIBCDIR)/port/locale/%.c)	\
 	$(PORTPRINT:%.o=$(LIBCDIR)/port/print/%.c)	\
 	$(PORTREGEX:%.o=$(LIBCDIR)/port/regex/%.c)	\
@@ -1246,19 +1258,7 @@ ASSYMDEP_OBJS=			\
 
 $(ASSYMDEP_OBJS:%=pics/%): assym.h
 
-# assym.h build rules
-
-GENASSYM_C = genassym.c
-
-genassym: $(GENASSYM_C)
-	$(NATIVECC) $(NATIVE_CFLAGS) -Iinc -I$(LIBCDIR)/inc $(CPPFLAGS.native) \
-		-o $@ $(GENASSYM_C)
-
-OFFSETS = $(LIBCDIR)/$(MACH)/offsets.in
-
-assym.h: $(OFFSETS) genassym
-	$(OFFSETS_CREATE) <$(OFFSETS) >$@
-	./genassym >>$@
+GENASSYM_C = $(LIBCDIR)/$(MACH64)/genassym.c
 
 # derived C source and related explicit dependencies
 $(LIBCDIR)/port/gen/errlst.c + \

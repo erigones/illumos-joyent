@@ -23,7 +23,7 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  *
- * Copyright 2013 Joyent, Inc.  All rights reserved.
+ * Copyright 2018 Joyent, Inc.  All rights reserved.
  */
 
 
@@ -40,6 +40,13 @@
 #include <util/string.h>
 #include <util/strtolctype.h>
 #include <sys/efi.h>
+
+/*
+ * Compile time debug knob. We do not have any early mechanism to control it
+ * as the boot is the earliest mechanism we have, and we do not want to have
+ * it being switched on by default.
+ */
+int dboot_debug = 0;
 
 #if defined(__xpv)
 
@@ -84,7 +91,7 @@ extern int have_cpuid(void);
  *
  * The code executes as:
  *	- 32 bits under GRUB (for 32 or 64 bit Solaris)
- * 	- a 32 bit program for the 32-bit PV hypervisor
+ *	- a 32 bit program for the 32-bit PV hypervisor
  *	- a 64 bit program for the 64-bit PV hypervisor (at least for now)
  *
  * Under the PV hypervisor, we must create mappings for any memory beyond the
@@ -2243,6 +2250,8 @@ startup_kernel(void)
 	physdev_set_iopl_t set_iopl;
 #endif /* __xpv */
 
+	if (dboot_debug == 1)
+		bcons_init(NULL);	/* Set very early console to ttya. */
 	dboot_loader_init();
 	/*
 	 * At this point we are executing in a 32 bit real mode.
@@ -2264,7 +2273,7 @@ startup_kernel(void)
 
 	dboot_init_xboot_consinfo();
 	bi->bi_cmdline = (native_ptr_t)(uintptr_t)cmdline;
-	bcons_init(bi);
+	bcons_init(bi);		/* Now we can set the real console. */
 
 	prom_debug = (find_boot_prop("prom_debug") != NULL);
 	map_debug = (find_boot_prop("map_debug") != NULL);
@@ -2314,11 +2323,7 @@ startup_kernel(void)
 	 * Need correct target_kernel_text value
 	 */
 #if defined(_BOOT_TARGET_amd64)
-	target_kernel_text = KERNEL_TEXT_amd64;
-#elif defined(__xpv)
-	target_kernel_text = KERNEL_TEXT_i386_xpv;
-#else
-	target_kernel_text = KERNEL_TEXT_i386;
+	target_kernel_text = KERNEL_TEXT;
 #endif
 	DBG(target_kernel_text);
 

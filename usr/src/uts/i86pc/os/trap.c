@@ -25,10 +25,10 @@
 
 /*	Copyright (c) 1990, 1991 UNIX System Laboratories, Inc. */
 /*	Copyright (c) 1984, 1986, 1987, 1988, 1989, 1990 AT&T   */
-/*		All Rights Reserved   				*/
+/*		All Rights Reserved				*/
 /*								*/
-/*	Copyright (c) 1987, 1988 Microsoft Corporation  	*/
-/*		All Rights Reserved   				*/
+/*	Copyright (c) 1987, 1988 Microsoft Corporation		*/
+/*		All Rights Reserved				*/
 /*								*/
 
 /*
@@ -114,24 +114,24 @@ static const char *trap_type_mnemonic[] = {
 };
 
 static const char *trap_type[] = {
-	"Divide error",				/* trap id 0 	*/
+	"Divide error",				/* trap id 0	*/
 	"Debug",				/* trap id 1	*/
 	"NMI interrupt",			/* trap id 2	*/
-	"Breakpoint",				/* trap id 3 	*/
-	"Overflow",				/* trap id 4 	*/
-	"BOUND range exceeded",			/* trap id 5 	*/
-	"Invalid opcode",			/* trap id 6 	*/
-	"Device not available",			/* trap id 7 	*/
-	"Double fault",				/* trap id 8 	*/
-	"Coprocessor segment overrun",		/* trap id 9 	*/
-	"Invalid TSS",				/* trap id 10 	*/
-	"Segment not present",			/* trap id 11 	*/
-	"Stack segment fault",			/* trap id 12 	*/
-	"General protection",			/* trap id 13 	*/
-	"Page fault",				/* trap id 14 	*/
-	"Reserved",				/* trap id 15 	*/
-	"x87 floating point error",		/* trap id 16 	*/
-	"Alignment check",			/* trap id 17 	*/
+	"Breakpoint",				/* trap id 3	*/
+	"Overflow",				/* trap id 4	*/
+	"BOUND range exceeded",			/* trap id 5	*/
+	"Invalid opcode",			/* trap id 6	*/
+	"Device not available",			/* trap id 7	*/
+	"Double fault",				/* trap id 8	*/
+	"Coprocessor segment overrun",		/* trap id 9	*/
+	"Invalid TSS",				/* trap id 10	*/
+	"Segment not present",			/* trap id 11	*/
+	"Stack segment fault",			/* trap id 12	*/
+	"General protection",			/* trap id 13	*/
+	"Page fault",				/* trap id 14	*/
+	"Reserved",				/* trap id 15	*/
+	"x87 floating point error",		/* trap id 16	*/
+	"Alignment check",			/* trap id 17	*/
 	"Machine check",			/* trap id 18	*/
 	"SIMD floating point exception",	/* trap id 19	*/
 };
@@ -605,11 +605,11 @@ trap(struct regs *rp, caddr_t addr, processorid_t cpuid)
 			siginfo.si_addr  = (caddr_t)rp->r_pc;
 			siginfo.si_trapno = type & ~USER;
 			fault = FLTILL;
-			break;
 		} else {
 			(void) die(type, rp, addr, cpuid);
 			/*NOTREACHED*/
 		}
+		break;
 
 	case T_PGFLT:		/* system page fault */
 		/*
@@ -1005,50 +1005,25 @@ trap(struct regs *rp, caddr_t addr, processorid_t cpuid)
 		fault = FLTIOVF;
 		break;
 
+	/*
+	 * When using an eager FPU on x86, the #NM trap is no longer meaningful.
+	 * Userland should not be able to trigger it. Anything that does
+	 * represents a fatal error in the kernel and likely in the register
+	 * state of the system. User FPU state should always be valid.
+	 */
 	case T_NOEXTFLT + USER:	/* math coprocessor not available */
-		if (tudebug && tudebugfpe)
-			showregs(type, rp, addr);
-		if (fpnoextflt(rp)) {
-			siginfo.si_signo = SIGILL;
-			siginfo.si_code  = ILL_ILLOPC;
-			siginfo.si_addr  = (caddr_t)rp->r_pc;
-			fault = FLTILL;
-		}
+	case T_NOEXTFLT:
+		(void) die(type, rp, addr, cpuid);
 		break;
 
-	case T_EXTOVRFLT:	/* extension overrun fault */
-		/* check if we took a kernel trap on behalf of user */
-		{
-			extern  void ndptrap_frstor(void);
-			if (rp->r_pc != (uintptr_t)ndptrap_frstor) {
-				sti(); /* T_EXTOVRFLT comes in via cmninttrap */
-				(void) die(type, rp, addr, cpuid);
-			}
-			type |= USER;
-		}
-		/*FALLTHROUGH*/
-	case T_EXTOVRFLT + USER:	/* extension overrun fault */
-		if (tudebug && tudebugfpe)
-			showregs(type, rp, addr);
-		if (fpextovrflt(rp)) {
-			siginfo.si_signo = SIGSEGV;
-			siginfo.si_code  = SEGV_MAPERR;
-			siginfo.si_addr  = (caddr_t)rp->r_pc;
-			fault = FLTBOUNDS;
-		}
-		break;
-
+	/*
+	 * Kernel threads leveraging floating point need to mask the exceptions
+	 * or ensure that they cannot happen. There is no recovery from this.
+	 */
 	case T_EXTERRFLT:	/* x87 floating point exception pending */
-		/* check if we took a kernel trap on behalf of user */
-		{
-			extern  void ndptrap_frstor(void);
-			if (rp->r_pc != (uintptr_t)ndptrap_frstor) {
-				sti(); /* T_EXTERRFLT comes in via cmninttrap */
-				(void) die(type, rp, addr, cpuid);
-			}
-			type |= USER;
-		}
-		/*FALLTHROUGH*/
+		sti(); /* T_EXTERRFLT comes in via cmninttrap */
+		(void) die(type, rp, addr, cpuid);
+		break;
 
 	case T_EXTERRFLT + USER: /* x87 floating point exception pending */
 		if (tudebug && tudebugfpe)
@@ -1951,7 +1926,7 @@ kern_gpfault(struct regs *rp)
 	}
 
 #if defined(__amd64)
-	if (trp == NULL && lwp->lwp_pcb.pcb_rupdate != 0) {
+	if (trp == NULL && PCB_NEED_UPDATE_SEGS(&lwp->lwp_pcb)) {
 
 		/*
 		 * This is the common case -- we're trying to load
@@ -2105,6 +2080,7 @@ dump_ttrace(void)
 #endif
 	/* Define format for the TYPE and VC fields */
 	const char fmt2[] = "%4s %3x";
+	const char fmt2s[] = "%4s %3s";
 	char data2[9];	/* length of string formatted by fmt2 + 1 */
 	/*
 	 * Define format for the HANDLER field. Width is arbitrary, but should
@@ -2156,17 +2132,11 @@ dump_ttrace(void)
 			case TT_SYSENTER:
 			case TT_SYSC:
 			case TT_SYSC64:
-#if defined(__amd64)
 				sys = &sysent32[rec->ttr_sysnum];
 				switch (rec->ttr_marker) {
 				case TT_SYSC64:
 					sys = &sysent[rec->ttr_sysnum];
-					/*FALLTHROUGH*/
-#elif defined(__i386)
-				sys = &sysent[rec->ttr_sysnum];
-				switch (rec->ttr_marker) {
-				case TT_SYSC64:
-#endif
+					/* FALLTHROUGH */
 				case TT_SYSC:
 					stype = "sysc";	/* syscall */
 					break;
@@ -2200,6 +2170,14 @@ dump_ttrace(void)
 				break;
 
 			case TT_INTERRUPT:
+				if (rec->ttr_regs.r_trapno == T_SOFTINT) {
+					(void) snprintf(data2, sizeof (data2),
+					    fmt2s, "intr", "-");
+					(void) snprintf(data3, sizeof (data3),
+					    fmt3s, "(fakesoftint)");
+					break;
+				}
+
 				(void) snprintf(data2, sizeof (data2), fmt2,
 				    "intr", rec->ttr_vector);
 				if (get_intr_handler != NULL)

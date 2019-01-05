@@ -23,7 +23,7 @@
 #include <sys/disk.h>
 #include <sys/reboot.h>
 #include <sys/queue.h>
-#include <multiboot.h>
+#include <sys/multiboot.h>
 
 #include <machine/bootinfo.h>
 #include <machine/elf.h>
@@ -115,7 +115,7 @@ struct arch_switch archsw;	/* MI/MD interface boundary */
 static char boot_devname[2 * ZFS_MAXNAMELEN + 8]; /* disk or pool:dataset */
 
 struct devsw *devsw[] = {
-	&biosdisk,
+	&bioshd,
 	&zfs_dev,
 	NULL
 };
@@ -176,13 +176,13 @@ main(void)
 
     disk_parsedev(&devdesc, boot_devname+4, NULL);
 
-    bootdev = MAKEBOOTDEV(dev_maj[devdesc.d_type], devdesc.d_slice + 1,
-	devdesc.d_unit, devdesc.d_partition >= 0? devdesc.d_partition:0xff);
+    bootdev = MAKEBOOTDEV(dev_maj[DEVT_DISK], devdesc.d_slice + 1,
+	devdesc.dd.d_unit, devdesc.d_partition >= 0? devdesc.d_partition:0xff);
 
     /*
      * zfs_fmtdev() can be called only after dv_init
      */
-    if (bdev != NULL && bdev->d_type == DEVT_ZFS) {
+    if (bdev != NULL && bdev->dd.d_dev->dv_type == DEVT_ZFS) {
 	/* set up proper device name string for ZFS */
 	strncpy(boot_devname, zfs_fmtdev(bdev), sizeof (boot_devname));
     }
@@ -228,10 +228,22 @@ main(void)
      */
 
     if (auto_boot && !*kname) {
-	memcpy(kname, PATH_LOADER_ZFS, sizeof(PATH_LOADER_ZFS));
+	memcpy(kname, PATH_LOADER, sizeof(PATH_LOADER));
 	if (!keyhit(3)) {
 	    load();
 	    auto_boot = 0;
+	    /*
+	     * Try to fall back to /boot/zfsloader.
+	     * This fallback should be eventually removed.
+	     * Created: 08/03/2018
+	     */
+#define	PATH_ZFSLOADER "/boot/zfsloader"
+	    memcpy(kname, PATH_ZFSLOADER, sizeof(PATH_ZFSLOADER));
+	    load();
+	    /*
+	     * Still there? restore default loader name for prompt.
+	     */
+	    memcpy(kname, PATH_LOADER, sizeof(PATH_LOADER));
 	}
     }
 
@@ -373,7 +385,7 @@ load(void)
     bootinfo.bi_esymtab = VTOP(p);
     bootinfo.bi_kernelname = VTOP(kname);
 
-    if (bdev->d_type == DEVT_ZFS) {
+    if (bdev->dd.d_dev->dv_type == DEVT_ZFS) {
 	zfsargs.size = sizeof(zfsargs);
 	zfsargs.pool = bdev->d_kind.zfs.pool_guid;
 	zfsargs.root = bdev->d_kind.zfs.root_guid;
@@ -409,15 +421,15 @@ mount_root(char *arg)
     if (bdev != NULL)
 	free(bdev);
     bdev = ddesc;
-    if (bdev->d_type == DEVT_DISK) {
+    if (bdev->dd.d_dev->dv_type == DEVT_DISK) {
 	if (bdev->d_kind.biosdisk.partition == -1)
 	    part = 0xff;
 	else
 	    part = bdev->d_kind.biosdisk.partition;
-	bootdev = MAKEBOOTDEV(dev_maj[bdev->d_type],
+	bootdev = MAKEBOOTDEV(dev_maj[bdev->dd.d_dev->dv_type],
 	    bdev->d_kind.biosdisk.slice + 1,
-	    bdev->d_unit, part);
-	bootinfo.bi_bios_dev = bd_unit2bios(bdev->d_unit);
+	    bdev->dd.d_unit, part);
+	bootinfo.bi_bios_dev = bd_unit2bios(bdev);
     }
     setenv("currdev", root, 1);
     free(root);
@@ -638,8 +650,7 @@ probe_partition(void *arg, const char *partname,
 	if (pool_guid != 0 && bdev == NULL) {
 		bdev = malloc(sizeof (struct i386_devdesc));
 		bzero(bdev, sizeof (struct i386_devdesc));
-		bdev->d_type = DEVT_ZFS;
-		bdev->d_dev = &zfs_dev;
+		bdev->dd.d_dev = &zfs_dev;
 		bdev->d_kind.zfs.pool_guid = pool_guid;
 
 		/*
@@ -701,8 +712,10 @@ static void
 i386_zfs_probe(void)
 {
 	char devname[32];
-	int boot_unit, unit;
+	int boot_unit;
+	struct i386_devdesc dev;
 
+	dev.dd.d_dev = &bioshd;
 	/* Translate bios dev to our unit number. */
 	boot_unit = bd_bios2unit(bootinfo.bi_bios_dev);
 
@@ -710,25 +723,13 @@ i386_zfs_probe(void)
 	 * Open all the disks we can find and see if we can reconstruct
 	 * ZFS pools from them.
 	 */
-	for (unit = 0; unit < MAXBDDEV; unit++) {
-		if (bd_unit2bios(unit) == -1)
-			break;
-
-		sprintf(devname, "disk%d:", unit);
+	for (dev.dd.d_unit = 0; bd_unit2bios(&dev) >= 0; dev.dd.d_unit++) {
+		snprintf(devname, sizeof (devname), "%s%d:", bioshd.dv_name,
+		    dev.dd.d_unit);
 		/* If this is not boot disk, use generic probe. */
-		if (unit != boot_unit)
+		if (dev.dd.d_unit != boot_unit)
 			zfs_probe_dev(devname, NULL);
 		else
 			probe_disk(devname);
 	}
-}
-
-uint64_t
-ldi_get_size(void *priv)
-{
-	int fd = (uintptr_t) priv;
-	uint64_t size;
-
-	ioctl(fd, DIOCGMEDIASIZE, &size);
-	return (size);
 }
