@@ -108,7 +108,6 @@ d boot/solaris/bin 0755 root bin
 f boot/solaris/bin/create_diskmap 0555 root bin
 f boot/solaris/bin/create_ramdisk 0555 root bin
 f boot/solaris/bin/extract_boot_filelist 0555 root bin
-f boot/solaris/bin/mbr 0555 root bin
 f boot/solaris/bin/symdef 0555 root bin
 f boot/solaris/bin/update_grub 0555 root bin
 d boot/solaris/devicedb 0755 root sys
@@ -116,7 +115,7 @@ f boot/solaris/devicedb/master 0644 root sys
 f boot/solaris/filelist.safe 0644 root bin
 f boot/solaris/filelist.ramdisk 0644 root bin
 f boot/splashimage.xpm 0644 root bin
-f boot/zfsloader 0444 root bin
+f boot/loader 0444 root bin
 
 d dev 0755 root sys
 s dev/allkmem=../devices/pseudo/mm@0:allkmem
