@@ -152,6 +152,7 @@ COMMON_SUBDIRS=		\
 	enhance		\
 	env		\
 	eqn		\
+	etdump		\
 	expand		\
 	expr		\
 	exstr		\
@@ -509,8 +510,12 @@ sparc_SUBDIRS=		\
 	vntsd
 
 #
-# Commands that are messaged.  Note that 'lp' comes first
-# (see previous comment about 'lp'.)
+# Commands that are messaged.  Note that 'lp' comes first (see previous comment
+# about 'lp'.)
+#
+# We purposefully leave out auditrecord's messages from illumos-joyent: it
+# attempts to use Perl modules constructed as part of the build alongside the
+# native Perl.
 #
 MSGSUBDIRS=		\
 	abi		\
@@ -521,7 +526,6 @@ MSGSUBDIRS=		\
 	audit		\
 	auditconfig	\
 	auditd		\
-	auditrecord	\
 	auditset	\
 	auths		\
 	autopush	\
@@ -781,7 +785,7 @@ AUDITSUBDIRS=		\
 	auditreduce	\
 	auditset	\
 	auditstat	\
-	praudit		
+	praudit
 
 #
 # commands not owned by the systems group
