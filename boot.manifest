@@ -59,7 +59,6 @@ d boot/solaris/devicedb 0755 root bin
 f boot/solaris/devicedb/master 0644 root bin
 d boot/solaris/bin 0755 root bin
 f boot/solaris/bin/update_grub 0555 root bin
-f boot/solaris/bin/mbr 0555 root bin
 f boot/solaris/bin/create_diskmap 0555 root bin
 f boot/solaris/bin/create_ramdisk 0555 root bin
 f boot/solaris/bin/symdef 0555 root bin
@@ -94,5 +93,5 @@ f boot/forth/check-password.4th 0444 root bin
 f boot/forth/logo-illumos.4th 0444 root bin
 f boot/pmbr 0444 root bin
 f boot/cdboot 0444 root bin
-f boot/zfsloader 0444 root bin
+f boot/loader 0444 root bin
 f boot/splashimage.xpm 0644 root bin
