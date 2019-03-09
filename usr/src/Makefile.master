@@ -381,6 +381,17 @@ CCNOREORDER=	\
 	-_gcc7=-fno-reorder-functions \
 	-_gcc8=-fno-reorder-functions
 
+#
+# gcc has a rather aggressive optimization on by default that infers loop
+# bounds based on undefined behavior (!!).  This can lead to some VERY
+# surprising optimizations -- ones that may be technically correct in the
+# strictest sense but also result in incorrect program behavior.  We turn
+# this optimization off, with extreme prejudice.
+#
+CCNOAGGRESSIVELOOPS= \
+	-_gcc7=-fno-aggressive-loop-optimizations \
+	-_gcc8=-fno-aggressive-loop-optimizations
+
 # One optimization the compiler might perform is to turn this:
 #	#pragma weak foo
 #	extern int foo;
@@ -519,17 +530,22 @@ CGLOBALSTATIC= -W0,-xglobalstatic
 CALLSYMS=	-W0,-xdbggen=no%usedonly
 
 #
-# Default debug format for Sun Studio 11 is dwarf, so force it to
-# generate stabs.
+# We force the compilers to generate the debugging information best understood
+# by the CTF tools.  With Sun Studio this is stabs due to bugs in the Studio
+# compilers.  With GCC this is DWARF v2.
 #
-DEBUGFORMAT=	-xdebugformat=stabs
+DEBUGFORMAT=	-_cc=-xdebugformat=stabs -_gcc=-gdwarf-2
 
 #
-# Flags used to build in debug mode for ctf generation.  Bugs in the Devpro
-# compilers currently prevent us from building with cc-emitted DWARF.
+# Ask the compiler to include debugging information
 #
-CTF_FLAGS_sparc	= -g -Wc,-Qiselect-T1 $(CSTD) $(CNOGLOBAL) $(CDWARFSTR)
-CTF_FLAGS_i386	= -g $(CSTD) $(CNOGLOBAL) $(CDWARFSTR)
+CCGDEBUG= -g $(DEBUGFORMAT)
+
+#
+# Flags used to build in debug mode for ctf generation.
+#
+CTF_FLAGS_sparc	= $(CCGDEBUG) -Wc,-Qiselect-T1 $(CSTD) $(CNOGLOBAL)
+CTF_FLAGS_i386	= $(CCGDEBUG) $(CSTD) $(CNOGLOBAL)
 
 CTF_FLAGS_sparcv9	= $(CTF_FLAGS_sparc)
 CTF_FLAGS_amd64		= $(CTF_FLAGS_i386)
@@ -537,20 +553,22 @@ CTF_FLAGS_amd64		= $(CTF_FLAGS_i386)
 # Sun Studio produces broken userland code when saving arguments.
 $(__GNUC)CTF_FLAGS_amd64 += $(SAVEARGS)
 
-CTF_FLAGS_32	= $(CTF_FLAGS_$(MACH)) $(DEBUGFORMAT)
-CTF_FLAGS_64	= $(CTF_FLAGS_$(MACH64)) $(DEBUGFORMAT)
+CTF_FLAGS_32	= $(CTF_FLAGS_$(MACH))
+CTF_FLAGS_64	= $(CTF_FLAGS_$(MACH64))
 CTF_FLAGS	= $(CTF_FLAGS_32)
 
 #
 # Flags used with genoffsets
 #
-GOFLAGS = $(CALLSYMS) $(CDWARFSTR)
+GENOFFSETS_FLAGS = $(CALLSYMS)
 
 OFFSETS_CREATE = $(GENOFFSETS) -s $(CTFSTABS) -r $(CTFCONVERT) \
-	$(CW) --noecho $(CW_CC_COMPILERS) -- $(GOFLAGS) $(CFLAGS) $(CPPFLAGS)
+	$(CW) --noecho $(CW_CC_COMPILERS) -- $(GENOFFSETS_FLAGS) \
+	$(CFLAGS) $(CPPFLAGS)
 
 OFFSETS_CREATE64 = $(GENOFFSETS) -s $(CTFSTABS) -r $(CTFCONVERT) \
-	$(CW) --noecho $(CW_CC_COMPILERS) -- $(GOFLAGS) $(CFLAGS64) $(CPPFLAGS)
+	$(CW) --noecho $(CW_CC_COMPILERS) -- $(GENOFFSETS_FLAGS) \
+	$(CFLAGS64) $(CPPFLAGS)
 
 #
 # tradeoff time for space (smaller is better)
@@ -605,16 +623,18 @@ CCUSERFLAGS64		= $(CCUSERFLAGS)
 
 CSOURCEDEBUGFLAGS	=
 CCSOURCEDEBUGFLAGS	=
-$(SRCDBGBLD)CSOURCEDEBUGFLAGS	= -g -xs
-$(SRCDBGBLD)CCSOURCEDEBUGFLAGS	= -g -xs
+$(SRCDBGBLD)CSOURCEDEBUGFLAGS	= $(CCGDEBUG) -xs
+$(SRCDBGBLD)CCSOURCEDEBUGFLAGS	= $(CCGDEBUG) -xs
 
 CFLAGS=         $(COPTFLAG) $($(MACH)_CFLAGS) $(SPACEFLAG) $(CCMODE) \
 		$(ILDOFF) $(CERRWARN) $(CSTD) $(CCUNBOUND) $(IROPTFLAG) \
 		$(CGLOBALSTATIC) $(CCNOAUTOINLINE) $(CCNOREORDER) \
+		$(CCNOAGGRESSIVELOOPS) \
 		$(CSOURCEDEBUGFLAGS) $(CUSERFLAGS)
 CFLAGS64=       $(COPTFLAG64) $($(MACH64)_CFLAGS) $(SPACEFLAG64) $(CCMODE64) \
 		$(ILDOFF) $(CERRWARN) $(CSTD) $(CCUNBOUND) $(IROPTFLAG64) \
 		$(CGLOBALSTATIC) $(CCNOAUTOINLINE) $(CCNOREORDER) \
+		$(CCNOAGGRESSIVELOOPS) \
 		$(CSOURCEDEBUGFLAGS) $(CUSERFLAGS64)
 #
 # Flags that are used to build parts of the code that are subsequently
@@ -978,11 +998,12 @@ CTFMRGFLAGS=
 
 #
 # Make the transition between old and new CTF Tools. The new ctf tools
-# do not support stabs (eg. Sun Studio), so if GNUC is not set, we don't
-# honor them.
+# do not support stabs (eg. Sun Studio). By setting BUILD_OLD_CTF_TOOLS
+# here or in the environment file, the old ones will be built.
 #
-$(__GNUC)CTFCONVERT=	$(ONBLD_TOOLS)/bin/$(MACH)/ctfconvert-altexec
-$(__GNUC)CTFMERGE=	$(ONBLD_TOOLS)/bin/$(MACH)/ctfmerge-altexec
+BUILD_NEW_CTF_TOOLS=
+BUILD_OLD_CTF_TOOLS=$(POUND_SIGN)
+$(BUILD_OLD_CTF_TOOLS)BUILD_NEW_CTF_TOOLS= $(POUND_SIGN)
 
 CTFCONVERT_O		= $(CTFCONVERT) $(CTFCVTFLAGS) $@
 
