@@ -23,7 +23,7 @@
 # Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
-# Copyright (c) 2018, Joyent, Inc.
+# Copyright (c) 2019, Joyent, Inc.
 
 LIBRARY= libnisdb.a
 VERS=	.2
@@ -162,7 +162,7 @@ pics/map_ctrl.o
 $(UVAR_PICS) := CERRWARN += -_gcc=-Wno-unused-variable
 
 # Correcting these might alter logic
-CERRWARN +=	-_gcc=-Wno-uninitialized
+CERRWARN +=	$(CNOWARN_UNINIT)
 CERRWARN +=	-_gcc=-Wno-switch
 
 # not linted
@@ -203,14 +203,6 @@ all:	$(DERIVED_FILES) $(LIBS)
 install: all $(ROOTLIBS) $(ROOTLINKS)
 
 lint: $(DERIVED_FILES) .WAIT lintcheck
-
-pics/%.o: %.c
-	$(COMPILE.c) -o $@ $<
-	$(POST_PROCESS_O)
-
-pics/%.o: %.cc
-	$(COMPILE.cc) -o $@ $<
-	$(POST_PROCESS_O)
 
 objs/%.o pics/%.o profs/%.o: $(YPTOL_DIR)/%.c
 	$(COMPILE.c) -o $@ $<

@@ -22,9 +22,8 @@
 #
 # Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright 2017 Jason King
-# Copyright (c) 2018, Joyent, Inc.
+# Copyright (c) 2019, Joyent, Inc.
 #
-# Copyright (c) 2018, Joyent, Inc.
 
 LIBRARY =	libsoftcrypto.a
 VERS =		.1
@@ -41,7 +40,7 @@ include		$(SRC)/lib/Makefile.lib.64
 
 CERRWARN +=	-_gcc=-Wno-type-limits
 CERRWARN +=	-_gcc=-Wno-parentheses
-CERRWARN +=	-_gcc=-Wno-uninitialized
+CERRWARN +=	$(CNOWARN_UNINIT)
 
 # not linted
 SMATCH=off
@@ -87,7 +86,7 @@ pics/%.o: $(AES_DIR)/$(MACH64)/%.c
 
 pics/%.o: $(AES_DIR)/$(MACH64)/%.s
 		$(COMPILE.s) $(AES_FLAGS) -o $@ $<
-		$(POST_PROCESS_O)
+		$(POST_PROCESS_S_O)
 
 pics/%.o: $(BIGNUM_DIR)/$(MACH64)/%.c
 		$(COMPILE.c) $(BIGNUM_FLAGS) -o $@ $<
@@ -95,11 +94,11 @@ pics/%.o: $(BIGNUM_DIR)/$(MACH64)/%.c
 
 pics/%.o: $(BIGNUM_DIR)/$(MACH64)/%.s
 		$(COMPILE64.s) $(BIGNUM_FLAGS) -o $@ $<
-		$(POST_PROCESS_O)
+		$(POST_PROCESS_S_O)
 
 pics/%.o: $(MODES_DIR)/$(MACH64)/%.s
 		$(COMPILE64.s) $(MODES_FLAGS) -o $@ $<
-		$(POST_PROCESS_O)
+		$(POST_PROCESS_S_O)
 
 include		../Makefile.targ
 
@@ -108,4 +107,4 @@ arcfour-x86_64.s: $(ARCFOUR_DIR)/amd64/arcfour-x86_64.pl
 
 pics/%.o: arcfour-x86_64.s
 		$(COMPILE64.s) $(ARCFOUR_FLAGS) -o $@ $<
-		$(POST_PROCESS_O)
+		$(POST_PROCESS_S_O)

@@ -3,7 +3,7 @@
 # Use is subject to license terms.
 # Copyright 2015 Igor Kozhukhov <ikozhukhov@gmail.com>
 # Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
-# Copyright (c) 2018, Joyent, Inc.
+# Copyright (c) 2019, Joyent, Inc.
 # Copyright 2019 OmniOS Community Edition (OmniOSce) Association.
 #
 
@@ -97,7 +97,7 @@ MYCPPFLAGS = -D_REENTRANT -DTHREADSAFE=1 -DHAVE_USLEEP=1 -I. -I.. -I$(SRCDIR)
 CPPFLAGS += $(MYCPPFLAGS)
 
 CERRWARN += -_gcc=-Wno-implicit-function-declaration
-CERRWARN += -_gcc=-Wno-uninitialized
+CERRWARN += $(CNOWARN_UNINIT)
 CERRWARN += -_gcc=-Wno-unused-function
 CERRWARN += -_gcc=-Wno-unused-label
 
@@ -158,6 +158,8 @@ $(NATIVETARGETS) :=	LDLIBS = -lc
 
 $(OBJS) :=		CFLAGS += $(CTF_FLAGS)
 $(OBJS) :=		CTFCONVERT_POST = $(CTFCONVERT_O)
+$(NATIVEOBJS) :=	CFLAGS += $(CTF_FLAGS)
+$(NATIVEOBJS) :=	CTFCONVERT_POST = $(CTFCONVERT_O)
 
 TCLBASE = /usr/sfw
 TCLVERS = tcl8.3

@@ -39,6 +39,7 @@
 #include <sys/zio.h>
 #include <sys/dmu_zfetch.h>
 #include <sys/range_tree.h>
+#include <sys/zfs_project.h>
 
 dnode_stats_t dnode_stats = {
 	{ "dnode_hold_dbuf_hold",		KSTAT_DATA_UINT64 },
@@ -90,19 +91,13 @@ dbuf_compare(const void *x1, const void *x2)
 	const dmu_buf_impl_t *d1 = x1;
 	const dmu_buf_impl_t *d2 = x2;
 
-	if (d1->db_level < d2->db_level) {
-		return (-1);
-	}
-	if (d1->db_level > d2->db_level) {
-		return (1);
-	}
+	int cmp = AVL_CMP(d1->db_level, d2->db_level);
+	if (likely(cmp))
+		return (cmp);
 
-	if (d1->db_blkid < d2->db_blkid) {
-		return (-1);
-	}
-	if (d1->db_blkid > d2->db_blkid) {
-		return (1);
-	}
+	cmp = AVL_CMP(d1->db_blkid, d2->db_blkid);
+	if (likely(cmp))
+		return (cmp);
 
 	if (d1->db_state == DB_SEARCH) {
 		ASSERT3S(d2->db_state, !=, DB_SEARCH);
@@ -112,13 +107,7 @@ dbuf_compare(const void *x1, const void *x2)
 		return (1);
 	}
 
-	if ((uintptr_t)d1 < (uintptr_t)d2) {
-		return (-1);
-	}
-	if ((uintptr_t)d1 > (uintptr_t)d2) {
-		return (1);
-	}
-	return (0);
+	return (AVL_PCMP(d1, d2));
 }
 
 /* ARGSUSED */
@@ -148,9 +137,10 @@ dnode_cons(void *arg, void *unused, int kmflag)
 	bzero(&dn->dn_rm_spillblk[0], sizeof (dn->dn_rm_spillblk));
 	bzero(&dn->dn_next_bonuslen[0], sizeof (dn->dn_next_bonuslen));
 	bzero(&dn->dn_next_blksz[0], sizeof (dn->dn_next_blksz));
+	bzero(&dn->dn_next_maxblkid[0], sizeof (dn->dn_next_maxblkid));
 
 	for (i = 0; i < TXG_SIZE; i++) {
-		list_link_init(&dn->dn_dirty_link[i]);
+		multilist_link_init(&dn->dn_dirty_link[i]);
 		dn->dn_free_ranges[i] = NULL;
 		list_create(&dn->dn_dirty_records[i],
 		    sizeof (dbuf_dirty_record_t),
@@ -160,6 +150,7 @@ dnode_cons(void *arg, void *unused, int kmflag)
 	dn->dn_allocated_txg = 0;
 	dn->dn_free_txg = 0;
 	dn->dn_assigned_txg = 0;
+	dn->dn_dirty_txg = 0;
 	dn->dn_dirtyctx = 0;
 	dn->dn_dirtyctx_firstset = NULL;
 	dn->dn_bonus = NULL;
@@ -169,8 +160,10 @@ dnode_cons(void *arg, void *unused, int kmflag)
 	dn->dn_oldflags = 0;
 	dn->dn_olduid = 0;
 	dn->dn_oldgid = 0;
+	dn->dn_oldprojid = ZFS_DEFAULT_PROJID;
 	dn->dn_newuid = 0;
 	dn->dn_newgid = 0;
+	dn->dn_newprojid = ZFS_DEFAULT_PROJID;
 	dn->dn_id_flags = 0;
 
 	dn->dn_dbufs_count = 0;
@@ -197,7 +190,7 @@ dnode_dest(void *arg, void *unused)
 	ASSERT(!list_link_active(&dn->dn_link));
 
 	for (i = 0; i < TXG_SIZE; i++) {
-		ASSERT(!list_link_active(&dn->dn_dirty_link[i]));
+		ASSERT(!multilist_link_active(&dn->dn_dirty_link[i]));
 		ASSERT3P(dn->dn_free_ranges[i], ==, NULL);
 		list_destroy(&dn->dn_dirty_records[i]);
 		ASSERT0(dn->dn_next_nblkptr[i]);
@@ -207,11 +200,13 @@ dnode_dest(void *arg, void *unused)
 		ASSERT0(dn->dn_rm_spillblk[i]);
 		ASSERT0(dn->dn_next_bonuslen[i]);
 		ASSERT0(dn->dn_next_blksz[i]);
+		ASSERT0(dn->dn_next_maxblkid[i]);
 	}
 
 	ASSERT0(dn->dn_allocated_txg);
 	ASSERT0(dn->dn_free_txg);
 	ASSERT0(dn->dn_assigned_txg);
+	ASSERT0(dn->dn_dirty_txg);
 	ASSERT0(dn->dn_dirtyctx);
 	ASSERT3P(dn->dn_dirtyctx_firstset, ==, NULL);
 	ASSERT3P(dn->dn_bonus, ==, NULL);
@@ -221,8 +216,10 @@ dnode_dest(void *arg, void *unused)
 	ASSERT0(dn->dn_oldflags);
 	ASSERT0(dn->dn_olduid);
 	ASSERT0(dn->dn_oldgid);
+	ASSERT0(dn->dn_oldprojid);
 	ASSERT0(dn->dn_newuid);
 	ASSERT0(dn->dn_newgid);
+	ASSERT0(dn->dn_newprojid);
 	ASSERT0(dn->dn_id_flags);
 
 	ASSERT0(dn->dn_dbufs_count);
@@ -543,6 +540,7 @@ dnode_destroy(dnode_t *dn)
 	dn->dn_allocated_txg = 0;
 	dn->dn_free_txg = 0;
 	dn->dn_assigned_txg = 0;
+	dn->dn_dirty_txg = 0;
 
 	dn->dn_dirtyctx = 0;
 	if (dn->dn_dirtyctx_firstset != NULL) {
@@ -561,8 +559,10 @@ dnode_destroy(dnode_t *dn)
 	dn->dn_oldflags = 0;
 	dn->dn_olduid = 0;
 	dn->dn_oldgid = 0;
+	dn->dn_oldprojid = ZFS_DEFAULT_PROJID;
 	dn->dn_newuid = 0;
 	dn->dn_newgid = 0;
+	dn->dn_newprojid = ZFS_DEFAULT_PROJID;
 	dn->dn_id_flags = 0;
 
 	dmu_zfetch_fini(&dn->dn_zfetch);
@@ -612,6 +612,7 @@ dnode_allocate(dnode_t *dn, dmu_object_type_t ot, int blocksize, int ibs,
 	ASSERT(dn->dn_type == DMU_OT_NONE);
 	ASSERT0(dn->dn_maxblkid);
 	ASSERT0(dn->dn_allocated_txg);
+	ASSERT0(dn->dn_dirty_txg);
 	ASSERT0(dn->dn_assigned_txg);
 	ASSERT(zfs_refcount_is_zero(&dn->dn_tx_holds));
 	ASSERT3U(zfs_refcount_count(&dn->dn_holds), <=, 1);
@@ -625,7 +626,8 @@ dnode_allocate(dnode_t *dn, dmu_object_type_t ot, int blocksize, int ibs,
 		ASSERT0(dn->dn_next_bonustype[i]);
 		ASSERT0(dn->dn_rm_spillblk[i]);
 		ASSERT0(dn->dn_next_blksz[i]);
-		ASSERT(!list_link_active(&dn->dn_dirty_link[i]));
+		ASSERT0(dn->dn_next_maxblkid[i]);
+		ASSERT(!multilist_link_active(&dn->dn_dirty_link[i]));
 		ASSERT3P(list_head(&dn->dn_dirty_records[i]), ==, NULL);
 		ASSERT3P(dn->dn_free_ranges[i], ==, NULL);
 	}
@@ -667,7 +669,8 @@ dnode_allocate(dnode_t *dn, dmu_object_type_t ot, int blocksize, int ibs,
 
 void
 dnode_reallocate(dnode_t *dn, dmu_object_type_t ot, int blocksize,
-    dmu_object_type_t bonustype, int bonuslen, int dn_slots, dmu_tx_t *tx)
+    dmu_object_type_t bonustype, int bonuslen, int dn_slots,
+    boolean_t keep_spill, dmu_tx_t *tx)
 {
 	int nblkptr;
 
@@ -716,7 +719,7 @@ dnode_reallocate(dnode_t *dn, dmu_object_type_t ot, int blocksize,
 		dn->dn_next_bonustype[tx->tx_txg&TXG_MASK] = bonustype;
 	if (dn->dn_nblkptr != nblkptr)
 		dn->dn_next_nblkptr[tx->tx_txg&TXG_MASK] = nblkptr;
-	if (dn->dn_phys->dn_flags & DNODE_FLAG_SPILL_BLKPTR) {
+	if (dn->dn_phys->dn_flags & DNODE_FLAG_SPILL_BLKPTR && !keep_spill) {
 		dbuf_rm_spill(dn, tx);
 		dnode_rm_spill(dn, tx);
 	}
@@ -793,6 +796,8 @@ dnode_move_impl(dnode_t *odn, dnode_t *ndn)
 	    sizeof (odn->dn_next_bonuslen));
 	bcopy(&odn->dn_next_blksz[0], &ndn->dn_next_blksz[0],
 	    sizeof (odn->dn_next_blksz));
+	bcopy(&odn->dn_next_maxblkid[0], &ndn->dn_next_maxblkid[0],
+	    sizeof (odn->dn_next_maxblkid));
 	for (i = 0; i < TXG_SIZE; i++) {
 		list_move_tail(&ndn->dn_dirty_records[i],
 		    &odn->dn_dirty_records[i]);
@@ -802,6 +807,7 @@ dnode_move_impl(dnode_t *odn, dnode_t *ndn)
 	ndn->dn_allocated_txg = odn->dn_allocated_txg;
 	ndn->dn_free_txg = odn->dn_free_txg;
 	ndn->dn_assigned_txg = odn->dn_assigned_txg;
+	ndn->dn_dirty_txg = odn->dn_dirty_txg;
 	ndn->dn_dirtyctx = odn->dn_dirtyctx;
 	ndn->dn_dirtyctx_firstset = odn->dn_dirtyctx_firstset;
 	ASSERT(zfs_refcount_count(&odn->dn_tx_holds) == 0);
@@ -816,8 +822,10 @@ dnode_move_impl(dnode_t *odn, dnode_t *ndn)
 	ndn->dn_oldflags = odn->dn_oldflags;
 	ndn->dn_olduid = odn->dn_olduid;
 	ndn->dn_oldgid = odn->dn_oldgid;
+	ndn->dn_oldprojid = odn->dn_oldprojid;
 	ndn->dn_newuid = odn->dn_newuid;
 	ndn->dn_newgid = odn->dn_newgid;
+	ndn->dn_newprojid = odn->dn_newprojid;
 	ndn->dn_id_flags = odn->dn_id_flags;
 	dmu_zfetch_init(&ndn->dn_zfetch, NULL);
 	list_move_tail(&ndn->dn_zfetch.zf_stream, &odn->dn_zfetch.zf_stream);
@@ -868,6 +876,7 @@ dnode_move_impl(dnode_t *odn, dnode_t *ndn)
 	odn->dn_allocated_txg = 0;
 	odn->dn_free_txg = 0;
 	odn->dn_assigned_txg = 0;
+	odn->dn_dirty_txg = 0;
 	odn->dn_dirtyctx = 0;
 	odn->dn_dirtyctx_firstset = NULL;
 	odn->dn_have_spill = B_FALSE;
@@ -876,8 +885,10 @@ dnode_move_impl(dnode_t *odn, dnode_t *ndn)
 	odn->dn_oldflags = 0;
 	odn->dn_olduid = 0;
 	odn->dn_oldgid = 0;
+	odn->dn_oldprojid = ZFS_DEFAULT_PROJID;
 	odn->dn_newuid = 0;
 	odn->dn_newgid = 0;
+	odn->dn_newprojid = ZFS_DEFAULT_PROJID;
 	odn->dn_id_flags = 0;
 
 	/*
@@ -1092,6 +1103,10 @@ dnode_check_slots_free(dnode_children_t *children, int idx, int slots)
 {
 	ASSERT3S(idx + slots, <=, DNODES_PER_BLOCK);
 
+	/*
+	 * If all dnode slots are either already free or
+	 * evictable return B_TRUE.
+	 */
 	for (int i = idx; i < idx + slots; i++) {
 		dnode_handle_t *dnh = &children->dnc_children[i];
 		dnode_t *dn = dnh->dnh_dnode;
@@ -1100,18 +1115,18 @@ dnode_check_slots_free(dnode_children_t *children, int idx, int slots)
 			continue;
 		} else if (DN_SLOT_IS_PTR(dn)) {
 			mutex_enter(&dn->dn_mtx);
-			dmu_object_type_t type = dn->dn_type;
+			boolean_t can_free = (dn->dn_type == DMU_OT_NONE &&
+			    zfs_refcount_is_zero(&dn->dn_holds) &&
+			    !DNODE_IS_DIRTY(dn));
 			mutex_exit(&dn->dn_mtx);
 
-			if (type != DMU_OT_NONE)
+			if (!can_free)
 				return (B_FALSE);
-
-			continue;
+			else
+				continue;
 		} else {
 			return (B_FALSE);
 		}
-
-		return (B_FALSE);
 	}
 
 	return (B_TRUE);
@@ -1285,9 +1300,14 @@ dnode_hold_impl(objset_t *os, uint64_t object, int flag, int slots,
 
 	ASSERT((flag & DNODE_MUST_BE_ALLOCATED) || (flag & DNODE_MUST_BE_FREE));
 
-	if (object == DMU_USERUSED_OBJECT || object == DMU_GROUPUSED_OBJECT) {
-		dn = (object == DMU_USERUSED_OBJECT) ?
-		    DMU_USERUSED_DNODE(os) : DMU_GROUPUSED_DNODE(os);
+	if (object == DMU_USERUSED_OBJECT || object == DMU_GROUPUSED_OBJECT ||
+	    object == DMU_PROJECTUSED_OBJECT) {
+		if (object == DMU_USERUSED_OBJECT)
+			dn = DMU_USERUSED_DNODE(os);
+		else if (object == DMU_GROUPUSED_OBJECT)
+			dn = DMU_GROUPUSED_DNODE(os);
+		else
+			dn = DMU_PROJECTUSED_DNODE(os);
 		if (dn == NULL)
 			return (SET_ERROR(ENOENT));
 		type = dn->dn_type;
@@ -1323,7 +1343,11 @@ dnode_hold_impl(objset_t *os, uint64_t object, int flag, int slots,
 		DNODE_STAT_BUMP(dnode_hold_dbuf_hold);
 		return (SET_ERROR(EIO));
 	}
-	err = dbuf_read(db, NULL, DB_RF_CANFAIL);
+	/*
+	 * We do not need to decrypt to read the dnode so it doesn't matter
+	 * if we get the encrypted or decrypted version.
+	 */
+	err = dbuf_read(db, NULL, DB_RF_CANFAIL | DB_RF_NO_DECRYPT);
 	if (err) {
 		DNODE_STAT_BUMP(dnode_hold_dbuf_read);
 		dbuf_rele(db, FTAG);
@@ -1634,7 +1658,7 @@ dnode_setdirty(dnode_t *dn, dmu_tx_t *tx)
 	/*
 	 * If we are already marked dirty, we're done.
 	 */
-	if (list_link_active(&dn->dn_dirty_link[txg & TXG_MASK])) {
+	if (multilist_link_active(&dn->dn_dirty_link[txg & TXG_MASK])) {
 		multilist_sublist_unlock(mls);
 		return;
 	}
@@ -1751,11 +1775,74 @@ fail:
 	return (SET_ERROR(ENOTSUP));
 }
 
-/* read-holding callers must not rely on the lock being continuously held */
-void
-dnode_new_blkid(dnode_t *dn, uint64_t blkid, dmu_tx_t *tx, boolean_t have_read)
+static void
+dnode_set_nlevels_impl(dnode_t *dn, int new_nlevels, dmu_tx_t *tx)
 {
 	uint64_t txgoff = tx->tx_txg & TXG_MASK;
+	int old_nlevels = dn->dn_nlevels;
+	dmu_buf_impl_t *db;
+	list_t *list;
+	dbuf_dirty_record_t *new, *dr, *dr_next;
+
+	ASSERT(RW_WRITE_HELD(&dn->dn_struct_rwlock));
+
+	dn->dn_nlevels = new_nlevels;
+
+	ASSERT3U(new_nlevels, >, dn->dn_next_nlevels[txgoff]);
+	dn->dn_next_nlevels[txgoff] = new_nlevels;
+
+	/* dirty the left indirects */
+	db = dbuf_hold_level(dn, old_nlevels, 0, FTAG);
+	ASSERT(db != NULL);
+	new = dbuf_dirty(db, tx);
+	dbuf_rele(db, FTAG);
+
+	/* transfer the dirty records to the new indirect */
+	mutex_enter(&dn->dn_mtx);
+	mutex_enter(&new->dt.di.dr_mtx);
+	list = &dn->dn_dirty_records[txgoff];
+	for (dr = list_head(list); dr; dr = dr_next) {
+		dr_next = list_next(&dn->dn_dirty_records[txgoff], dr);
+		if (dr->dr_dbuf->db_level != new_nlevels-1 &&
+		    dr->dr_dbuf->db_blkid != DMU_BONUS_BLKID &&
+		    dr->dr_dbuf->db_blkid != DMU_SPILL_BLKID) {
+			ASSERT(dr->dr_dbuf->db_level == old_nlevels-1);
+			list_remove(&dn->dn_dirty_records[txgoff], dr);
+			list_insert_tail(&new->dt.di.dr_children, dr);
+			dr->dr_parent = new;
+		}
+	}
+	mutex_exit(&new->dt.di.dr_mtx);
+	mutex_exit(&dn->dn_mtx);
+}
+
+int
+dnode_set_nlevels(dnode_t *dn, int nlevels, dmu_tx_t *tx)
+{
+	int ret = 0;
+
+	rw_enter(&dn->dn_struct_rwlock, RW_WRITER);
+
+	if (dn->dn_nlevels == nlevels) {
+		ret = 0;
+		goto out;
+	} else if (nlevels < dn->dn_nlevels) {
+		ret = SET_ERROR(EINVAL);
+		goto out;
+	}
+
+	dnode_set_nlevels_impl(dn, nlevels, tx);
+
+out:
+	rw_exit(&dn->dn_struct_rwlock);
+	return (ret);
+}
+
+/* read-holding callers must not rely on the lock being continuously held */
+void
+dnode_new_blkid(dnode_t *dn, uint64_t blkid, dmu_tx_t *tx, boolean_t have_read,
+    boolean_t force)
+{
 	int epbs, new_nlevels;
 	uint64_t sz;
 
@@ -1779,13 +1866,25 @@ dnode_new_blkid(dnode_t *dn, uint64_t blkid, dmu_tx_t *tx, boolean_t have_read)
 		}
 	}
 
-	if (blkid <= dn->dn_maxblkid)
+	/*
+	 * Raw sends (indicated by the force flag) require that we take the
+	 * given blkid even if the value is lower than the current value.
+	 */
+	if (!force && blkid <= dn->dn_maxblkid)
 		goto out;
 
+	/*
+	 * We use the (otherwise unused) top bit of dn_next_maxblkid[txgoff]
+	 * to indicate that this field is set. This allows us to set the
+	 * maxblkid to 0 on an existing object in dnode_sync().
+	 */
 	dn->dn_maxblkid = blkid;
+	dn->dn_next_maxblkid[tx->tx_txg & TXG_MASK] =
+	    blkid | DMU_NEXT_MAXBLKID_SET;
 
 	/*
 	 * Compute the number of levels necessary to support the new maxblkid.
+	 * Raw sends will ensure nlevels is set correctly for us.
 	 */
 	new_nlevels = 1;
 	epbs = dn->dn_indblkshift - SPA_BLKPTRSHIFT;
@@ -1793,40 +1892,11 @@ dnode_new_blkid(dnode_t *dn, uint64_t blkid, dmu_tx_t *tx, boolean_t have_read)
 	    sz <= blkid && sz >= dn->dn_nblkptr; sz <<= epbs)
 		new_nlevels++;
 
-	if (new_nlevels > dn->dn_nlevels) {
-		int old_nlevels = dn->dn_nlevels;
-		dmu_buf_impl_t *db;
-		list_t *list;
-		dbuf_dirty_record_t *new, *dr, *dr_next;
-
-		dn->dn_nlevels = new_nlevels;
-
-		ASSERT3U(new_nlevels, >, dn->dn_next_nlevels[txgoff]);
-		dn->dn_next_nlevels[txgoff] = new_nlevels;
-
-		/* dirty the left indirects */
-		db = dbuf_hold_level(dn, old_nlevels, 0, FTAG);
-		ASSERT(db != NULL);
-		new = dbuf_dirty(db, tx);
-		dbuf_rele(db, FTAG);
-
-		/* transfer the dirty records to the new indirect */
-		mutex_enter(&dn->dn_mtx);
-		mutex_enter(&new->dt.di.dr_mtx);
-		list = &dn->dn_dirty_records[txgoff];
-		for (dr = list_head(list); dr; dr = dr_next) {
-			dr_next = list_next(&dn->dn_dirty_records[txgoff], dr);
-			if (dr->dr_dbuf->db_level != new_nlevels-1 &&
-			    dr->dr_dbuf->db_blkid != DMU_BONUS_BLKID &&
-			    dr->dr_dbuf->db_blkid != DMU_SPILL_BLKID) {
-				ASSERT(dr->dr_dbuf->db_level == old_nlevels-1);
-				list_remove(&dn->dn_dirty_records[txgoff], dr);
-				list_insert_tail(&new->dt.di.dr_children, dr);
-				dr->dr_parent = new;
-			}
-		}
-		mutex_exit(&new->dt.di.dr_mtx);
-		mutex_exit(&dn->dn_mtx);
+	if (!force) {
+		if (new_nlevels > dn->dn_nlevels)
+			dnode_set_nlevels_impl(dn, new_nlevels, tx);
+	} else {
+		ASSERT3U(dn->dn_nlevels, >=, new_nlevels);
 	}
 
 out:
@@ -2251,7 +2321,8 @@ dnode_next_offset_level(dnode_t *dn, int flags, uint64_t *offset,
 			 */
 			return (SET_ERROR(ESRCH));
 		}
-		error = dbuf_read(db, NULL, DB_RF_CANFAIL | DB_RF_HAVESTRUCT);
+		error = dbuf_read(db, NULL,
+		    DB_RF_CANFAIL | DB_RF_HAVESTRUCT | DB_RF_NO_DECRYPT);
 		if (error) {
 			dbuf_rele(db, FTAG);
 			return (error);

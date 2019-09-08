@@ -33,12 +33,17 @@ OBJECTS += hash.o callback.o word.o loader.o
 HEADERS= $(FICLDIR)/ficl.h $(FICLDIR)/ficlplatform/unix.h ../ficllocal.h
 #
 
+# disable inner loop variable 'fw' check
+vm.o := SMOFF += check_check_deref
+
 .PARALLEL:
 
 MAJOR = 4
 MINOR = 1.0
 
 lib: libficl.a
+
+vm.o := CFLAGS += -_gcc=-Wno-clobbered
 
 # static library build
 libficl.a: $(OBJECTS)

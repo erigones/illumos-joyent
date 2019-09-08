@@ -21,7 +21,7 @@
 /*
  * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 1999, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2018, Joyent, Inc.
+ * Copyright 2019 Joyent, Inc.
  * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
@@ -95,6 +95,7 @@
 #include "net.h"
 #include "netstack.h"
 #include "nvpair.h"
+#include "pci.h"
 #include "pg.h"
 #include "rctl.h"
 #include "refhash.h"
@@ -351,6 +352,47 @@ ps(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 		(void) mdb_pwalk("thread", ps_threadprint, &prt_flags, addr);
 
 	return (DCMD_OK);
+}
+
+static void
+ps_help(void)
+{
+	mdb_printf("Display processes.\n\n"
+	    "Options:\n"
+	    "    -f\tDisplay command arguments\n"
+	    "    -l\tDisplay LWPs\n"
+	    "    -T\tDisplay tasks\n"
+	    "    -P\tDisplay projects\n"
+	    "    -z\tDisplay zones\n"
+	    "    -t\tDisplay threads\n\n");
+
+	mdb_printf("The resulting output is a table of the processes on the "
+	    "system.  The\n"
+	    "columns in the output consist of a combination of the "
+	    "following fields:\n\n");
+	mdb_printf("S\tProcess state.  Possible states are:\n"
+	    "\tS\tSleeping (SSLEEP)\n"
+	    "\tR\tRunnable (SRUN)\n"
+	    "\tZ\tZombie (SZOMB)\n"
+	    "\tI\tIdle (SIDL)\n"
+	    "\tO\tOn Cpu (SONPROC)\n"
+	    "\tT\tStopped (SSTOP)\n"
+	    "\tW\tWaiting (SWAIT)\n");
+
+	mdb_printf("PID\tProcess id.\n");
+	mdb_printf("PPID\tParent process id.\n");
+	mdb_printf("PGID\tProcess group id.\n");
+	mdb_printf("SID\tProcess id of the session leader.\n");
+	mdb_printf("TASK\tThe task id of the process.\n");
+	mdb_printf("PROJ\tThe project id of the process.\n");
+	mdb_printf("ZONE\tThe zone id of the process.\n");
+	mdb_printf("UID\tThe user id of the process.\n");
+	mdb_printf("FLAGS\tThe process flags (see ::pflags).\n");
+	mdb_printf("ADDR\tThe kernel address of the proc_t structure of the "
+	    "process\n");
+	mdb_printf("NAME\tThe name (p_user.u_comm field) of the process.  If "
+	    "the -f flag\n"
+	    "\tis specified, the arguments of the process are displayed.\n");
 }
 
 #define	PG_NEWEST	0x0001
@@ -3069,7 +3111,7 @@ cpuinfo_walk_cpu(uintptr_t addr, const cpu_t *cpu, cpuinfo_data_t *cid)
 	const char *flags[] = {
 	    "RUNNING", "READY", "QUIESCED", "EXISTS",
 	    "ENABLE", "OFFLINE", "POWEROFF", "FROZEN",
-	    "SPARE", "FAULTED", NULL
+	    "SPARE", "FAULTED", "DISABLED", NULL
 	};
 
 	if (cid->cid_cpu != -1) {
@@ -4035,7 +4077,8 @@ static const mdb_dcmd_t dcmds[] = {
 	{ "panicinfo", NULL, "print panic information", panicinfo },
 	{ "pid2proc", "?", "convert PID to proc_t address", pid2proc },
 	{ "project", NULL, "display kernel project(s)", project },
-	{ "ps", "[-fltzTP]", "list processes (and associated thr,lwp)", ps },
+	{ "ps", "[-fltzTP]", "list processes (and associated thr,lwp)", ps,
+	    ps_help },
 	{ "pflags", NULL, "display various proc_t flags", pflags },
 	{ "pgrep", "[-x] [-n | -o] pattern",
 		"pattern match against all processes", pgrep },
@@ -4092,8 +4135,8 @@ static const mdb_dcmd_t dcmds[] = {
 	{ "devbindings", "?[-qs] [device-name | major-num]",
 	    "print devinfo nodes bound to device-name or major-num",
 	    devbindings, devinfo_help },
-	{ "devinfo", ":[-qs]", "detailed devinfo of one node", devinfo,
-	    devinfo_help },
+	{ "devinfo", ":[-qsd] [-b bus]", "detailed devinfo of one node",
+	    devinfo, devinfo_help },
 	{ "devinfo_audit", ":[-v]", "devinfo configuration audit record",
 	    devinfo_audit },
 	{ "devinfo_audit_log", "?[-v]", "system wide devinfo configuration log",
@@ -4117,8 +4160,8 @@ static const mdb_dcmd_t dcmds[] = {
 	    modctl2devinfo },
 	{ "name2major", "<dev-name>", "convert dev name to major number",
 	    name2major },
-	{ "prtconf", "?[-vpc] [-d driver]", "print devinfo tree", prtconf,
-	    prtconf_help },
+	{ "prtconf", "?[-vpc] [-d driver] [-i inst]", "print devinfo tree",
+	    prtconf, prtconf_help },
 	{ "softstate", ":<instance>", "retrieve soft-state pointer",
 	    softstate },
 	{ "devinfo_fm", ":", "devinfo fault managment configuration",
@@ -4679,6 +4722,10 @@ static const mdb_walker_t walkers[] = {
 	/* from nvpair.c */
 	{ NVPAIR_WALKER_NAME, NVPAIR_WALKER_DESCR,
 		nvpair_walk_init, nvpair_walk_step, NULL },
+
+	/* from pci.c */
+	{ "pcie_bus", "walk all pcie_bus_t's", pcie_bus_walk_init,
+		pcie_bus_walk_step, NULL },
 
 	/* from rctl.c */
 	{ "rctl_dict_list", "walk all rctl_dict_entry_t's from rctl_lists",

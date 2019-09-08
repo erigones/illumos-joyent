@@ -120,6 +120,7 @@ GENUNIX_OBJS +=	\
 		bz2huffman.o	\
 		callb.o		\
 		callout.o	\
+		chacha.o	\
 		chdir.o		\
 		chmod.o		\
 		chown.o		\
@@ -152,6 +153,7 @@ GENUNIX_OBJS +=	\
 		ddi_intr_irm.o	\
 		ddi_nodeid.o	\
 		ddi_periodic.o	\
+		ddi_ufm.o	\
 		devcfg.o	\
 		devcache.o	\
 		device.o	\
@@ -489,6 +491,14 @@ AC97_OBJS += ac97.o ac97_ad.o ac97_alc.o ac97_cmi.o
 BLKDEV_OBJS += blkdev.o
 
 CARDBUS_OBJS += cardbus.o cardbus_hp.o cardbus_cfg.o
+
+CC_OBJS += cc.o
+
+CC_CUBIC_OBJS += cc_cubic.o
+
+CC_NEWRENO_OBJS += cc_newreno.o
+
+CC_SUNRENO_OBJS += cc_sunreno.o
 
 CONSKBD_OBJS += conskbd.o
 
@@ -837,8 +847,6 @@ SCSI_VHCI_F_SYM_OBJS +=		sym.o
 
 SCSI_VHCI_F_TPGS_OBJS +=	tpgs.o
 
-SCSI_VHCI_F_ASYM_SUN_OBJS +=	asym_sun.o
-
 SCSI_VHCI_F_SYM_HDS_OBJS +=	sym_hds.o
 
 SCSI_VHCI_F_TAPE_OBJS +=	tape.o
@@ -853,7 +861,7 @@ SATA_OBJS +=	sata.o
 
 USBA_OBJS +=	hcdi.o	usba.o	usbai.o hubdi.o parser.o genconsole.o \
 		usbai_pipe_mgmt.o usbai_req.o usbai_util.o usbai_register.o \
-		usba_devdb.o usba10_calls.o usba_ugen.o
+		usba_devdb.o usba10_calls.o usba_ugen.o usba_bos.o
 
 USBA10_OBJS +=	usba10.o
 
@@ -1055,12 +1063,6 @@ SYSEVENT_OBJS += sysevent.o
 
 BL_OBJS += bl.o
 
-DRM_OBJS += drm_sunmod.o drm_kstat.o drm_agpsupport.o \
-	    drm_auth.o drm_bufs.o drm_context.o drm_dma.o \
-	    drm_drawable.o drm_drv.o drm_fops.o drm_ioctl.o drm_irq.o \
-	    drm_lock.o drm_memory.o drm_msg.o drm_pci.o drm_scatter.o \
-	    drm_cache.o drm_gem.o drm_mm.o ati_pcigart.o
-
 FM_OBJS += devfm.o devfm_machdep.o
 
 RTLS_OBJS +=	rtls.o
@@ -1137,6 +1139,7 @@ NFSSRV_OBJS +=	nfs_server.o	nfs_srv.o	nfs3_srv.o \
 		nfs4_deleg_ops.o nfs4_srv_readdir.o nfs4_dispatch.o
 
 SMBSRV_SHARED_OBJS += \
+		smb_cfg_util.o \
 		smb_door_legacy.o \
 		smb_inet.o \
 		smb_match.o \
@@ -1158,6 +1161,7 @@ SMBSRV_OBJS +=	$(SMBSRV_SHARED_OBJS)			\
 		smb_alloc.o				\
 		smb_authenticate.o			\
 		smb_close.o				\
+		smb_cmn_oplock.o			\
 		smb_cmn_rename.o			\
 		smb_cmn_setfile.o			\
 		smb_common_open.o			\
@@ -1218,6 +1222,7 @@ SMBSRV_OBJS +=	$(SMBSRV_SHARED_OBJS)			\
 		smb_set_fileinfo.o			\
 		smb_sign_kcf.o				\
 		smb_signing.o				\
+		smb_srv_oplock.o			\
 		smb_thread.o				\
 		smb_tree.o				\
 		smb_trans2_create_directory.o		\
@@ -1226,19 +1231,25 @@ SMBSRV_OBJS +=	$(SMBSRV_SHARED_OBJS)			\
 		smb_tree_connect.o			\
 		smb_unlock_byte_range.o			\
 		smb_user.o				\
-		smb_vfs.o				\
 		smb_vops.o				\
 		smb_vss.o				\
 		smb_write.o				\
 		\
+		smb2_aapl.o \
 		smb2_dispatch.o \
+		smb2_durable.o \
 		smb2_cancel.o \
 		smb2_change_notify.o \
 		smb2_close.o \
 		smb2_create.o \
 		smb2_echo.o \
 		smb2_flush.o \
+		smb2_fsctl_copychunk.o \
+		smb2_fsctl_fs.o \
+		smb2_fsctl_odx.o \
+		smb2_fsctl_sparse.o \
 		smb2_ioctl.o \
+		smb2_lease.o \
 		smb2_lock.o \
 		smb2_logoff.o \
 		smb2_negotiate.o \
@@ -1260,7 +1271,10 @@ SMBSRV_OBJS +=	$(SMBSRV_SHARED_OBJS)			\
 		smb2_signing.o \
 		smb2_tree_connect.o \
 		smb2_tree_disconn.o \
-		smb2_write.o
+		smb2_write.o \
+		\
+		smb3_encrypt.o \
+		smb3_encrypt_kcf.o
 
 PCFS_OBJS +=	pc_alloc.o	pc_dir.o	pc_node.o	pc_subr.o \
 		pc_vfsops.o	pc_vnops.o
@@ -1368,6 +1382,7 @@ ZFS_COMMON_OBJS +=		\
 	dnode_sync.o		\
 	dsl_bookmark.o		\
 	dsl_dir.o		\
+	dsl_crypt.o		\
 	dsl_dataset.o		\
 	dsl_deadlist.o		\
 	dsl_destroy.o		\
@@ -1380,9 +1395,11 @@ ZFS_COMMON_OBJS +=		\
 	dsl_scan.o		\
 	zfeature.o		\
 	gzip.o			\
+	hkdf.o			\
 	lz4.o			\
 	lzjb.o			\
 	metaslab.o		\
+	mmp.o			\
 	multilist.o		\
 	range_tree.o		\
 	refcount.o		\
@@ -1435,6 +1452,7 @@ ZFS_COMMON_OBJS +=		\
 	zio.o			\
 	zio_checksum.o		\
 	zio_compress.o		\
+	zio_crypt.o		\
 	zio_inject.o		\
 	zle.o			\
 	zrlock.o		\
@@ -1649,10 +1667,14 @@ CONSCONFIG_DACF_OBJS  += consconfig_dacf.o consplat.o
 TEM_OBJS += tem.o tem_safe.o
 
 #
-#	Font data for generated 8x16 font
+#	Font data for generated console fonts
 #
-FONT	= 8x16
-FONT_SRC= ter-u16n
+i386_FONT	= 8x16
+i386_FONT_SRC= ter-u16n
+sparc_FONT	= 12x22
+sparc_FONT_SRC= Gallant19
+FONT=$($(MACH)_FONT)
+FONT_SRC=$($(MACH)_FONT_SRC)
 FONT_DIR= $(SRC)/data/consfonts
 FONT_OBJS += font.o $(FONT).o
 
@@ -1782,7 +1804,7 @@ EHCI_OBJS += ehci.o ehci_hub.o ehci_xfer.o ehci_intr.o ehci_util.o ehci_polled.o
 
 XHCI_OBJS += xhci.o xhci_quirks.o xhci_dma.o xhci_context.o xhci_intr.o \
 	     xhci_ring.o xhci_command.o xhci_event.o xhci_usba.o \
-	     xhci_endpoint.o xhci_hub.o
+	     xhci_endpoint.o xhci_hub.o xhci_polled.o
 
 HUBD_OBJS += hubd.o
 
@@ -1792,8 +1814,8 @@ USB_IA_OBJS += usb_ia.o
 
 SCSA2USB_OBJS += scsa2usb.o usb_ms_bulkonly.o usb_ms_cbi.o
 
-IPF_OBJS += ip_fil_solaris.o fil.o solaris.o ip_state.o ip_frag.o ip_nat.o \
-	    ip_proxy.o ip_auth.o ip_pool.o ip_htable.o ip_lookup.o \
+IPF_OBJS += cfw.o ip_fil_solaris.o fil.o solaris.o ip_state.o ip_frag.o \
+	    ip_nat.o ip_proxy.o ip_auth.o ip_pool.o ip_htable.o ip_lookup.o \
 	    ip_log.o misc.o ip_compat.o ip_nat6.o drand48.o
 
 IPD_OBJS += ipd.o
@@ -2074,7 +2096,7 @@ NXGE_HCALL_OBJS =	\
 #
 
 # Virtio core
-VIRTIO_OBJS = virtio.o
+VIRTIO_OBJS = virtio_main.o virtio_dma.o
 
 # Virtio block driver
 VIOBLK_OBJS = vioblk.o

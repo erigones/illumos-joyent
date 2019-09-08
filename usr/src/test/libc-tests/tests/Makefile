@@ -12,7 +12,7 @@
 #
 # Copyright (c) 2012 by Delphix. All rights reserved.
 # Copyright 2015 Garrett D'Amore <garrett@damore.org>
-# Copyright (c) 2018, Joyent, Inc.
+# Copyright 2019 Joyent, Inc.
 #
 
 SUBDIRS = \
@@ -40,6 +40,7 @@ PROGS = \
 	env-7076 \
 	fnmatch \
 	memset_s \
+	posix_memalign \
 	printf-9511 \
 	psignal-5097 \
 	quick_exit_order \
@@ -58,7 +59,7 @@ SCRIPTS = \
 CPPFLAGS += -D_REENTRANT
 
 # needs work
-SMOFF += all_func_returns,snprintf_overflow
+SMOFF += all_func_returns,snprintf_overflow,unreachable
 
 PROGS32 = $(PROGS:%=%.32)
 PROGS64 = \
@@ -67,6 +68,8 @@ PROGS64 = \
 
 aligned_alloc.32 :=	LDLIBS += -lproc
 aligned_alloc.64 :=	LDLIBS64 += -lproc
+posix_memalign.32 :=	LDLIBS += -lproc
+posix_memalign.64 :=	LDLIBS64 += -lproc
 
 memset_s.32 :=	CPPFLAGS += -D__STDC_WANT_LIB_EXT1__=1
 memset_s.64 :=	CPPFLAGS += -D__STDC_WANT_LIB_EXT1__=1

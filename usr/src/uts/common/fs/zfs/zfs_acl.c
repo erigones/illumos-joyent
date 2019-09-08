@@ -1057,8 +1057,8 @@ zfs_mode_compute(uint64_t fmode, zfs_acl_t *aclp,
  * Read an external acl object.  If the intent is to modify, always
  * create a new acl and leave any cached acl in place.
  */
-static int
-zfs_acl_node_read(znode_t *zp, boolean_t have_lock, zfs_acl_t **aclpp,
+int
+zfs_acl_node_read(struct znode *zp, boolean_t have_lock, zfs_acl_t **aclpp,
     boolean_t will_modify)
 {
 	zfs_acl_t	*aclp;
@@ -1771,10 +1771,12 @@ zfs_acl_ids_free(zfs_acl_ids_t *acl_ids)
 }
 
 boolean_t
-zfs_acl_ids_overquota(zfsvfs_t *zfsvfs, zfs_acl_ids_t *acl_ids)
+zfs_acl_ids_overquota(zfsvfs_t *zv, zfs_acl_ids_t *acl_ids, uint64_t projid)
 {
-	return (zfs_fuid_overquota(zfsvfs, B_FALSE, acl_ids->z_fuid) ||
-	    zfs_fuid_overquota(zfsvfs, B_TRUE, acl_ids->z_fgid));
+	return (zfs_id_overquota(zv, DMU_USERUSED_OBJECT, acl_ids->z_fuid) ||
+	    zfs_id_overquota(zv, DMU_GROUPUSED_OBJECT, acl_ids->z_fgid) ||
+	    (projid != ZFS_DEFAULT_PROJID && projid != ZFS_INVALID_PROJID &&
+	    zfs_id_overquota(zv, DMU_PROJECTUSED_OBJECT, projid)));
 }
 
 /*
@@ -2106,18 +2108,13 @@ zfs_zaccess_aces_check(znode_t *zp, uint32_t *working_mode,
 	zfsvfs_t	*zfsvfs = zp->z_zfsvfs;
 	zfs_acl_t	*aclp;
 	int		error;
-	uid_t		uid = crgetuid(cr);
-	uint64_t	who;
+	uint64_t	who;		/* FUID from the ACE */
 	uint16_t	type, iflags;
 	uint16_t	entry_type;
 	uint32_t	access_mask;
 	uint32_t	deny_mask = 0;
 	zfs_ace_hdr_t	*acep = NULL;
-	boolean_t	checkit;
-	uid_t		gowner;
-	uid_t		fowner;
-
-	zfs_fuid_map_ids(zp, cr, &fowner, &gowner);
+	boolean_t	checkit;	/* ACE ID matches */
 
 	mutex_enter(&zp->z_acl_lock);
 
@@ -2150,11 +2147,13 @@ zfs_zaccess_aces_check(znode_t *zp, uint32_t *working_mode,
 
 		switch (entry_type) {
 		case ACE_OWNER:
-			if (uid == fowner)
-				checkit = B_TRUE;
+			who = zp->z_uid;
+			/*FALLTHROUGH*/
+		case 0:	/* USER Entry */
+			checkit = zfs_user_in_cred(zfsvfs, who, cr);
 			break;
 		case OWNING_GROUP:
-			who = gowner;
+			who = zp->z_gid;
 			/*FALLTHROUGH*/
 		case ACE_IDENTIFIER_GROUP:
 			checkit = zfs_groupmember(zfsvfs, who, cr);
@@ -2163,21 +2162,13 @@ zfs_zaccess_aces_check(znode_t *zp, uint32_t *working_mode,
 			checkit = B_TRUE;
 			break;
 
-		/* USER Entry */
 		default:
-			if (entry_type == 0) {
-				uid_t newid;
-
-				newid = zfs_fuid_map_id(zfsvfs, who, cr,
-				    ZFS_ACE_USER);
-				if (newid != IDMAP_WK_CREATOR_OWNER_UID &&
-				    uid == newid)
-					checkit = B_TRUE;
-				break;
-			} else {
-				mutex_exit(&zp->z_acl_lock);
-				return (SET_ERROR(EIO));
-			}
+			/*
+			 * The zfs_acl_valid_ace_type check above
+			 * should make this case impossible.
+			 */
+			mutex_exit(&zp->z_acl_lock);
+			return (SET_ERROR(EIO));
 		}
 
 		if (checkit) {

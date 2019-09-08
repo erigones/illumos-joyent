@@ -23,6 +23,7 @@
  * Use is subject to license terms.
  * Copyright 2012 Milan Jurik. All rights reserved.
  * Copyright 2018 Joyent, Inc.
+ * Copyright 2019 Nexenta Systems, Inc.
  */
 
 #include <stdlib.h>
@@ -88,7 +89,7 @@ static thread_key_t	server_key;
 static void *
 server_tsd_bind(void *arg)
 {
-	static void *value = 0;
+	static void *value = "NON-NULL TSD";
 
 	(void) thr_setname(thr_self(), "server_tsd_bind");
 
@@ -129,6 +130,7 @@ server_destroy(void *arg)
 	(void) mutex_lock(&create_lock);
 	num_servers--;
 	(void) mutex_unlock(&create_lock);
+	(void) thr_setspecific(server_key, NULL);
 }
 
 /*
@@ -859,7 +861,7 @@ need_per_user_door(void *buf, int whoami, uid_t uid, char **dblist)
 
 static void
 if_selfcred_return_per_user_door(char *argp, size_t arg_size,
-	door_desc_t *dp, int whoami)
+    door_desc_t *dp, int whoami)
 {
 	nss_pheader_t	*phdr = (nss_pheader_t *)((void *)argp);
 	char		*dblist;
@@ -1250,7 +1252,7 @@ _nscd_setup_server(char *execname, char **argv)
 	/*
 	 * kick off routing socket monitor thread
 	 */
-	if (thr_create(NULL, NULL,
+	if (thr_create(NULL, 0,
 	    (void *(*)(void *))rts_mon, 0, 0, NULL) != 0) {
 		errnum = errno;
 		_NSCD_LOG(NSCD_LOG_FRONT_END, NSCD_LOG_LEVEL_ERROR)
@@ -1316,7 +1318,7 @@ _nscd_setup_child_server(int did)
 	/*
 	 * kick off routing socket monitor thread
 	 */
-	if (thr_create(NULL, NULL,
+	if (thr_create(NULL, 0,
 	    (void *(*)(void *))rts_mon, 0, 0, NULL) != 0) {
 		errnum = errno;
 		_NSCD_LOG(NSCD_LOG_FRONT_END, NSCD_LOG_LEVEL_ERROR)

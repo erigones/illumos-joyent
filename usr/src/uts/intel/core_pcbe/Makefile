@@ -57,7 +57,7 @@ CPCGEN_OBJS	= \
 	core_pcbe_wsm_ex.o
 
 CPCGEN_COMMON	= core_pcbe_cpcgen.c
-CPCGEN_CMD 	= $(CPCGEN) -d $(SRC)/data/perfmon -o .
+CPCGEN_CMD	= $(CPCGEN) -d $(SRC)/data/perfmon -o .
 CPCGEN_SRCS	= $(CPCGEN_OBJS:%.o=%.c) core_pcbe_cpcgen.h
 
 #
@@ -118,7 +118,7 @@ ROOTSOFTLINKS	= $(SOFTLINKS:%=$(ROOT_PSM_PCBE_DIR)/%)
 #
 include $(UTSBASE)/intel/Makefile.intel
 
-CERRWARN	+= -_gcc=-Wno-uninitialized
+CERRWARN	+= $(CNOWARN_UNINIT)
 CERRWARN	+= -_gcc=-Wno-unused-variable
 
 CPPFLAGS	+= -I$(UTSBASE)/intel/core_pcbe

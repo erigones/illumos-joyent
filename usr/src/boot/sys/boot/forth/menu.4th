@@ -4,6 +4,7 @@
 \ Copyright 2019 OmniOS Community Edition (OmniOSce) Association.
 \ Copyright (c) 2019 Erigones, s. r. o.
 \ All rights reserved.
+\ Copyright 2019 Joyent, Inc.
 \
 \ Redistribution and use in source and binary forms, with or without
 \ modification, are permitted provided that the following conditions
@@ -443,20 +444,20 @@ also menu-infrastructure definitions
 
 : acpi-captions ( N -- )
   \ first entry
-  dup s" [A]CPI.... default" rot 48 menu_caption[x][y] setenv
-  dup s" ^[1mA^[mCPI.... ^[32;7mdefault^[m" rot 48 ansi_caption[x][y] setenv
+  dup s" [A]CPI............ default" rot 48 menu_caption[x][y] setenv
+  dup s" ^[1mA^[mCPI.......... ^[32;7mdefault^[m" rot 48 ansi_caption[x][y] setenv
 
-  dup s" [A]CPI........ On" rot 49 menu_caption[x][y] setenv
-  dup s" ^[1mA^[mCPI........ ^[34;1mOn^[m" rot 49 ansi_caption[x][y] setenv
+  dup s" [A]CPI................ On" rot 49 menu_caption[x][y] setenv
+  dup s" ^[1mA^[mCPI............... ^[34;1mOn^[m" rot 49 ansi_caption[x][y] setenv
 
-  dup s" [A]CPI........ Off" rot 50 menu_caption[x][y] setenv
-  dup s" ^[1mA^[mCPI........ ^[34;1mOff^[m" rot 50 ansi_caption[x][y] setenv
+  dup s" [A]CPI............... Off" rot 50 menu_caption[x][y] setenv
+  dup s" ^[1mA^[mCPI.............. ^[34;1mOff^[m" rot 50 ansi_caption[x][y] setenv
 
-  dup s" [A]CPI....... MADT" rot 51 menu_caption[x][y] setenv
-  dup s" ^[1mA^[mCPI....... ^[34;1mMADT^[m" rot 51 ansi_caption[x][y] setenv
+  dup s" [A]CPI.............. MADT" rot 51 menu_caption[x][y] setenv
+  dup s" ^[1mA^[mCPI............. ^[34;1mMADT^[m" rot 51 ansi_caption[x][y] setenv
 
-  dup s" [A]CPI..... Legacy" rot 52 menu_caption[x][y] setenv
-  s" ^[1mA^[mCPI..... ^[34;1mLegacy^[m" rot 52 ansi_caption[x][y] setenv
+  dup s" [A]CPI............ Legacy" rot 52 menu_caption[x][y] setenv
+  s" ^[1mA^[mCPI............... ^[34;1mLegacy^[m" rot 52 ansi_caption[x][y] setenv
 ;
 
 \ Illumos console has following values:
@@ -464,20 +465,20 @@ also menu-infrastructure definitions
 
 : osconsole-captions ( N -- )
   \ first entry
-  dup s" Os[C]onsole.. text" rot 48 menu_caption[x][y] setenv
-  dup s" Os^[1mC^[monsole.. ^[32;7mtext^[m" rot 48 ansi_caption[x][y] setenv
+  dup s" OS [C]onsole.......... text" rot 48 menu_caption[x][y] setenv
+  dup s" OS ^[1mC^[monsole........... ^[32;7mtext^[m" rot 48 ansi_caption[x][y] setenv
 
-  dup s" Os[C]onsole.. ttya" rot 49 menu_caption[x][y] setenv
-  dup s" Os^[1mC^[monsole.. ^[34;1mttya^[m" rot 49 ansi_caption[x][y] setenv
+  dup s" OS [C]onsole.......... ttya" rot 49 menu_caption[x][y] setenv
+  dup s" OS ^[1mC^[monsole........... ^[34;1mttya^[m" rot 49 ansi_caption[x][y] setenv
 
-  dup s" Os[C]onsole.. ttyb" rot 50 menu_caption[x][y] setenv
-  dup s" Os^[1mC^[monsole.. ^[34;1mttyb^[m" rot 50 ansi_caption[x][y] setenv
+  dup s" OS [C]onsole.......... ttyb" rot 50 menu_caption[x][y] setenv
+  dup s" OS ^[1mC^[monsole........... ^[34;1mttyb^[m" rot 50 ansi_caption[x][y] setenv
 
-  dup s" Os[C]onsole.. ttyc" rot 51 menu_caption[x][y] setenv
-  dup s" Os^[1mC^[monsole.. ^[34;1mttyc^[m" rot 51 ansi_caption[x][y] setenv
+  dup s" OS [C]onsole.......... ttyc" rot 51 menu_caption[x][y] setenv
+  dup s" OS ^[1mC^[monsole........... ^[34;1mttyc^[m" rot 51 ansi_caption[x][y] setenv
 
-  dup s" Os[C]onsole.. ttyd" rot 52 menu_caption[x][y] setenv
-  s" Os^[1mC^[monsole.. ^[34;1mttyd^[m" rot 52 ansi_caption[x][y] setenv
+  dup s" OS [C]onsole.......... ttyd" rot 52 menu_caption[x][y] setenv
+  s" OS ^[1mC^[monsole........... ^[34;1mttyd^[m" rot 52 ansi_caption[x][y] setenv
 ;
 
 \ This function creates the list of menu items. This function is called by the
@@ -739,6 +740,21 @@ also menu-infrastructure definitions
 	then
 ;
 
+: do_ipxe ( -- bool)
+	\ getenv? leaves -1 on stack if the env var exists.  Thus if both
+	\ headnode and ipxe exist then the sum of what will be left on the
+	\ stack should be -2.
+	s" headnode" getenv? s" ipxe" getenv? + -2 = if
+		s" ipxe" getenv s" true" compare 0= if
+			true
+		else
+			false
+		then
+	else
+		false
+	then
+;
+
 \ Takes a single integer on the stack and updates the timeout display. The
 \ integer must be between 0 and 9 (we will only update a single digit in the
 \ source message).
@@ -749,7 +765,15 @@ also menu-infrastructure definitions
 	dup 9 > if drop 9 then
 	dup 0 < if drop 0 then
 
-	s" Autoboot in N seconds. [Space] to pause" ( n -- n c-addr/u )
+	s" headnode" getenv? if
+		do_ipxe if
+			s" Autoboot in N seconds from PXE. [Space] to pause" ( n -- n c-addr/u )
+		else
+			s" Autoboot in N seconds from the USB Key. [Space] to pause" ( n -- n c-addr/u )
+		then
+	else
+		s" Autoboot in N seconds. [Space] to pause" ( n -- n c-addr/u )
+	then
 
 	2 pick 0> if
 		rot 48 + -rot ( n c-addr/u -- n' c-addr/u ) \ convert to ASCII
@@ -1197,8 +1221,16 @@ also menu-namespace
 		\ Ctrl-Enter/Ctrl-J (10)
 		dup over 13 = swap 10 = or if
 			drop ( no longer needed )
-			s" boot" evaluate
-			exit ( pedantic; never reached )
+			do_ipxe if
+				s" efi-version" getenv? if
+					s" ipxe_chainload" evaluate
+				else
+					s" ipxe_boot" evaluate
+				then
+			else
+				s" boot" evaluate
+				exit ( pedantic; never reached )
+			then
 		then
 
 		dup menureboot @ = if 0 reboot then

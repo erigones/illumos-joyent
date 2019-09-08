@@ -44,9 +44,9 @@
 #include "gfx_fb.h"
 #include "framebuffer.h"
 
-static EFI_GUID gop_guid = EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID;
+EFI_GUID gop_guid = EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID;
 static EFI_GUID pciio_guid = EFI_PCI_IO_PROTOCOL_GUID;
-static EFI_GUID uga_guid = EFI_UGA_DRAW_PROTOCOL_GUID;
+EFI_GUID uga_guid = EFI_UGA_DRAW_PROTOCOL_GUID;
 static EFI_GUID active_edid_guid = EFI_EDID_ACTIVE_PROTOCOL_GUID;
 static EFI_GUID discovered_edid_guid = EFI_EDID_DISCOVERED_PROTOCOL_GUID;
 
@@ -222,7 +222,8 @@ efifb_uga_get_pciio(void)
 	/* Get the PCI I/O interface of the first handle that supports it. */
 	pciio = NULL;
 	for (hp = buf; hp < buf + bufsz; hp++) {
-		status = BS->HandleProtocol(*hp, &pciio_guid, (void **)&pciio);
+		status = OpenProtocolByHandle(*hp, &pciio_guid,
+		    (void **)&pciio);
 		if (status == EFI_SUCCESS) {
 			free(buf);
 			return (pciio);
@@ -458,11 +459,11 @@ efifb_gop_get_edid(EFI_HANDLE gop)
 		return (NULL);
 
 	guid = &active_edid_guid;
-	status = BS->OpenProtocol(gop, guid, (VOID **)&edid, IH, NULL,
+	status = BS->OpenProtocol(gop, guid, (void **)&edid, IH, NULL,
 	    EFI_OPEN_PROTOCOL_GET_PROTOCOL);
 	if (status != EFI_SUCCESS) {
 		guid = &discovered_edid_guid;
-		status = BS->OpenProtocol(gop, guid, (VOID **)&edid, IH, NULL,
+		status = BS->OpenProtocol(gop, guid, (void **)&edid, IH, NULL,
 		    EFI_OPEN_PROTOCOL_GET_PROTOCOL);
 	}
 	if (status != EFI_SUCCESS)

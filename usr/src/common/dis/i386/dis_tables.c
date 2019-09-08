@@ -21,7 +21,7 @@
  */
 /*
  * Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2018 Joyent, Inc.
+ * Copyright 2019 Joyent, Inc.
  */
 
 /*
@@ -560,6 +560,11 @@ const instable_t dis_opMOVSLD = TNS("movslq",MOVSXZ);
  *	"decode table" for pause and clflush instructions
  */
 const instable_t dis_opPause = TNS("pause", NORM);
+
+/*
+ *	"decode table" for wbnoinvd instruction
+ */
+const instable_t dis_opWbnoinvd = TNS("wbnoinvd", NORM);
 
 /*
  *	Decode table for 0x0F00 opcodes
@@ -1484,7 +1489,7 @@ const instable_t dis_opAVX62[256] = {
 /*  [48]  */	INVALID,		INVALID,		INVALID,		INVALID,
 /*  [4C]  */	INVALID,		INVALID,		INVALID,		INVALID,
 
-/*  [50]  */	INVALID,		INVALID,		INVALID,		INVALID,
+/*  [50]  */	TNSZ("vpdpbusd",EVEX_RMrX,16),TNSZ("vpdpbusds",EVEX_RMrX,16),TNSZ("vpdpwssd",EVEX_RMrX,16),TNSZ("vpdpwssds",EVEX_RMrX,16),
 /*  [54]  */	TSd("vandp",EVEX_RMrX), TSd("vandnp",EVEX_RMrX), TSd("vorp",EVEX_RMrX),		TSd("vxorp",EVEX_RMrX),
 /*  [58]  */	INVALID,		INVALID,		INVALID,		INVALID,
 /*  [5C]  */	INVALID,		INVALID,		INVALID,		INVALID,
@@ -2660,10 +2665,16 @@ dtrace_vex_adjust(uint_t vex_byte1, uint_t mode, uint_t *reg, uint_t *r_m)
  */
 /* ARGSUSED */
 static void
-dtrace_evex_mnem_adjust(dis86_t *x, instable_t *dp, uint_t vex_W,
+dtrace_evex_mnem_adjust(dis86_t *x, const instable_t *dp, uint_t vex_W,
     uint_t evex_byte2)
 {
 #ifdef DIS_TEXT
+	/* No adjustments needed for VNNI instructions. */
+	if (dp == &dis_opAVX62[0x50] || dp == &dis_opAVX62[0x51] ||
+	    dp == &dis_opAVX62[0x52] || dp == &dis_opAVX62[0x53]) {
+		return;
+	}
+
 	if (dp == &dis_opAVX62[0x7f] ||		/* vmovdq */
 	    dp == &dis_opAVX62[0x6f]) {
 		/* Aligned or Unaligned? */
@@ -2688,7 +2699,6 @@ dtrace_evex_mnem_adjust(dis86_t *x, instable_t *dp, uint_t vex_W,
 				break;
 			}
 		}
-
 	} else {
 		if (dp->it_avxsuf == AVS5Q) {
 			(void) strlcat(x->d86_mnem, vex_W != 0 ?  "q" : "d",
@@ -3210,7 +3220,7 @@ dtrace_get_operand(dis86_t *x, uint_t mode, uint_t r_m, int wbit, int opindex)
 int
 dtrace_disx86(dis86_t *x, uint_t cpu_mode)
 {
-	instable_t *dp;		/* decode table being used */
+	const instable_t *dp;	/* decode table being used */
 #ifdef DIS_TEXT
 	uint_t i;
 #endif
@@ -3707,11 +3717,11 @@ not_avx512:
 					if (opnd_size_prefix == 0) {
 						/* SSSE3 MMX instructions */
 						dp_mmx = *dp;
-						dp = &dp_mmx;
-						dp->it_adrmode = MMOPM_66o;
+						dp_mmx.it_adrmode = MMOPM_66o;
 #ifdef	DIS_MEM
-						dp->it_size = 8;
+						dp_mmx.it_size = 8;
 #endif
+						dp = &dp_mmx;
 					}
 					break;
 				default:
@@ -3792,11 +3802,11 @@ not_avx512:
 					if (opnd_size_prefix == 0) {
 						/* SSSE3 MMX instructions */
 						dp_mmx = *dp;
-						dp = &dp_mmx;
-						dp->it_adrmode = MM;
+						dp_mmx.it_adrmode = MM;
 #ifdef	DIS_MEM
-						dp->it_size = 8;
+						dp_mmx.it_size = 8;
 #endif
+						dp = &dp_mmx;
 					}
 					break;
 				case CRC32:
@@ -3813,6 +3823,9 @@ not_avx512:
 				default:
 					goto error;
 			}
+		} else if (rep_prefix == 0xf3 && opcode4 == 0 && opcode5 == 9) {
+			rep_prefix = 0;
+			dp = (instable_t *)&dis_opWbnoinvd;
 		} else {
 			dp = (instable_t *)&dis_op0F[opcode4][opcode5];
 		}

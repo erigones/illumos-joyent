@@ -22,7 +22,7 @@
  * Copyright (c) 1991, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 1990 Mentat Inc.
  * Copyright (c) 2013 by Delphix. All rights reserved.
- * Copyright (c) 2016, Joyent, Inc. All rights reserved.
+ * Copyright 2019 Joyent, Inc.
  * Copyright (c) 2014, OmniTI Computer Consulting, Inc. All rights reserved.
  */
 
@@ -2329,7 +2329,8 @@ ill_taskq_dispatch(ip_stack_t *ipst)
 			mp->b_next = NULL;
 
 			VERIFY(taskq_dispatch(system_taskq,
-			    ill_capability_ack_thr, mp, TQ_SLEEP) != 0);
+			    ill_capability_ack_thr, mp, TQ_SLEEP) !=
+			    TASKQID_INVALID);
 			mutex_enter(&ipst->ips_capab_taskq_lock);
 			mp = ipst->ips_capab_taskq_head;
 		}
@@ -2436,7 +2437,7 @@ ill_capability_ack(ill_t *ill, mblk_t *mp)
 	ASSERT(mp->b_next == NULL);
 
 	if (taskq_dispatch(system_taskq, ill_capability_ack_thr, mp,
-	    TQ_NOSLEEP) != 0)
+	    TQ_NOSLEEP) != TASKQID_INVALID)
 		return;
 
 	/*
@@ -3512,7 +3513,7 @@ ill_init_common(ill_t *ill, queue_t *q, boolean_t isv6, boolean_t is_loopback,
 	ill->ill_max_buf = ND_MAX_Q;
 	ill->ill_refcnt = 0;
 
-	cv_init(&ill->ill_dlpi_capab_cv, NULL, NULL, NULL);
+	cv_init(&ill->ill_dlpi_capab_cv, NULL, CV_DEFAULT, NULL);
 	mutex_init(&ill->ill_dlpi_capab_lock, NULL, MUTEX_DEFAULT, NULL);
 
 	return (0);

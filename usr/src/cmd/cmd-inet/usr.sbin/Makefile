@@ -22,7 +22,7 @@
 #
 # Copyright (c) 1990, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
-# Copyright (c) 2018, Joyent, Inc.
+# Copyright 2019, Joyent, Inc.
 #
 
 SYNCPROG=	syncinit syncloop syncstat
@@ -102,7 +102,7 @@ COMMONSRCS=	$(COMMONOBJS:%.o=$(CMDINETCOMMONDIR)/%.c)
 SRCS+=		$(COMMONSRCS)
 
 CERRWARN += -_gcc=-Wno-implicit-function-declaration
-CERRWARN += -_gcc=-Wno-uninitialized
+CERRWARN += $(CNOWARN_UNINIT)
 CERRWARN += -_gcc=-Wno-unused-variable
 CERRWARN += -_gcc=-Wno-unused-function
 CERRWARN += -_gcc=-Wno-parentheses
@@ -164,6 +164,7 @@ if_mpadm		:=	LDLIBS += -linetutil -lipmp
 if_mpadm.po		:=	XGETFLAGS += -a
 route			:=	CPPFLAGS += -DNDEBUG
 ndd			:=	LDLIBS += -ldladm -lipadm
+$(RELEASE_BUILD)ndd	:=	CERRWARN += -_gcc=-Wno-unused
 in.comsat		:=	LDFLAGS += $(MAPFILE.NGB:%=-M%)
 route			:=	LDLIBS += -lzonecfg -lcontract
 

@@ -24,6 +24,10 @@
  */
 
 /*
+ * Copyright 2019 Joyent, Inc.
+ */
+
+/*
  * PICL plug-in that creates device tree nodes for all platforms
  */
 
@@ -98,7 +102,7 @@ static picld_plugin_reg_t  my_reg_info = {
 #define	SUNW_PICLDEVTREE_PLUGIN_DEBUG	"SUNW_PICLDEVTREE_PLUGIN_DEBUG"
 static	int		picldevtree_debug = 0;
 
-static	conf_entries_t 	*conf_name_class_map = NULL;
+static	conf_entries_t	*conf_name_class_map = NULL;
 static	builtin_map_t	sun4u_map[] = {
 	/* MAX_NAMEVAL_SIZE */
 	{ "SUNW,bpp", PICL_CLASS_PARALLEL},
@@ -281,11 +285,11 @@ mc_completion_handler(char *ename, void *earg, size_t size)
 	nvlist_t	*unpack_nvl;
 
 	if (strcmp(ename, PICLEVENT_MC_REMOVED) == 0 &&
-	    nvlist_unpack(earg, size, &unpack_nvl, NULL) == 0) {
-		mch = NULL;
+	    nvlist_unpack(earg, size, &unpack_nvl, 0) == 0) {
+		mch = 0;
 		(void) nvlist_lookup_uint64(unpack_nvl,
 		    PICLEVENTARG_NODEHANDLE, &mch);
-		if (mch != NULL) {
+		if (mch != 0) {
 			if (picldevtree_debug)
 				syslog(LOG_INFO,
 				    "picldevtree: destroying_node:%llx\n",
@@ -314,14 +318,14 @@ post_mc_event(char *ename, picl_nodehdl_t mch)
 	if (ev_name == NULL)
 		return (-1);
 
-	if (nvlist_alloc(&nvl, NV_UNIQUE_NAME_TYPE, NULL)) {
+	if (nvlist_alloc(&nvl, NV_UNIQUE_NAME_TYPE, 0)) {
 		free(ev_name);
 		return (-1);
 	}
 
 	pack_buf = NULL;
 	if (nvlist_add_uint64(nvl, PICLEVENTARG_NODEHANDLE, mch) ||
-	    nvlist_pack(nvl, &pack_buf, &nvl_size, NV_ENCODE_NATIVE, NULL)) {
+	    nvlist_pack(nvl, &pack_buf, &nvl_size, NV_ENCODE_NATIVE, 0)) {
 		free(ev_name);
 		nvlist_free(nvl);
 		return (-1);
@@ -1196,11 +1200,11 @@ add_di_path_prop(picl_nodehdl_t nodeh, di_path_prop_t di_path_prop)
 static void
 construct_mpath_node(picl_nodehdl_t parh, di_node_t di_node)
 {
-	di_path_t 		pi = DI_PATH_NIL;
+	di_path_t		pi = DI_PATH_NIL;
 
 	while ((pi = di_path_next_phci(di_node, pi)) != DI_PATH_NIL) {
-		di_node_t 		phci_node = di_path_phci_node(pi);
-		di_path_prop_t 		di_path_prop;
+		di_node_t		phci_node = di_path_phci_node(pi);
+		di_path_prop_t		di_path_prop;
 		picl_nodehdl_t		nodeh;
 		ptree_propinfo_t	propinfo;
 		int			err;
@@ -1770,7 +1774,7 @@ static int
 is_snapshot_stale(di_node_t root)
 {
 	snapshot_stale = 0;
-	di_walk_node(root, DI_WALK_CLDFIRST, NULL, check_stale_node);
+	(void) di_walk_node(root, DI_WALK_CLDFIRST, NULL, check_stale_node);
 	return (snapshot_stale);
 }
 
@@ -1910,6 +1914,9 @@ get_pi_state(ptree_rarg_t *rarg, void *vbuf)
 	case P_POWEROFF:
 		(void) strlcpy(vbuf, PS_POWEROFF, MAX_STATE_SIZE);
 		break;
+	case P_DISABLED:
+		(void) strlcpy(vbuf, PS_DISABLED, MAX_STATE_SIZE);
+		break;
 	default:
 		(void) strlcpy(vbuf, "unknown", MAX_STATE_SIZE);
 		break;
@@ -1967,7 +1974,7 @@ get_fputypes(ptree_rarg_t *rarg, void *vbuf)
 static int
 get_pi_state_begin(ptree_rarg_t *rarg, void *vbuf)
 {
-	int 			err;
+	int			err;
 	int			cpu_id;
 	static kstat_ctl_t	*kc = NULL;
 	static pthread_mutex_t	kc_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -2016,7 +2023,7 @@ get_pi_state_begin(ptree_rarg_t *rarg, void *vbuf)
 static int
 add_processor_info(picl_nodehdl_t cpuh, void *args)
 {
-	int 			err;
+	int			err;
 	int			cpu_id;
 	ptree_propinfo_t	propinfo;
 	ptree_propinfo_t	pinfo;
@@ -2077,7 +2084,7 @@ add_processor_info(picl_nodehdl_t cpuh, void *args)
 static int
 setup_cpus(picl_nodehdl_t plafh)
 {
-	int 			err;
+	int			err;
 
 	err = ptree_walk_tree_by_class(plafh, PICL_CLASS_CPU, NULL,
 	    add_processor_info);
@@ -2121,11 +2128,11 @@ fmt_manf_id(manuf_t manufid, int bufsz, char *outbuf)
 static int
 open_ffb_device(picl_nodehdl_t ffbh, int *fd)
 {
-	DIR 			*dirp;
-	char 			devfs_path[PATH_MAX];
-	char 			dev_path[PATH_MAX];
-	char 			*devp;
-	struct dirent 		*direntp;
+	DIR			*dirp;
+	char			devfs_path[PATH_MAX];
+	char			dev_path[PATH_MAX];
+	char			*devp;
+	struct dirent		*direntp;
 	int			err;
 	int			tmpfd;
 
@@ -2189,9 +2196,9 @@ add_ffb_config_info(picl_nodehdl_t rooth)
 {
 	picl_nodehdl_t		nodeh;
 	int			err;
-	char 			piclclass[PICL_CLASSNAMELEN_MAX];
-	char 			manfidbuf[FFB_MANUF_BUFSIZE];
-	int 			fd;
+	char			piclclass[PICL_CLASSNAMELEN_MAX];
+	char			manfidbuf[FFB_MANUF_BUFSIZE];
+	int			fd;
 	int			board_rev;
 	ffb_sys_info_t		fsi;
 	ptree_propinfo_t	pinfo;
@@ -2363,7 +2370,8 @@ process_devtree_conf_file(void)
 static	asr_conf_entries_t	*conf_name_asr_map = NULL;
 
 static void
-free_asr_conf_entries(asr_conf_entries_t *list) {
+free_asr_conf_entries(asr_conf_entries_t *list)
+{
 	asr_conf_entries_t  *el;
 	asr_conf_entries_t  *del;
 
@@ -2546,8 +2554,8 @@ get_asr_export_list(char **exportlist, int *exportlistlen)
 		return (0);
 	}
 	(void) memcpy(*exportlist, opp->oprom_array, opp->oprom_size);
-	free(opp);
 	*exportlistlen = opp->oprom_size;
+	free(opp);
 	(void) close(d);
 	return (1);
 }
@@ -2602,7 +2610,7 @@ add_status_prop(picl_nodehdl_t chdh, char *status)
 
 static void
 create_asr_node(char *parent, char *child, char *unitaddr, char *class,
-	char *status, char *props)
+    char *status, char *props)
 {
 	char			ptreepath[PATH_MAX];
 	char			nodename[PICL_PROPNAMELEN_MAX];
@@ -2940,11 +2948,11 @@ get_first_reg_word(picl_nodehdl_t nodeh, uint32_t *regval)
 {
 	int			err;
 	uint32_t		*regbuf;
-	picl_prophdl_t  	regh;
+	picl_prophdl_t		regh;
 	ptree_propinfo_t	pinfo;
 
 	err = ptree_get_prop_by_name(nodeh, OBP_REG, &regh);
-	if (err != PICL_SUCCESS) 	/* no reg property */
+	if (err != PICL_SUCCESS)	/* no reg property */
 		return (err);
 	err = ptree_get_propinfo(regh, &pinfo);
 	if (err != PICL_SUCCESS)
@@ -3627,7 +3635,7 @@ picldevtree_evhandler(const char *ename, const void *earg, size_t size,
 	}
 
 	nvlp = NULL;
-	if (nvlist_unpack((char *)earg, size, &nvlp, NULL) ||
+	if (nvlist_unpack((char *)earg, size, &nvlp, 0) ||
 	    nvlist_lookup_string(nvlp, PICLEVENTARG_DEVFS_PATH, &devfs_path) ||
 	    strlen(devfs_path) > (PATH_MAX - sizeof (PLATFORM_PATH))) {
 		syslog(LOG_INFO, PICL_EVENT_DROPPED, ename);

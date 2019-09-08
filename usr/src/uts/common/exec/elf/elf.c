@@ -26,7 +26,7 @@
 /*	Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T	*/
 /*	   All Rights Reserved	*/
 /*
- * Copyright (c) 2019, Joyent, Inc.
+ * Copyright 2019 Joyent, Inc.
  */
 
 #include <sys/types.h>
@@ -266,10 +266,10 @@ mapexec_brand(vnode_t *vp, uarg_t *args, Ehdr *ehdr, Addr *uphdr_vaddr,
 	size_t		execsz;
 
 	if (lddatap != NULL)
-		*lddatap = NULL;
+		*lddatap = 0;
 
 	if (minaddrp != NULL)
-		*minaddrp = NULL;
+		*minaddrp = (uintptr_t)NULL;
 
 	if (error = execpermissions(vp, &vat, args)) {
 		uprintf("%s: Cannot execute %s\n", exec_file, args->pathname);
@@ -1117,8 +1117,9 @@ elfexec(vnode_t *vp, execa_t *uap, uarg_t *args, intpdata_t *idatap,
 		 * take care of the FPU entries.
 		 */
 #if defined(__amd64)
-		if (args->commpage != NULL ||
-		    (args->commpage = (uintptr_t)comm_page_mapin()) != NULL) {
+		if (args->commpage != (uintptr_t)NULL ||
+		    (args->commpage = (uintptr_t)comm_page_mapin()) !=
+		    (uintptr_t)NULL) {
 			ADDAUX(aux, AT_SUN_COMMPAGE, args->commpage)
 		} else {
 			/*

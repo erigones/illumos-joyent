@@ -23,6 +23,7 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  * Copyright 2012 Milan Jurik. All rights reserved.
+ * Copyright 2019, Joyent, Inc.
  */
 
 #include <sys/types.h>
@@ -1770,7 +1771,7 @@ sa_list(sa_handle_t handle, int flags, int argc, char *argv[])
 			}
 			(void) printf(gettext("usage: %s\n"),
 			    sa_get_usage(USAGE_LIST));
-				return (ret);
+			return (ret);
 		}
 	}
 
@@ -5897,7 +5898,7 @@ static sa_command_t commands[] = {
 	{"stop", CMD_NODISPLAY, sa_stop_group, USAGE_STOP, SVC_SET|SVC_ACTION},
 	{"unset", 0, sa_unset, USAGE_UNSET, SVC_SET},
 	{"unshare", 0, sa_legacy_unshare, USAGE_UNSHARE, SVC_SET|SVC_ACTION},
-	{NULL, 0, NULL, NULL}
+	{NULL, 0, NULL, 0}
 };
 
 static char *

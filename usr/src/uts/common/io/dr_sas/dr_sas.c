@@ -46,7 +46,7 @@
  */
 
 /*
- * Copyright 2018 Joyent, Inc.
+ * Copyright 2019 Joyent, Inc.
  */
 
 #include <sys/types.h>
@@ -1299,7 +1299,8 @@ drsas_tran_start(struct scsi_address *ap, register struct scsi_pkt *pkt)
 
 		cmd->sync_cmd = DRSAS_TRUE;
 
-		instance->func_ptr-> issue_cmd_in_poll_mode(instance, cmd);
+		(void) instance->func_ptr->
+		    issue_cmd_in_poll_mode(instance, cmd);
 
 		pkt->pkt_reason		= CMD_CMPLT;
 		pkt->pkt_statistics	= 0;
@@ -2584,7 +2585,7 @@ service_mfi_aen(struct drsas_instance *instance, struct drsas_cmd *cmd)
 		for (tgt = 0; tgt < MRDRV_MAX_LD; tgt++) {
 			if (instance->dr_ld_list[tgt].dip != NULL) {
 				rval = drsas_service_evt(instance, tgt, 0,
-				    DRSAS_EVT_UNCONFIG_TGT, NULL);
+				    DRSAS_EVT_UNCONFIG_TGT);
 				con_log(CL_ANN1, (CE_WARN,
 				    "dr_sas: CFG CLEARED AEN rval = %d "
 				    "tgt id = %d", rval, tgt));
@@ -2596,7 +2597,7 @@ service_mfi_aen(struct drsas_instance *instance, struct drsas_cmd *cmd)
 	case DR_EVT_LD_DELETED: {
 		rval = drsas_service_evt(instance,
 		    ddi_get16(acc_handle, &evt_detail->args.ld.target_id), 0,
-		    DRSAS_EVT_UNCONFIG_TGT, NULL);
+		    DRSAS_EVT_UNCONFIG_TGT);
 		con_log(CL_ANN1, (CE_WARN, "dr_sas: LD DELETED AEN rval = %d "
 		    "tgt id = %d index = %d", rval,
 		    ddi_get16(acc_handle, &evt_detail->args.ld.target_id),
@@ -2607,7 +2608,7 @@ service_mfi_aen(struct drsas_instance *instance, struct drsas_cmd *cmd)
 	case DR_EVT_LD_CREATED: {
 		rval = drsas_service_evt(instance,
 		    ddi_get16(acc_handle, &evt_detail->args.ld.target_id), 0,
-		    DRSAS_EVT_CONFIG_TGT, NULL);
+		    DRSAS_EVT_CONFIG_TGT);
 		con_log(CL_ANN1, (CE_WARN, "dr_sas: LD CREATED AEN rval = %d "
 		    "tgt id = %d index = %d", rval,
 		    ddi_get16(acc_handle, &evt_detail->args.ld.target_id),
@@ -3441,7 +3442,7 @@ build_cmd(struct drsas_instance *instance, struct scsi_address *ap,
 			switch (page_code) {
 			case 0x3:
 			case 0x4:
-				(void) drsas_mode_sense_build(pkt);
+				drsas_mode_sense_build(pkt);
 				return_mfi_pkt(instance, cmd);
 				*cmd_done = 1;
 				return (NULL);
@@ -4524,6 +4525,7 @@ display_scsi_inquiry(caddr_t scsi_inq)
 #define	MAX_SCSI_DEVICE_CODE	14
 	int		i;
 	char		inquiry_buf[256] = {0};
+	int		bufsize = sizeof (inquiry_buf);
 	int		len;
 	const char	*const scsi_device_types[] = {
 		"Direct-Access    ",
@@ -4544,44 +4546,44 @@ display_scsi_inquiry(caddr_t scsi_inq)
 
 	len = 0;
 
-	len += snprintf(inquiry_buf + len, 265 - len, "  Vendor: ");
+	len += snprintf(inquiry_buf + len, bufsize - len, "  Vendor: ");
 	for (i = 8; i < 16; i++) {
-		len += snprintf(inquiry_buf + len, 265 - len, "%c",
+		len += snprintf(inquiry_buf + len, bufsize - len, "%c",
 		    scsi_inq[i]);
 	}
 
-	len += snprintf(inquiry_buf + len, 265 - len, "  Model: ");
+	len += snprintf(inquiry_buf + len, bufsize - len, "  Model: ");
 
 	for (i = 16; i < 32; i++) {
-		len += snprintf(inquiry_buf + len, 265 - len, "%c",
+		len += snprintf(inquiry_buf + len, bufsize - len, "%c",
 		    scsi_inq[i]);
 	}
 
-	len += snprintf(inquiry_buf + len, 265 - len, "  Rev: ");
+	len += snprintf(inquiry_buf + len, bufsize - len, "  Rev: ");
 
 	for (i = 32; i < 36; i++) {
-		len += snprintf(inquiry_buf + len, 265 - len, "%c",
+		len += snprintf(inquiry_buf + len, bufsize - len, "%c",
 		    scsi_inq[i]);
 	}
 
-	len += snprintf(inquiry_buf + len, 265 - len, "\n");
+	len += snprintf(inquiry_buf + len, bufsize - len, "\n");
 
 
 	i = scsi_inq[0] & 0x1f;
 
 
-	len += snprintf(inquiry_buf + len, 265 - len, "  Type:   %s ",
+	len += snprintf(inquiry_buf + len, bufsize - len, "  Type:   %s ",
 	    i < MAX_SCSI_DEVICE_CODE ? scsi_device_types[i] :
 	    "Unknown          ");
 
 
-	len += snprintf(inquiry_buf + len, 265 - len,
+	len += snprintf(inquiry_buf + len, bufsize - len,
 	    "                 ANSI SCSI revision: %02x", scsi_inq[2] & 0x07);
 
 	if ((scsi_inq[2] & 0x07) == 1 && (scsi_inq[3] & 0x0f) == 1) {
-		len += snprintf(inquiry_buf + len, 265 - len, " CCS\n");
+		len += snprintf(inquiry_buf + len, bufsize - len, " CCS\n");
 	} else {
-		len += snprintf(inquiry_buf + len, 265 - len, "\n");
+		len += snprintf(inquiry_buf + len, bufsize - len, "\n");
 	}
 
 	con_log(CL_ANN1, (CE_CONT, inquiry_buf));
@@ -5214,13 +5216,13 @@ drsas_parse_devname(char *devnm, int *tgt, int *lun)
 		if (ddi_strtol(tp, NULL, 0x10, &num)) {
 			return (DDI_FAILURE); /* Can declare this as constant */
 		}
-			*tgt = (int)num;
+		*tgt = (int)num;
 	}
 	if (lun && lp) {
 		if (ddi_strtol(lp, NULL, 0x10, &num)) {
 			return (DDI_FAILURE);
 		}
-			*lun = (int)num;
+		*lun = (int)num;
 	}
 	return (DDI_SUCCESS);  /* Success case */
 }
@@ -5350,10 +5352,8 @@ finish:
 	return (rval);
 }
 
-/*ARGSUSED*/
 static int
-drsas_service_evt(struct drsas_instance *instance, int tgt, int lun, int event,
-    uint64_t wwn)
+drsas_service_evt(struct drsas_instance *instance, int tgt, int lun, int event)
 {
 	struct drsas_eventinfo *mrevt = NULL;
 
@@ -5452,7 +5452,7 @@ drsas_issue_evt_taskq(struct drsas_eventinfo *mrevt)
 	ndi_devi_exit(instance->dip, circ1);
 }
 
-static int
+static void
 drsas_mode_sense_build(struct scsi_pkt *pkt)
 {
 	union scsi_cdb		*cdbp;
@@ -5468,7 +5468,7 @@ drsas_mode_sense_build(struct scsi_pkt *pkt)
 	if ((!bp) && bp->b_un.b_addr && bp->b_bcount && acmd->cmd_dmacount) {
 		con_log(CL_ANN1, (CE_WARN, "Failing MODESENSE Command"));
 		/* ADD pkt statistics as Command failed. */
-		return (NULL);
+		return;
 	}
 
 	bp_mapin(bp);
@@ -5506,5 +5506,4 @@ drsas_mode_sense_build(struct scsi_pkt *pkt)
 		default:
 			break;
 	}
-	return (NULL);
 }

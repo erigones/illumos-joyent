@@ -29,6 +29,20 @@
 #
 
 . ${STF_TOOLS}/contrib/include/logapi.shlib
+. ${STF_SUITE}/include/blkdev.shlib
+
+# Determine if this is a Linux test system
+#
+# Return 0 if platform Linux, 1 if otherwise
+
+function is_linux
+{
+	if [[ $(uname -o) == "GNU/Linux" ]]; then
+		return 0
+	else
+		return 1
+	fi
+}
 
 # Determine whether a dataset is mounted
 #
@@ -307,6 +321,13 @@ function default_mirror_setup
 	log_pass
 }
 
+function default_mirror_2way_setup
+{
+	default_mirror_setup_noexit $1 $2
+
+	log_pass
+}
+
 #
 # Given a pair of disks, set up a storage pool and dataset for the mirror
 # @parameters: $1 the primary side of the mirror
@@ -323,7 +344,7 @@ function default_mirror_setup_noexit
 	[[ -z $secondary ]] && \
 		log_fail "$func: No secondary partition passed"
 	[[ -d /$TESTPOOL ]] && rm -rf /$TESTPOOL
-	log_must zpool create -f $TESTPOOL mirror $primary $secondary
+	log_must zpool create -f $TESTPOOL mirror $@
 	log_must zfs create $TESTPOOL/$TESTFS
 	log_must zfs set mountpoint=$TESTDIR $TESTPOOL/$TESTFS
 }
@@ -1748,6 +1769,24 @@ function wait_for_degraded
 }
 
 #
+# Wait for a pool to be scrubbed
+#
+# $1 pool name
+# $2 number of seconds to wait (optional)
+#
+# Returns true when pool has been scrubbed, or false if there's a timeout or if
+# no scrub was done.
+#
+function wait_scrubbed
+{
+	typeset pool=${1:-$TESTPOOL}
+	while true ; do
+		is_pool_scrubbed $pool && break
+		log_must sleep 1
+	done
+}
+
+#
 # Use create_pool()/destroy_pool() to clean up the infomation in
 # in the given disk to avoid slice overlapping.
 #
@@ -2703,4 +2742,90 @@ function mdb_ctf_set_int
 	fi
 
 	return 0
+}
+
+#
+# Set a global system tunable (64-bit value)
+#
+# $1 tunable name
+# $2 tunable values
+#
+function set_tunable64
+{
+	set_tunable_impl "$1" "$2" Z
+}
+
+#
+# Set a global system tunable (32-bit value)
+#
+# $1 tunable name
+# $2 tunable values
+#
+function set_tunable32
+{
+	set_tunable_impl "$1" "$2" W
+}
+
+function set_tunable_impl
+{
+	typeset tunable="$1"
+	typeset value="$2"
+	typeset mdb_cmd="$3"
+	typeset module="${4:-zfs}"
+
+	[[ -z "$tunable" ]] && return 1
+	[[ -z "$value" ]] && return 1
+	[[ -z "$mdb_cmd" ]] && return 1
+
+	case "$(uname)" in
+	Linux)
+		typeset zfs_tunables="/sys/module/$module/parameters"
+		[[ -w "$zfs_tunables/$tunable" ]] || return 1
+		echo -n "$value" > "$zfs_tunables/$tunable"
+		return "$?"
+		;;
+	SunOS)
+		[[ "$module" -eq "zfs" ]] || return 1
+		echo "${tunable}/${mdb_cmd}0t${value}" | mdb -kw
+		return "$?"
+		;;
+	esac
+}
+
+#
+# Get a global system tunable
+#
+# $1 tunable name
+#
+function get_tunable
+{
+	get_tunable_impl "$1"
+}
+
+function get_tunable_impl
+{
+	typeset tunable="$1"
+	typeset module="${2:-zfs}"
+
+	[[ -z "$tunable" ]] && return 1
+
+	case "$(uname)" in
+	Linux)
+		typeset zfs_tunables="/sys/module/$module/parameters"
+		[[ -f "$zfs_tunables/$tunable" ]] || return 1
+		cat $zfs_tunables/$tunable
+		return "$?"
+		;;
+	SunOS)
+		typeset value=$(mdb -k -e "$tunable/X | ::eval .=U")
+		if [[ $? -ne 0 ]]; then
+			log_fail "Failed to get value of '$tunable' from mdb."
+			return 1
+		fi
+		echo $value
+		return 0
+		;;
+	esac
+
+	return 1
 }

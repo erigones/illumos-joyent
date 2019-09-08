@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2017 RackTop Systems.
  */
 
@@ -19,13 +19,13 @@
 #include <sys/thread.h>
 #include <sys/proc.h>
 #include <sys/zone.h>
-
 #include <sys/poll.h>
 
 #include <time.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
+#include <string.h>
 
 #include <fakekernel.h>
 
@@ -95,6 +95,7 @@ highbit64(uint64_t i)
 int
 ddi_strtoul(const char *str, char **endp, int base, unsigned long *res)
 {
+	errno = 0;
 	*res = strtoul(str, endp, base);
 	if (*res == 0)
 		return (errno);
@@ -116,6 +117,12 @@ delay(clock_t ticks)
 {
 	int msec = ticks;  /* NB: hz==1000 */
 	(void) poll(0, 0, msec);
+}
+
+int
+highbit(ulong_t i)
+{
+	return (fls(i));
 }
 
 /* ARGSUSED */

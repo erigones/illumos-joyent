@@ -32,7 +32,6 @@ SRCS=	\
 	font.c \
 	$(FONT).c \
 	framebuffer.c \
-	list.c \
 	main.c \
 	memmap.c \
 	multiboot.S \
@@ -52,7 +51,6 @@ OBJS=	\
 	font.o \
 	$(FONT).o \
 	framebuffer.o \
-	list.o \
 	main.o \
 	memmap.o \
 	multiboot.o \
@@ -62,9 +60,10 @@ OBJS=	\
 	tem.o \
 	vers.o
 
+tem.o := CPPFLAGS += $(DEFAULT_CONSOLE_COLOR)
+
 CPPFLAGS += -I../../../../../include -I../../..../
 CPPFLAGS += -I../../../../../lib/libstand
-CPPFLAGS += -I../../../../../lib/libz
 
 include ../../Makefile.inc
 
@@ -188,9 +187,6 @@ clean clobber:
 
 %.o: ../../../i386/libi386/%.c
 	$(COMPILE.c) $<
-
-%.o: $(SRC)/common/list/%.c
-	$(COMPILE.c) -DNDEBUG $<
 
 %.o: $(SRC)/common/font/%.c
 	$(COMPILE.c) $<

@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2018 Joyent, Inc.
+ * Copyright 2019 Joyent, Inc.
  * Copyright 2017 OmniTI Computer Consulting, Inc. All rights reserved.
  */
 
@@ -109,6 +109,37 @@ void
 mac_free(mac_register_t *mregp)
 {
 	kmem_free(mregp, sizeof (mac_register_t));
+}
+
+/*
+ * Convert a MAC's offload features into the equivalent DB_CKSUMFLAGS
+ * value.
+ */
+static uint16_t
+mac_features_to_flags(mac_handle_t mh)
+{
+	uint16_t flags = 0;
+	uint32_t cap_sum = 0;
+	mac_capab_lso_t cap_lso;
+
+	if (mac_capab_get(mh, MAC_CAPAB_HCKSUM, &cap_sum)) {
+		if (cap_sum & HCKSUM_IPHDRCKSUM)
+			flags |= HCK_IPV4_HDRCKSUM;
+
+		if (cap_sum & HCKSUM_INET_PARTIAL)
+			flags |= HCK_PARTIALCKSUM;
+		else if (cap_sum & (HCKSUM_INET_FULL_V4 | HCKSUM_INET_FULL_V6))
+			flags |= HCK_FULLCKSUM;
+	}
+
+	/*
+	 * We don't need the information stored in 'cap_lso', but we
+	 * need to pass a non-NULL pointer to appease the driver.
+	 */
+	if (mac_capab_get(mh, MAC_CAPAB_LSO, &cap_lso))
+		flags |= HW_LSO;
+
+	return (flags);
 }
 
 /*
@@ -341,9 +372,13 @@ mac_register(mac_register_t *mregp, mac_handle_t *mhp)
 	    mip, 0, &p0, TS_RUN, minclsyspri);
 
 	/*
+	 * Cache the DB_CKSUMFLAGS that this MAC supports.
+	 */
+	mip->mi_tx_cksum_flags = mac_features_to_flags((mac_handle_t)mip);
+
+	/*
 	 * Initialize the capabilities
 	 */
-
 	bzero(&mip->mi_rx_rings_cap, sizeof (mac_capab_rings_t));
 	bzero(&mip->mi_tx_rings_cap, sizeof (mac_capab_rings_t));
 
@@ -968,12 +1003,33 @@ mac_pdata_update(mac_handle_t mh, void *mac_pdata, size_t dsize)
 }
 
 /*
- * Invoked by driver as well as the framework to notify its capability change.
+ * The mac provider or mac frameowrk calls this function when it wants
+ * to notify upstream consumers that the capabilities have changed and
+ * that they should modify their own internal state accordingly.
+ *
+ * We currently have no regard for the fact that a provider could
+ * decide to drop capabilities which would invalidate pending traffic.
+ * For example, if one was to disable the Tx checksum offload while
+ * TCP/IP traffic was being sent by mac clients relying on that
+ * feature, then those packets would hit the write with missing or
+ * partial checksums. A proper solution involves not only providing
+ * notfication, but also performing client quiescing. That is, a capab
+ * change should be treated as an atomic transaction that forms a
+ * barrier between traffic relying on the current capabs and traffic
+ * relying on the new capabs. In practice, simnet is currently the
+ * only provider that could hit this, and it's an easily avoidable
+ * situation (and at worst it should only lead to some dropped
+ * packets). But if we ever want better on-the-fly capab change to
+ * actual hardware providers, then we should give this update
+ * mechanism a proper implementation.
  */
 void
 mac_capab_update(mac_handle_t mh)
 {
-	/* Send MAC_NOTE_CAPAB_CHG notification */
+	/*
+	 * Send a MAC_NOTE_CAPAB_CHG notification to alert upstream
+	 * clients to renegotiate capabilities.
+	 */
 	i_mac_notify((mac_impl_t *)mh, MAC_NOTE_CAPAB_CHG);
 }
 
@@ -1273,6 +1329,19 @@ i_mac_notify_thread(void *arg)
 				mip->mi_linkstate = newstate;
 				bits |= 1 << MAC_NOTE_LINK;
 			}
+		}
+
+		/*
+		 * Depending on which capabs have changed, the Tx
+		 * checksum flags may also need to be updated.
+		 */
+		if ((bits & (1 << MAC_NOTE_CAPAB_CHG)) != 0) {
+			mac_perim_handle_t mph;
+			mac_handle_t mh = (mac_handle_t)mip;
+
+			mac_perim_enter_by_mh(mh, &mph);
+			mip->mi_tx_cksum_flags = mac_features_to_flags(mh);
+			mac_perim_exit(mph);
 		}
 
 		/*

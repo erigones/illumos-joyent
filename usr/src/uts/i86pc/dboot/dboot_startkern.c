@@ -23,7 +23,7 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  *
- * Copyright 2018 Joyent, Inc.  All rights reserved.
+ * Copyright 2019 Joyent, Inc.  All rights reserved.
  */
 
 
@@ -74,15 +74,6 @@ extern int have_cpuid(void);
 #include "dboot_elfload.h"
 
 #define	SHA1_ASCII_LENGTH	(SHA1_DIGEST_LENGTH * 2)
-
-/*
- * Region of memory that may be corrupted by external actors.  This can go away
- * once the firmware bug RICHMOND-16 is fixed and all systems with the bug are
- * upgraded.
- */
-#define	CORRUPT_REGION_START	0xc700000
-#define	CORRUPT_REGION_SIZE	0x100000
-#define	CORRUPT_REGION_END	(CORRUPT_REGION_START + CORRUPT_REGION_SIZE)
 
 /*
  * This file contains code that runs to transition us from either a multiboot
@@ -692,17 +683,19 @@ dboot_loader_mmap_entries(void)
 		DBG(mb_info->flags);
 		if (mb_info->flags & 0x40) {
 			mb_memory_map_t *mmap;
+			caddr32_t mmap_addr;
 
 			DBG(mb_info->mmap_addr);
 			DBG(mb_info->mmap_length);
 			check_higher(mb_info->mmap_addr + mb_info->mmap_length);
 
-			for (mmap = (mb_memory_map_t *)mb_info->mmap_addr;
-			    (uint32_t)mmap < mb_info->mmap_addr +
+			for (mmap_addr = mb_info->mmap_addr;
+			    mmap_addr < mb_info->mmap_addr +
 			    mb_info->mmap_length;
-			    mmap = (mb_memory_map_t *)((uint32_t)mmap +
-			    mmap->size + sizeof (mmap->size)))
+			    mmap_addr += mmap->size + sizeof (mmap->size)) {
+				mmap = (mb_memory_map_t *)(uintptr_t)mmap_addr;
 				++num_entries;
+			}
 
 			num_entries_set = B_TRUE;
 		}
@@ -728,16 +721,17 @@ dboot_loader_mmap_get_type(int index)
 {
 #if !defined(__xpv)
 	mb_memory_map_t *mp, *mpend;
+	caddr32_t mmap_addr;
 	int i;
 
 	switch (multiboot_version) {
 	case 1:
-		mp = (mb_memory_map_t *)mb_info->mmap_addr;
-		mpend = (mb_memory_map_t *)
+		mp = (mb_memory_map_t *)(uintptr_t)mb_info->mmap_addr;
+		mpend = (mb_memory_map_t *)(uintptr_t)
 		    (mb_info->mmap_addr + mb_info->mmap_length);
 
 		for (i = 0; mp < mpend && i != index; i++)
-			mp = (mb_memory_map_t *)((uint32_t)mp + mp->size +
+			mp = (mb_memory_map_t *)((uintptr_t)mp + mp->size +
 			    sizeof (mp->size));
 		if (mp >= mpend) {
 			dboot_panic("dboot_loader_mmap_get_type(): index "
@@ -774,7 +768,7 @@ dboot_loader_mmap_get_base(int index)
 		    (mb_info->mmap_addr + mb_info->mmap_length);
 
 		for (i = 0; mp < mpend && i != index; i++)
-			mp = (mb_memory_map_t *)((uint32_t)mp + mp->size +
+			mp = (mb_memory_map_t *)((uintptr_t)mp + mp->size +
 			    sizeof (mp->size));
 		if (mp >= mpend) {
 			dboot_panic("dboot_loader_mmap_get_base(): index "
@@ -813,7 +807,7 @@ dboot_loader_mmap_get_length(int index)
 		    (mb_info->mmap_addr + mb_info->mmap_length);
 
 		for (i = 0; mp < mpend && i != index; i++)
-			mp = (mb_memory_map_t *)((uint32_t)mp + mp->size +
+			mp = (mb_memory_map_t *)((uintptr_t)mp + mp->size +
 			    sizeof (mp->size));
 		if (mp >= mpend) {
 			dboot_panic("dboot_loader_mmap_get_length(): index "
@@ -1469,6 +1463,80 @@ dboot_process_modules(void)
 	check_images();
 }
 
+#define	CORRUPT_REGION_START	0xc700000
+#define	CORRUPT_REGION_SIZE	0x100000
+#define	CORRUPT_REGION_END	(CORRUPT_REGION_START + CORRUPT_REGION_SIZE)
+
+static void
+dboot_add_memlist(uint64_t start, uint64_t end)
+{
+	if (end > max_mem)
+		max_mem = end;
+
+	/*
+	 * Well, this is sad.  On some systems, there is a region of memory that
+	 * can be corrupted until some number of seconds after we have booted.
+	 * And the BIOS doesn't tell us that this memory is unsafe to use.  And
+	 * we don't know how long it's dangerous.  So we'll chop out this range
+	 * from any memory list that would otherwise be usable.  Note that any
+	 * system of this type will give us the new-style (0x40) memlist, so we
+	 * need not fix up the other path below.
+	 *
+	 * However, if we're boot-loaded from something that doesn't have a
+	 * RICHMOND-16 workaround (which on many systems is just fine), it could
+	 * actually use this region for the boot modules; if we remove it from
+	 * the memlist, we'll keel over when trying to access the region.
+	 *
+	 * So, if we see that a module intersects the region, we presume it's
+	 * OK.
+	 */
+
+	if (find_boot_prop("disable-RICHMOND-16") != NULL)
+		goto out;
+
+	for (uint32_t i = 0; i < bi->bi_module_cnt; i++) {
+		native_ptr_t mod_start = modules[i].bm_addr;
+		native_ptr_t mod_end = modules[i].bm_addr + modules[i].bm_size;
+
+		if (mod_start < CORRUPT_REGION_END &&
+		    mod_end >= CORRUPT_REGION_START) {
+			if (prom_debug) {
+				dboot_printf("disabling RICHMOND-16 workaround "
+				"due to module #%u: "
+				"name %s addr %lx size %lx\n",
+				    i, (char *)(uintptr_t)modules[i].bm_name,
+				    (ulong_t)modules[i].bm_addr,
+				    (ulong_t)modules[i].bm_size);
+			}
+			goto out;
+		}
+	}
+
+	if (start < CORRUPT_REGION_START && end > CORRUPT_REGION_START) {
+		memlists[memlists_used].addr = start;
+		memlists[memlists_used].size =
+		    CORRUPT_REGION_START - start;
+		++memlists_used;
+		if (end > CORRUPT_REGION_END)
+			start = CORRUPT_REGION_END;
+		else
+			return;
+	}
+
+	if (start >= CORRUPT_REGION_START && start < CORRUPT_REGION_END) {
+		if (end <= CORRUPT_REGION_END)
+			return;
+		start = CORRUPT_REGION_END;
+	}
+
+out:
+	memlists[memlists_used].addr = start;
+	memlists[memlists_used].size = end - start;
+	++memlists_used;
+	if (memlists_used > MAX_MEMLIST)
+		dboot_panic("too many memlists");
+}
+
 /*
  * We then build the phys_install memlist from the multiboot information.
  */
@@ -1512,45 +1580,7 @@ dboot_process_mmap(void)
 			 */
 			switch (type) {
 			case 1:
-				if (end > max_mem)
-					max_mem = end;
-
-				/*
-				 * Well, this is sad.  One some systems, there
-				 * is a region of memory that can be corrupted
-				 * until some number of seconds after we have
-				 * booted.  And the BIOS doesn't tell us that
-				 * this memory is unsafe to use.  And we don't
-				 * know how long it's dangerous.  So we'll
-				 * chop out this range from any memory list
-				 * that would otherwise be usable.  Note that
-				 * any system of this type will give us the
-				 * new-style (0x40) memlist, so we need not
-				 * fix up the other path below.
-				 */
-				if (start < CORRUPT_REGION_START &&
-				    end > CORRUPT_REGION_START) {
-					memlists[memlists_used].addr = start;
-					memlists[memlists_used].size =
-					    CORRUPT_REGION_START - start;
-					++memlists_used;
-					if (end > CORRUPT_REGION_END)
-						start = CORRUPT_REGION_END;
-					else
-						continue;
-				}
-				if (start >= CORRUPT_REGION_START &&
-				    start < CORRUPT_REGION_END) {
-					if (end <= CORRUPT_REGION_END)
-						continue;
-					start = CORRUPT_REGION_END;
-				}
-
-				memlists[memlists_used].addr = start;
-				memlists[memlists_used].size = end - start;
-				++memlists_used;
-				if (memlists_used > MAX_MEMLIST)
-					dboot_panic("too many memlists");
+				dboot_add_memlist(start, end);
 				break;
 			case 2:
 				rsvdmemlists[rsvdmemlists_used].addr = start;
@@ -1695,6 +1725,7 @@ process_efi32(EFI_SYSTEM_TABLE32 *efi)
 {
 	uint32_t entries;
 	EFI_CONFIGURATION_TABLE32 *config;
+	efi_guid_t VendorGuid;
 	int i;
 
 	entries = efi->NumberOfTableEntries;
@@ -1702,21 +1733,23 @@ process_efi32(EFI_SYSTEM_TABLE32 *efi)
 	    efi->ConfigurationTable;
 
 	for (i = 0; i < entries; i++) {
-		if (dboot_same_guids(&config[i].VendorGuid, &smbios3)) {
+		(void) memcpy(&VendorGuid, &config[i].VendorGuid,
+		    sizeof (VendorGuid));
+		if (dboot_same_guids(&VendorGuid, &smbios3)) {
 			bi->bi_smbios = (native_ptr_t)(uintptr_t)
 			    config[i].VendorTable;
 		}
-		if (bi->bi_smbios == NULL &&
-		    dboot_same_guids(&config[i].VendorGuid, &smbios)) {
+		if (bi->bi_smbios == 0 &&
+		    dboot_same_guids(&VendorGuid, &smbios)) {
 			bi->bi_smbios = (native_ptr_t)(uintptr_t)
 			    config[i].VendorTable;
 		}
-		if (dboot_same_guids(&config[i].VendorGuid, &acpi2)) {
+		if (dboot_same_guids(&VendorGuid, &acpi2)) {
 			bi->bi_acpi_rsdp = (native_ptr_t)(uintptr_t)
 			    config[i].VendorTable;
 		}
-		if (bi->bi_acpi_rsdp == NULL &&
-		    dboot_same_guids(&config[i].VendorGuid, &acpi1)) {
+		if (bi->bi_acpi_rsdp == 0 &&
+		    dboot_same_guids(&VendorGuid, &acpi1)) {
 			bi->bi_acpi_rsdp = (native_ptr_t)(uintptr_t)
 			    config[i].VendorTable;
 		}
@@ -1728,6 +1761,7 @@ process_efi64(EFI_SYSTEM_TABLE64 *efi)
 {
 	uint64_t entries;
 	EFI_CONFIGURATION_TABLE64 *config;
+	efi_guid_t VendorGuid;
 	int i;
 
 	entries = efi->NumberOfTableEntries;
@@ -1735,22 +1769,24 @@ process_efi64(EFI_SYSTEM_TABLE64 *efi)
 	    efi->ConfigurationTable;
 
 	for (i = 0; i < entries; i++) {
-		if (dboot_same_guids(&config[i].VendorGuid, &smbios3)) {
+		(void) memcpy(&VendorGuid, &config[i].VendorGuid,
+		    sizeof (VendorGuid));
+		if (dboot_same_guids(&VendorGuid, &smbios3)) {
 			bi->bi_smbios = (native_ptr_t)(uintptr_t)
 			    config[i].VendorTable;
 		}
-		if (bi->bi_smbios == NULL &&
-		    dboot_same_guids(&config[i].VendorGuid, &smbios)) {
+		if (bi->bi_smbios == 0 &&
+		    dboot_same_guids(&VendorGuid, &smbios)) {
 			bi->bi_smbios = (native_ptr_t)(uintptr_t)
 			    config[i].VendorTable;
 		}
 		/* Prefer acpi v2+ over v1. */
-		if (dboot_same_guids(&config[i].VendorGuid, &acpi2)) {
+		if (dboot_same_guids(&VendorGuid, &acpi2)) {
 			bi->bi_acpi_rsdp = (native_ptr_t)(uintptr_t)
 			    config[i].VendorTable;
 		}
-		if (bi->bi_acpi_rsdp == NULL &&
-		    dboot_same_guids(&config[i].VendorGuid, &acpi1)) {
+		if (bi->bi_acpi_rsdp == 0 &&
+		    dboot_same_guids(&VendorGuid, &acpi1)) {
 			bi->bi_acpi_rsdp = (native_ptr_t)(uintptr_t)
 			    config[i].VendorTable;
 		}
@@ -1882,7 +1918,7 @@ print_efi64(EFI_SYSTEM_TABLE64 *efi)
 		dboot_printf("%c", (char)data[i]);
 	dboot_printf("\nEFI firmware revision: ");
 	dboot_print_efi_version(efi->FirmwareRevision);
-	dboot_printf("EFI system table number of entries: %lld\n",
+	dboot_printf("EFI system table number of entries: %" PRIu64 "\n",
 	    efi->NumberOfTableEntries);
 	conf = (EFI_CONFIGURATION_TABLE64 *)(uintptr_t)
 	    efi->ConfigurationTable;
@@ -2084,7 +2120,7 @@ build_page_tables(void)
 	 * Map framebuffer memory as PT_NOCACHE as this is memory from a
 	 * device and therefore must not be cached.
 	 */
-	if (bi->bi_framebuffer != NULL && fb->framebuffer != 0) {
+	if (fb != NULL && fb->framebuffer != 0) {
 		multiboot_tag_framebuffer_t *fb_tagp;
 		fb_tagp = (multiboot_tag_framebuffer_t *)(uintptr_t)
 		    fb->framebuffer;
@@ -2232,7 +2268,7 @@ dboot_loader_name(void)
 
 	switch (multiboot_version) {
 	case 1:
-		return ((char *)mb_info->boot_loader_name);
+		return ((char *)(uintptr_t)mb_info->boot_loader_name);
 
 	case 2:
 		tag = dboot_multiboot2_find_tag(mb2_info,

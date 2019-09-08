@@ -22,7 +22,7 @@
 # Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
-# Copyright (c) 2018, Joyent, Inc.
+# Copyright (c) 2019, Joyent, Inc.
 
 LIBRARY = libc_db.a
 VERS = .1
@@ -48,7 +48,7 @@ CFLAGS +=	$(CCVERBOSE)
 LDLIBS +=	-lc
 
 CERRWARN +=	-_gcc=-Wno-type-limits
-CERRWARN +=	-_gcc=-Wno-uninitialized
+CERRWARN +=	$(CNOWARN_UNINIT)
 
 # not linted
 SMATCH=off
@@ -63,4 +63,4 @@ include	../../Makefile.targ
 
 pics/%.o: $(CRTSRCS)/%.s
 	$(COMPILE.s) -o $@ $<
-	$(POST_PROCESS_O)
+	$(POST_PROCESS_S_O)

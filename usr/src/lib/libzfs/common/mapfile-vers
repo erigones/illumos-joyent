@@ -50,6 +50,7 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 	fletcher_4_byteswap;
 	fletcher_4_incremental_native;
 	fletcher_4_incremental_byteswap;
+	get_system_hostid;
 	libzfs_add_handle;
 	libzfs_errno;
 	libzfs_error_action;
@@ -72,6 +73,11 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 	zfs_close;
 	zfs_create;
 	zfs_create_ancestors;
+	zfs_crypto_attempt_load_keys;
+	zfs_crypto_get_encryption_root;
+	zfs_crypto_load_key;
+	zfs_crypto_rewrap;
+	zfs_crypto_unload_key;
 	zfs_dataset_exists;
 	zfs_deleg_share_nfs;
 	zfs_destroy;
@@ -248,6 +254,7 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 	zpool_skip_pool;
 	zpool_state_to_name;
 	zpool_sync_one;
+	zpool_tryimport;
 	zpool_unmount_datasets;
 	zpool_upgrade;
 	zpool_vdev_attach;

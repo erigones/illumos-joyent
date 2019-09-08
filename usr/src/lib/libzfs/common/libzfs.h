@@ -23,7 +23,7 @@
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011 Pawel Jakub Dawidek. All rights reserved.
  * Copyright (c) 2011, 2017 by Delphix. All rights reserved.
- * Copyright (c) 2012, Joyent, Inc. All rights reserved.
+ * Copyright 2019 Joyent, Inc.
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
  * Copyright 2016 Nexenta Systems, Inc.
@@ -131,6 +131,7 @@ typedef enum zfs_error {
 	EZFS_DIFFDATA,		/* bad zfs diff data */
 	EZFS_POOLREADONLY,	/* pool is in read-only mode */
 	EZFS_SCRUB_PAUSED,	/* scrub currently paused */
+	EZFS_ACTIVE_POOL,	/* pool is imported on a different system */
 	EZFS_NO_PENDING,	/* cannot cancel, no operation is pending */
 	EZFS_CHECKPOINT_EXISTS,	/* checkpoint exists */
 	EZFS_DISCARDING_CHECKPOINT,	/* currently discarding a checkpoint */
@@ -140,6 +141,9 @@ typedef enum zfs_error {
 	EZFS_TOOMANY,		/* argument list too long */
 	EZFS_INITIALIZING,	/* currently initializing */
 	EZFS_NO_INITIALIZE,	/* no active initialize */
+	EZFS_WRONG_PARENT,	/* invalid parent dataset (e.g ZVOL) */
+	EZFS_NO_RESILVER_DEFER,	/* pool doesn't support resilver_defer */
+	EZFS_CRYPTOFAILED,	/* failed to setup encryption */
 	EZFS_UNKNOWN
 } zfs_error_t;
 
@@ -259,6 +263,7 @@ typedef struct splitflags {
 
 	/* after splitting, import the pool */
 	int import : 1;
+	int name_flags;
 } splitflags_t;
 
 /*
@@ -315,6 +320,8 @@ typedef enum {
 	/*
 	 * The following correspond to faults as defined in the (fault.fs.zfs.*)
 	 * event namespace.  Each is associated with a corresponding message ID.
+	 * This must be kept in sync with the zfs_msgid_table in
+	 * lib/libzfs/libzfs_status.c.
 	 */
 	ZPOOL_STATUS_CORRUPT_CACHE,	/* corrupt /kernel/drv/zpool.cache */
 	ZPOOL_STATUS_MISSING_DEV_R,	/* missing device with replicas */
@@ -327,9 +334,13 @@ typedef enum {
 	ZPOOL_STATUS_FAILING_DEV,	/* device experiencing errors */
 	ZPOOL_STATUS_VERSION_NEWER,	/* newer on-disk version */
 	ZPOOL_STATUS_HOSTID_MISMATCH,	/* last accessed by another system */
+	ZPOOL_STATUS_HOSTID_ACTIVE,	/* currently active on another system */
+	ZPOOL_STATUS_HOSTID_REQUIRED,	/* multihost=on and hostid=0 */
 	ZPOOL_STATUS_IO_FAILURE_WAIT,	/* failed I/O, failmode 'wait' */
 	ZPOOL_STATUS_IO_FAILURE_CONTINUE, /* failed I/O, failmode 'continue' */
+	ZPOOL_STATUS_IO_FAILURE_MMP,	/* failed MMP, failmode not 'panic' */
 	ZPOOL_STATUS_BAD_LOG,		/* cannot read log chain(s) */
+	ZPOOL_STATUS_ERRATA,		/* informational errata available */
 
 	/*
 	 * If the pool has unsupported features but can still be opened in
@@ -365,8 +376,10 @@ typedef enum {
 	ZPOOL_STATUS_OK
 } zpool_status_t;
 
-extern zpool_status_t zpool_get_status(zpool_handle_t *, char **);
-extern zpool_status_t zpool_import_status(nvlist_t *, char **);
+extern zpool_status_t zpool_get_status(zpool_handle_t *, char **,
+    zpool_errata_t *);
+extern zpool_status_t zpool_import_status(nvlist_t *, char **,
+    zpool_errata_t *);
 extern void zpool_dump_ddt(const ddt_stat_t *dds, const ddt_histogram_t *ddh);
 
 /*
@@ -406,6 +419,8 @@ typedef struct importargs {
 } importargs_t;
 
 extern nvlist_t *zpool_search_import(libzfs_handle_t *, importargs_t *);
+extern int zpool_tryimport(libzfs_handle_t *hdl, char *target,
+    nvlist_t **configp, importargs_t *args);
 
 /* legacy pool search routines */
 extern nvlist_t *zpool_find_import(libzfs_handle_t *, int, char **);
@@ -419,8 +434,15 @@ struct zfs_cmd;
 
 extern const char *zfs_history_event_names[];
 
+typedef enum {
+	VDEV_NAME_PATH		= 1 << 0,
+	VDEV_NAME_GUID		= 1 << 1,
+	VDEV_NAME_FOLLOW_LINKS	= 1 << 2,
+	VDEV_NAME_TYPE_ID	= 1 << 3,
+} vdev_name_t;
+
 extern char *zpool_vdev_name(libzfs_handle_t *, zpool_handle_t *, nvlist_t *,
-    boolean_t verbose);
+    int name_flags);
 extern int zpool_upgrade(zpool_handle_t *, uint64_t);
 extern int zpool_get_history(zpool_handle_t *, nvlist_t **);
 extern int zpool_history_unpack(char *, uint64_t, uint64_t *,
@@ -459,8 +481,8 @@ extern uint64_t zfs_prop_default_numeric(zfs_prop_t);
 extern const char *zfs_prop_column_name(zfs_prop_t);
 extern boolean_t zfs_prop_align_right(zfs_prop_t);
 
-extern nvlist_t *zfs_valid_proplist(libzfs_handle_t *, zfs_type_t,
-    nvlist_t *, uint64_t, zfs_handle_t *, zpool_handle_t *, const char *);
+extern nvlist_t *zfs_valid_proplist(libzfs_handle_t *, zfs_type_t, nvlist_t *,
+    uint64_t, zfs_handle_t *, zpool_handle_t *, boolean_t, const char *);
 
 extern const char *zfs_prop_to_name(zfs_prop_t);
 extern int zfs_prop_set(zfs_handle_t *, const char *, const char *);
@@ -489,6 +511,19 @@ extern nvlist_t *zfs_get_user_props(zfs_handle_t *);
 extern nvlist_t *zfs_get_recvd_props(zfs_handle_t *);
 extern nvlist_t *zfs_get_clones_nvl(zfs_handle_t *);
 
+
+/*
+ * zfs encryption management
+ */
+extern int zfs_crypto_get_encryption_root(zfs_handle_t *, boolean_t *, char *);
+extern int zfs_crypto_create(libzfs_handle_t *, char *, nvlist_t *, nvlist_t *,
+    boolean_t stdin_available, uint8_t **, uint_t *);
+extern int zfs_crypto_clone_check(libzfs_handle_t *, zfs_handle_t *, char *,
+    nvlist_t *);
+extern int zfs_crypto_attempt_load_keys(libzfs_handle_t *, char *);
+extern int zfs_crypto_load_key(zfs_handle_t *, boolean_t, char *);
+extern int zfs_crypto_unload_key(zfs_handle_t *);
+extern int zfs_crypto_rewrap(zfs_handle_t *, nvlist_t *, boolean_t);
 
 typedef struct zprop_list {
 	int		pl_prop;
@@ -638,6 +673,15 @@ typedef struct sendflags {
 
 	/* compressed WRITE records are permitted */
 	boolean_t compress;
+
+	/* raw encrypted records are permitted */
+	boolean_t raw;
+
+	/* only send received properties (ie. -b) */
+	boolean_t backup;
+
+	/* include snapshot holds in send stream */
+	boolean_t holds;
 } sendflags_t;
 
 typedef boolean_t (snapfilter_cb_t)(zfs_handle_t *, void *);
@@ -656,7 +700,8 @@ extern int zfs_hold(zfs_handle_t *, const char *, const char *,
 extern int zfs_hold_nvl(zfs_handle_t *, int, nvlist_t *);
 extern int zfs_release(zfs_handle_t *, const char *, const char *, boolean_t);
 extern int zfs_get_holds(zfs_handle_t *, nvlist_t **);
-extern uint64_t zvol_volsize_to_reservation(uint64_t, nvlist_t *);
+extern uint64_t zvol_volsize_to_reservation(zpool_handle_t *, uint64_t,
+    nvlist_t *);
 
 typedef int (*zfs_userspace_cb_t)(void *arg, const char *domain,
     uid_t rid, uint64_t space);
@@ -700,6 +745,12 @@ typedef struct recvflags {
 
 	/* do not mount file systems as they are extracted (private) */
 	boolean_t nomount;
+
+	/* Was holds flag set in the compound header? */
+	boolean_t holds;
+
+	/* skip receive of snapshot holds */
+	boolean_t skipholds;
 } recvflags_t;
 
 extern int zfs_receive(libzfs_handle_t *, const char *, nvlist_t *,
@@ -721,10 +772,12 @@ extern const char *zfs_type_to_name(zfs_type_t);
 extern void zfs_refresh_properties(zfs_handle_t *);
 extern int zfs_name_valid(const char *, zfs_type_t);
 extern zfs_handle_t *zfs_path_to_zhandle(libzfs_handle_t *, char *, zfs_type_t);
+extern int zfs_parent_name(zfs_handle_t *, char *, size_t);
 extern boolean_t zfs_dataset_exists(libzfs_handle_t *, const char *,
     zfs_type_t);
 extern int zfs_spa_version(zfs_handle_t *, int *);
 extern boolean_t zfs_bookmark_exists(const char *path);
+extern ulong_t get_system_hostid(void);
 
 /*
  * Mount support functions.

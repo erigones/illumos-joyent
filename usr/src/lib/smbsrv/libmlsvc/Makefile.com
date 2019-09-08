@@ -82,6 +82,7 @@ include ../../../Makefile.lib
 include ../../Makefile.lib
 
 INCS += -I$(SRC)/common/smbsrv
+INCS += -I$(SRC)/uts/common/smbsrv/ndl
 
 LDLIBS +=	$(MACH_LDLIBS)
 LDLIBS += -lmlrpc -lsmb -lsmbns -lshare -lsmbfs -lnsl -lpkcs11 \
@@ -92,7 +93,7 @@ CPPFLAGS += -Dsyslog=smb_syslog
 $(ENABLE_SMB_PRINTING) CPPFLAGS += -DHAVE_CUPS
 
 CERRWARN += -_gcc=-Wno-unused-function
-CERRWARN += -_gcc=-Wno-uninitialized
+CERRWARN += $(CNOWARN_UNINIT)
 
 # not linted
 SMATCH=off

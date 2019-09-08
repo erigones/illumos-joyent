@@ -23,6 +23,10 @@
  */
 
 /*
+ * Copyright 2019 Joyent, Inc.
+ */
+
+/*
  * Data-Link Driver
  */
 
@@ -916,14 +920,14 @@ str_mdata_raw_fastpath_put(dld_str_t *dsp, mblk_t *mp, uintptr_t f_hint,
 			goto discard;
 	}
 
-	if ((cookie = DLD_TX(dsp, mp, f_hint, flag)) != NULL) {
+	if ((cookie = DLD_TX(dsp, mp, f_hint, flag)) != (mac_tx_cookie_t)NULL) {
 		DLD_SETQFULL(dsp);
 	}
 	return (cookie);
 discard:
 	/* TODO: bump kstat? */
 	freemsg(mp);
-	return (NULL);
+	return ((mac_tx_cookie_t)NULL);
 }
 
 
@@ -1997,7 +2001,7 @@ dld_taskq_dispatch(void)
 			list_remove(&dld_taskq_list, dsp);
 			mutex_exit(&dld_taskq_lock);
 			VERIFY(taskq_dispatch(dld_taskq, dld_wput_nondata_task,
-			    dsp, TQ_SLEEP) != 0);
+			    dsp, TQ_SLEEP) != TASKQID_INVALID);
 			mutex_enter(&dld_taskq_lock);
 			dsp = list_head(&dld_taskq_list);
 		}
@@ -2064,7 +2068,7 @@ dld_wput_nondata(dld_str_t *dsp, mblk_t *mp)
 	mutex_exit(&dsp->ds_lock);
 
 	if (taskq_dispatch(dld_taskq, dld_wput_nondata_task, dsp,
-	    TQ_NOSLEEP) != 0)
+	    TQ_NOSLEEP) != TASKQID_INVALID)
 		return;
 
 	mutex_enter(&dld_taskq_lock);

@@ -22,7 +22,7 @@
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012, 2018 by Delphix. All rights reserved.
  * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
- * Copyright (c) 2013 Joyent, Inc.  All rights reserved.
+ * Copyright 2019 Joyent, Inc.
  */
 
 #include <sys/zfs_context.h>
@@ -300,7 +300,6 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	dev_t dev;
 	int otyp;
 	boolean_t validate_devid = B_FALSE;
-	ddi_devid_t devid;
 	uint64_t capacity = 0, blksz = 0, pbsize;
 
 	/*
@@ -404,9 +403,20 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 		/*
 		 * Compare the devid to the stored value.
 		 */
-		if (error == 0 && vd->vdev_devid != NULL &&
-		    ldi_get_devid(dvd->vd_lh, &devid) == 0) {
-			if (ddi_devid_compare(devid, dvd->vd_devid) != 0) {
+		if (error == 0 && vd->vdev_devid != NULL) {
+			ddi_devid_t devid = NULL;
+
+			if (ldi_get_devid(dvd->vd_lh, &devid) != 0) {
+				/*
+				 * We expected a devid on this device but it no
+				 * longer appears to have one.  The validation
+				 * step may need to remove it from the
+				 * configuration.
+				 */
+				validate_devid = B_TRUE;
+
+			} else if (ddi_devid_compare(devid, dvd->vd_devid) !=
+			    0) {
 				/*
 				 * A mismatch here is unexpected, log it.
 				 */
@@ -425,7 +435,10 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 				    kcred);
 				dvd->vd_lh = NULL;
 			}
-			ddi_devid_free(devid);
+
+			if (devid != NULL) {
+				ddi_devid_free(devid);
+			}
 		}
 
 		/*
@@ -455,26 +468,27 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	 * as reliable as the devid, this will give us something, and the higher
 	 * level vdev validation will prevent us from opening the wrong device.
 	 */
-	if (error) {
-		if (vd->vdev_devid != NULL)
-			validate_devid = B_TRUE;
+	if (error != 0) {
+		validate_devid = B_TRUE;
 
 		if (vd->vdev_physpath != NULL &&
-		    (dev = ddi_pathname_to_dev_t(vd->vdev_physpath)) != NODEV)
+		    (dev = ddi_pathname_to_dev_t(vd->vdev_physpath)) != NODEV) {
 			error = ldi_open_by_dev(&dev, OTYP_BLK, spa_mode(spa),
 			    kcred, &dvd->vd_lh, zfs_li);
+		}
 
 		/*
 		 * Note that we don't support the legacy auto-wholedisk support
 		 * as above.  This hasn't been used in a very long time and we
 		 * don't need to propagate its oddities to this edge condition.
 		 */
-		if (error && vd->vdev_path != NULL)
+		if (error != 0 && vd->vdev_path != NULL) {
 			error = ldi_open_by_name(vd->vdev_path, spa_mode(spa),
 			    kcred, &dvd->vd_lh, zfs_li);
+		}
 	}
 
-	if (error) {
+	if (error != 0) {
 		vd->vdev_stat.vs_aux = VDEV_AUX_OPEN_FAILED;
 		vdev_dbgmsg(vd, "vdev_disk_open: failed to open [error=%d]",
 		    error);
@@ -485,22 +499,100 @@ vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
 	 * Now that the device has been successfully opened, update the devid
 	 * if necessary.
 	 */
-	if (validate_devid && spa_writeable(spa) &&
-	    ldi_get_devid(dvd->vd_lh, &devid) == 0) {
-		if (ddi_devid_compare(devid, dvd->vd_devid) != 0) {
-			char *vd_devid;
+	if (validate_devid) {
+		ddi_devid_t devid = NULL;
+		char *minorname = NULL;
+		char *vd_devid = NULL;
+		boolean_t remove = B_FALSE, update = B_FALSE;
 
-			vd_devid = ddi_devid_str_encode(devid, dvd->vd_minor);
-			vdev_dbgmsg(vd, "vdev_disk_open: update devid from "
-			    "'%s' to '%s'", vd->vdev_devid, vd_devid);
-			cmn_err(CE_NOTE, "vdev_disk_open %s: update devid "
-			    "from '%s' to '%s'", vd->vdev_path != NULL ?
-			    vd->vdev_path : "?", vd->vdev_devid, vd_devid);
-			spa_strfree(vd->vdev_devid);
-			vd->vdev_devid = spa_strdup(vd_devid);
-			ddi_devid_str_free(vd_devid);
+		/*
+		 * Get the current devid and minor name for the device we
+		 * opened.
+		 */
+		if (ldi_get_devid(dvd->vd_lh, &devid) != 0 ||
+		    ldi_get_minor_name(dvd->vd_lh, &minorname) != 0) {
+			/*
+			 * If we are unable to get the devid or the minor name
+			 * for the device, we need to remove them from the
+			 * configuration to prevent potential inconsistencies.
+			 */
+			if (dvd->vd_minor != NULL || dvd->vd_devid != NULL ||
+			    vd->vdev_devid != NULL) {
+				/*
+				 * We only need to remove the devid if one
+				 * exists.
+				 */
+				remove = B_TRUE;
+			}
+
+		} else if (dvd->vd_devid == NULL || dvd->vd_minor == NULL) {
+			/*
+			 * There was previously no devid at all so we need to
+			 * add one.
+			 */
+			update = B_TRUE;
+
+		} else if (ddi_devid_compare(devid, dvd->vd_devid) != 0 ||
+		    strcmp(minorname, dvd->vd_minor) != 0) {
+			/*
+			 * The devid or minor name on file does not match the
+			 * one from the opened device.
+			 */
+			update = B_TRUE;
 		}
-		ddi_devid_free(devid);
+
+		if (update) {
+			/*
+			 * Render the new devid and minor name as a string for
+			 * logging and to store in the vdev configuration.
+			 */
+			vd_devid = ddi_devid_str_encode(devid, minorname);
+		}
+
+		if (update || remove) {
+			vdev_dbgmsg(vd, "vdev_disk_open: update devid from "
+			    "'%s' to '%s'",
+			    vd->vdev_devid != NULL ? vd->vdev_devid : "<none>",
+			    vd_devid != NULL ? vd_devid : "<none>");
+			cmn_err(CE_NOTE, "vdev_disk_open %s: update devid "
+			    "from '%s' to '%s'",
+			    vd->vdev_path != NULL ? vd->vdev_path : "?",
+			    vd->vdev_devid != NULL ? vd->vdev_devid : "<none>",
+			    vd_devid != NULL ? vd_devid : "<none>");
+
+			/*
+			 * Remove and free any existing values.
+			 */
+			if (dvd->vd_minor != NULL) {
+				ddi_devid_str_free(dvd->vd_minor);
+				dvd->vd_minor = NULL;
+			}
+			if (dvd->vd_devid != NULL) {
+				ddi_devid_free(dvd->vd_devid);
+				dvd->vd_devid = NULL;
+			}
+			if (vd->vdev_devid != NULL) {
+				spa_strfree(vd->vdev_devid);
+				vd->vdev_devid = NULL;
+			}
+		}
+
+		if (update) {
+			/*
+			 * Install the new values.
+			 */
+			vd->vdev_devid = vd_devid;
+			dvd->vd_minor = minorname;
+			dvd->vd_devid = devid;
+
+		} else {
+			if (devid != NULL) {
+				ddi_devid_free(devid);
+			}
+			if (minorname != NULL) {
+				kmem_free(minorname, strlen(minorname) + 1);
+			}
+		}
 	}
 
 	/*
@@ -613,6 +705,16 @@ skip_open:
 	 * try again.
 	 */
 	vd->vdev_nowritecache = B_FALSE;
+
+	/* Inform the ZIO pipeline that we are non-rotational */
+	vd->vdev_nonrot = B_FALSE;
+	if (ldi_prop_exists(dvd->vd_lh, DDI_PROP_DONTPASS | DDI_PROP_NOTPROM,
+	    "device-solid-state")) {
+		if (ldi_prop_get_int(dvd->vd_lh,
+		    LDI_DEV_T_ANY | DDI_PROP_DONTPASS | DDI_PROP_NOTPROM,
+		    "device-solid-state", B_FALSE) != 0)
+			vd->vdev_nonrot = B_TRUE;
+	}
 
 	return (0);
 }
@@ -858,8 +960,15 @@ vdev_disk_io_start(zio_t *zio)
 
 	zfs_zone_zio_start(zio);
 
-	/* ldi_strategy() will return non-zero only on programming errors */
-	VERIFY(ldi_strategy(dvd->vd_lh, bp) == 0);
+	/*
+	 * In general we would expect ldi_strategy() to return non-zero only
+	 * because of programming errors, but we've also seen this fail shortly
+	 * after a disk dies.
+	 */
+	if (ldi_strategy(dvd->vd_lh, bp) != 0) {
+		zio->io_error = ENXIO;
+		zio_interrupt(zio);
+	}
 }
 
 static void
@@ -897,18 +1006,19 @@ vdev_disk_io_done(zio_t *zio)
 }
 
 vdev_ops_t vdev_disk_ops = {
-	vdev_disk_open,
-	vdev_disk_close,
-	vdev_default_asize,
-	vdev_disk_io_start,
-	vdev_disk_io_done,
-	NULL,
-	vdev_disk_hold,
-	vdev_disk_rele,
-	NULL,
-	vdev_default_xlate,
-	VDEV_TYPE_DISK,		/* name of this vdev type */
-	B_TRUE			/* leaf vdev */
+	.vdev_op_open = vdev_disk_open,
+	.vdev_op_close = vdev_disk_close,
+	.vdev_op_asize = vdev_default_asize,
+	.vdev_op_io_start = vdev_disk_io_start,
+	.vdev_op_io_done = vdev_disk_io_done,
+	.vdev_op_state_change = NULL,
+	.vdev_op_need_resilver = NULL,
+	.vdev_op_hold = vdev_disk_hold,
+	.vdev_op_rele = vdev_disk_rele,
+	.vdev_op_remap = NULL,
+	.vdev_op_xlate = vdev_default_xlate,
+	.vdev_op_type = VDEV_TYPE_DISK,		/* name of this vdev type */
+	.vdev_op_leaf = B_TRUE			/* leaf vdev */
 };
 
 /*

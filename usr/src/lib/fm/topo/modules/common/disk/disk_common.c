@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2019, Joyent, Inc.
+ * Copyright 2019 Joyent, Inc.
  */
 
 /*
@@ -143,7 +143,7 @@ disk_set_props(topo_mod_t *mod, tnode_t *parent,
 	nvlist_t	*asru = NULL, *drive_attrs;
 	char		*label = NULL;
 	nvlist_t	*fmri = NULL;
-	dm_descriptor_t drive_descr = NULL;
+	dm_descriptor_t drive_descr = 0;
 	uint32_t	rpm;
 	int		err;
 
@@ -287,7 +287,7 @@ disk_set_props(topo_mod_t *mod, tnode_t *parent,
 
 	if (dnode->ddn_devid == NULL ||
 	    (drive_descr = dm_get_descriptor_by_name(DM_DRIVE,
-	    dnode->ddn_devid, &err)) == NULL ||
+	    dnode->ddn_devid, &err)) == 0 ||
 	    (drive_attrs = dm_get_attributes(drive_descr, &err)) == NULL)
 		goto out;
 
@@ -304,8 +304,28 @@ disk_set_props(topo_mod_t *mod, tnode_t *parent,
 	}
 	err = 0;
 
+	/*
+	 * Create UFM node to capture the drive firmware version
+	 */
+	if (dnode->ddn_firm != NULL) {
+		topo_ufm_slot_info_t slotinfo = { 0 };
+
+		slotinfo.usi_version = dnode->ddn_firm;
+		slotinfo.usi_active = B_TRUE;
+		if (strcmp(topo_node_name(parent), USB_DEVICE) == 0)
+			slotinfo.usi_mode = TOPO_UFM_SLOT_MODE_NONE;
+		else
+			slotinfo.usi_mode = TOPO_UFM_SLOT_MODE_WO;
+		if (topo_node_range_create(mod, dtn, UFM, 0, 0) != 0 ||
+		    topo_mod_create_ufm(mod, dtn, "drive firmware",
+		    &slotinfo) == NULL) {
+			topo_mod_dprintf(mod, "failed to create %s node", UFM);
+			goto out;
+		}
+	}
+
 out:
-	if (drive_descr != NULL)
+	if (drive_descr != 0)
 		dm_free_descriptor(drive_descr);
 	nvlist_free(fmri);
 	if (label)
@@ -353,7 +373,7 @@ disk_temp_reading(topo_mod_t *mod, tnode_t *node, topo_version_t vers,
 {
 	char *devid;
 	uint32_t temp;
-	dm_descriptor_t drive_descr = NULL;
+	dm_descriptor_t drive_descr = 0;
 	nvlist_t *drive_stats, *pargs, *nvl;
 	int err;
 
@@ -368,7 +388,7 @@ disk_temp_reading(topo_mod_t *mod, tnode_t *node, topo_version_t vers,
 	}
 
 	if ((drive_descr = dm_get_descriptor_by_name(DM_DRIVE, devid,
-	    &err)) == NULL) {
+	    &err)) == 0) {
 		topo_mod_dprintf(mod, "failed to get drive decriptor for %s",
 		    devid);
 		return (topo_mod_seterrno(mod, EMOD_UNKNOWN));
@@ -773,8 +793,8 @@ dev_di_node_add(di_node_t node, char *devid, disk_cbdata_t *cbp)
 	char		*s;
 	int64_t		*nblocksp;
 	uint64_t	nblocks;
-	int		*dblksizep;
-	uint_t		dblksize;
+	int		*blksizep;
+	uint_t		blksize;
 	char		lentry[MAXPATHLEN];
 	int		pathcount;
 	int		*inq_dtype, itype;
@@ -1032,15 +1052,15 @@ dev_di_node_add(di_node_t node, char *devid, disk_cbdata_t *cbp)
 		nblocks = (uint64_t)*nblocksp;
 		/*
 		 * To save kernel memory, the driver may not define
-		 * "device-dblksize" when its value is default DEV_BSIZE.
+		 * "device-blksize" when its value is default DEV_BSIZE.
 		 */
 		if (di_prop_lookup_ints(DDI_DEV_T_ANY, node,
-		    "device-dblksize", &dblksizep) > 0)
-			dblksize = (uint_t)*dblksizep;
+		    "device-blksize", &blksizep) > 0)
+			blksize = (uint_t)*blksizep;
 		else
-			dblksize = DEV_BSIZE;		/* default value */
+			blksize = DEV_BSIZE;		/* default value */
 		(void) snprintf(lentry, sizeof (lentry),
-		    "%" PRIu64, nblocks * dblksize);
+		    "%" PRIu64, nblocks * blksize);
 		if ((dnode->ddn_cap = topo_mod_strdup(mod, lentry)) == NULL)
 			goto error;
 	}

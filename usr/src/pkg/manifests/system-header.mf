@@ -26,7 +26,7 @@
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
 # Copyright 2018 Nexenta Systems, Inc.
 # Copyright 2016 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
-# Copyright (c) 2018, Joyent, Inc.
+# Copyright 2019 Joyent, Inc.
 # Copyright 2019 Peter Tribble.
 #
 
@@ -127,8 +127,6 @@ $(sparc_ONLY)dir path=usr/include/v9/sys
 dir path=usr/include/vm
 dir path=usr/platform group=sys
 $(sparc_ONLY)dir path=usr/platform/SUNW,A70 group=sys
-$(sparc_ONLY)dir path=usr/platform/SUNW,Netra-CP2300 group=sys
-$(sparc_ONLY)dir path=usr/platform/SUNW,Netra-CP2300/include
 $(sparc_ONLY)dir path=usr/platform/SUNW,Netra-CP3010 group=sys
 $(sparc_ONLY)dir path=usr/platform/SUNW,Netra-CP3010/include
 $(sparc_ONLY)dir path=usr/platform/SUNW,Netra-T12 group=sys
@@ -140,7 +138,6 @@ $(sparc_ONLY)dir path=usr/platform/SUNW,Sun-Blade-1000 group=sys
 $(sparc_ONLY)dir path=usr/platform/SUNW,Sun-Blade-1500 group=sys
 $(sparc_ONLY)dir path=usr/platform/SUNW,Sun-Blade-2500 group=sys
 $(sparc_ONLY)dir path=usr/platform/SUNW,Sun-Fire group=sys
-$(sparc_ONLY)dir path=usr/platform/SUNW,Sun-Fire-15000 group=sys
 $(sparc_ONLY)dir path=usr/platform/SUNW,Sun-Fire-280R group=sys
 $(sparc_ONLY)dir path=usr/platform/SUNW,Sun-Fire-480R group=sys
 $(sparc_ONLY)dir path=usr/platform/SUNW,Sun-Fire-880 group=sys
@@ -155,9 +152,6 @@ $(sparc_ONLY)dir path=usr/platform/SUNW,Ultra-2 group=sys
 $(sparc_ONLY)dir path=usr/platform/SUNW,Ultra-250 group=sys
 $(sparc_ONLY)dir path=usr/platform/SUNW,Ultra-4 group=sys
 $(sparc_ONLY)dir path=usr/platform/SUNW,Ultra-Enterprise group=sys
-$(sparc_ONLY)dir path=usr/platform/SUNW,UltraSPARC-IIe-NetraCT-40 group=sys
-$(sparc_ONLY)dir path=usr/platform/SUNW,UltraSPARC-IIe-NetraCT-60 group=sys
-$(sparc_ONLY)dir path=usr/platform/SUNW,UltraSPARC-IIi-Netract group=sys
 $(i386_ONLY)dir path=usr/platform/i86pc group=sys
 $(i386_ONLY)dir path=usr/platform/i86pc/include
 $(i386_ONLY)dir path=usr/platform/i86pc/include/sys
@@ -901,6 +895,8 @@ file path=usr/include/sys/ddi_intr_impl.h
 file path=usr/include/sys/ddi_isa.h
 file path=usr/include/sys/ddi_obsolete.h
 file path=usr/include/sys/ddi_periodic.h
+file path=usr/include/sys/ddi_ufm.h
+file path=usr/include/sys/ddi_ufm_impl.h
 file path=usr/include/sys/ddidevmap.h
 file path=usr/include/sys/ddidmareq.h
 file path=usr/include/sys/ddifm.h
@@ -1470,6 +1466,7 @@ file path=usr/include/sys/sysdc.h
 file path=usr/include/sys/sysdc_impl.h
 file path=usr/include/sys/sysevent.h
 file path=usr/include/sys/sysevent/ap_driver.h
+file path=usr/include/sys/sysevent/datalink.h
 file path=usr/include/sys/sysevent/dev.h
 file path=usr/include/sys/sysevent/domain.h
 file path=usr/include/sys/sysevent/dr.h
@@ -1532,8 +1529,6 @@ file path=usr/include/sys/ttold.h
 file path=usr/include/sys/tty.h
 file path=usr/include/sys/ttychars.h
 file path=usr/include/sys/ttydev.h
-$(sparc_ONLY)file path=usr/include/sys/ttymux.h
-$(sparc_ONLY)file path=usr/include/sys/ttymuxuser.h
 file path=usr/include/sys/tuneable.h
 file path=usr/include/sys/turnstile.h
 file path=usr/include/sys/types.h
@@ -1682,7 +1677,6 @@ $(i386_ONLY)file path=usr/platform/i86pc/include/sys/ddi_subrdefs.h
 $(i386_ONLY)file path=usr/platform/i86pc/include/sys/debug_info.h
 $(i386_ONLY)file path=usr/platform/i86pc/include/sys/fastboot.h
 $(i386_ONLY)file path=usr/platform/i86pc/include/sys/hma.h
-$(i386_ONLY)file path=usr/platform/i86pc/include/sys/ht.h
 $(i386_ONLY)file path=usr/platform/i86pc/include/sys/mach_mmu.h
 $(i386_ONLY)file path=usr/platform/i86pc/include/sys/machclock.h
 $(i386_ONLY)file path=usr/platform/i86pc/include/sys/machcpuvar.h
@@ -1699,6 +1693,7 @@ $(i386_ONLY)file path=usr/platform/i86pc/include/sys/psm_types.h
 $(i386_ONLY)file path=usr/platform/i86pc/include/sys/rm_platter.h
 $(i386_ONLY)file path=usr/platform/i86pc/include/sys/sbd_ioctl.h
 $(i386_ONLY)file path=usr/platform/i86pc/include/sys/smp_impldefs.h
+$(i386_ONLY)file path=usr/platform/i86pc/include/sys/smt.h
 $(i386_ONLY)file path=usr/platform/i86pc/include/sys/vm_machparam.h
 $(i386_ONLY)file path=usr/platform/i86pc/include/sys/x_call.h
 $(i386_ONLY)file path=usr/platform/i86pc/include/sys/xc_levels.h
@@ -1737,7 +1732,6 @@ $(sparc_ONLY)file path=usr/platform/sun4u/include/sys/errclassify.h
 $(sparc_ONLY)file path=usr/platform/sun4u/include/sys/fhc.h
 $(sparc_ONLY)file path=usr/platform/sun4u/include/sys/gpio_87317.h
 $(sparc_ONLY)file path=usr/platform/sun4u/include/sys/hpc3130_events.h
-$(sparc_ONLY)file path=usr/platform/sun4u/include/sys/ht.h
 $(sparc_ONLY)file path=usr/platform/sun4u/include/sys/i2c/clients/hpc3130.h
 $(sparc_ONLY)file path=usr/platform/sun4u/include/sys/i2c/clients/i2c_client.h
 $(sparc_ONLY)file path=usr/platform/sun4u/include/sys/i2c/clients/lm75.h
@@ -1770,8 +1764,8 @@ $(sparc_ONLY)file path=usr/platform/sun4u/include/sys/prom_plat.h
 $(sparc_ONLY)file path=usr/platform/sun4u/include/sys/pte.h
 $(sparc_ONLY)file path=usr/platform/sun4u/include/sys/sbd_ioctl.h
 $(sparc_ONLY)file path=usr/platform/sun4u/include/sys/scb.h
-$(sparc_ONLY)file path=usr/platform/sun4u/include/sys/scsb_led.h
 $(sparc_ONLY)file path=usr/platform/sun4u/include/sys/simmstat.h
+$(sparc_ONLY)file path=usr/platform/sun4u/include/sys/smt.h
 $(sparc_ONLY)file path=usr/platform/sun4u/include/sys/spitregs.h
 $(sparc_ONLY)file path=usr/platform/sun4u/include/sys/sram.h
 $(sparc_ONLY)file path=usr/platform/sun4u/include/sys/sun4asi.h
@@ -1800,7 +1794,6 @@ $(sparc_ONLY)file path=usr/platform/sun4v/include/sys/dvma.h
 $(sparc_ONLY)file path=usr/platform/sun4v/include/sys/eeprom.h
 $(sparc_ONLY)file path=usr/platform/sun4v/include/sys/fcode.h
 $(sparc_ONLY)file path=usr/platform/sun4v/include/sys/hsvc.h
-$(sparc_ONLY)file path=usr/platform/sun4v/include/sys/ht.h
 $(sparc_ONLY)file path=usr/platform/sun4v/include/sys/hypervisor_api.h
 $(sparc_ONLY)file path=usr/platform/sun4v/include/sys/idprom.h
 $(sparc_ONLY)file path=usr/platform/sun4v/include/sys/intr.h
@@ -1826,6 +1819,7 @@ $(sparc_ONLY)file path=usr/platform/sun4v/include/sys/prom_plat.h
 $(sparc_ONLY)file path=usr/platform/sun4v/include/sys/pte.h
 $(sparc_ONLY)file path=usr/platform/sun4v/include/sys/qcn.h
 $(sparc_ONLY)file path=usr/platform/sun4v/include/sys/scb.h
+$(sparc_ONLY)file path=usr/platform/sun4v/include/sys/smt.h
 $(sparc_ONLY)file path=usr/platform/sun4v/include/sys/soft_state.h
 $(sparc_ONLY)file path=usr/platform/sun4v/include/sys/sun4asi.h
 $(sparc_ONLY)file path=usr/platform/sun4v/include/sys/tod.h
@@ -1982,8 +1976,6 @@ $(sparc_ONLY)link path=usr/platform/SUNW,Sun-Blade-1500/include \
     target=../sun4u/include
 $(sparc_ONLY)link path=usr/platform/SUNW,Sun-Blade-2500/include \
     target=../sun4u/include
-$(sparc_ONLY)link path=usr/platform/SUNW,Sun-Fire-15000/include \
-    target=../sun4u/include
 $(sparc_ONLY)link path=usr/platform/SUNW,Sun-Fire-280R/include \
     target=../sun4u/include
 $(sparc_ONLY)link path=usr/platform/SUNW,Sun-Fire-480R/include \
@@ -2013,12 +2005,6 @@ $(sparc_ONLY)link path=usr/platform/SUNW,Ultra-250/include \
 $(sparc_ONLY)link path=usr/platform/SUNW,Ultra-4/include \
     target=../sun4u/include
 $(sparc_ONLY)link path=usr/platform/SUNW,Ultra-Enterprise/include \
-    target=../sun4u/include
-$(sparc_ONLY)link path=usr/platform/SUNW,UltraSPARC-IIe-NetraCT-40/include \
-    target=../sun4u/include
-$(sparc_ONLY)link path=usr/platform/SUNW,UltraSPARC-IIe-NetraCT-60/include \
-    target=../sun4u/include
-$(sparc_ONLY)link path=usr/platform/SUNW,UltraSPARC-IIi-Netract/include \
     target=../sun4u/include
 link path=usr/share/man/man3head/LIST_CLASS_ENTRY.3head target=queue.h.3head
 link path=usr/share/man/man3head/LIST_CLASS_HEAD.3head target=queue.h.3head

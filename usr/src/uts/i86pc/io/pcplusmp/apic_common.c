@@ -386,10 +386,10 @@ apic_cmci_setup(processorid_t cpuid, boolean_t enable)
 	CPUSET_ONLY(cpu_set, cpuid);
 
 	if (enable) {
-		xc_call(NULL, NULL, NULL, CPUSET2BV(cpu_set),
+		xc_call(0, 0, 0, CPUSET2BV(cpu_set),
 		    (xc_func_t)apic_cmci_enable);
 	} else {
-		xc_call(NULL, NULL, NULL, CPUSET2BV(cpu_set),
+		xc_call(0, 0, 0, CPUSET2BV(cpu_set),
 		    (xc_func_t)apic_cmci_disable);
 	}
 }
@@ -808,7 +808,7 @@ gethrtime_again:
 void
 apic_nmi_intr(caddr_t arg, struct regs *rp)
 {
-	int action = nmi_action;
+	nmi_action_t action = nmi_action;
 
 	if (apic_shutdown_processors) {
 		apic_disable_local_apic();

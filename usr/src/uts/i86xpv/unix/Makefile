@@ -23,7 +23,7 @@
 # Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
-# Copyright (c) 2018, Joyent, Inc.
+# Copyright 2019 Joyent, Inc.
 #
 #	This makefile drives the production of unix (and unix.o).
 #
@@ -140,7 +140,7 @@ LINTTAGS	+= -erroff=E_PTRDIFF_OVERFLOW
 LINTTAGS	+= -erroff=E_ASSIGN_NARROW_CONV
 
 CERRWARN	+= -_gcc=-Wno-parentheses
-CERRWARN	+= -_gcc=-Wno-uninitialized
+CERRWARN	+= $(CNOWARN_UNINIT)
 CERRWARN	+= -_gcc=-Wno-char-subscripts
 CERRWARN	+= -_gcc=-Wno-unused-variable
 CERRWARN	+= -_gcc=-Wno-unused-function
@@ -177,8 +177,8 @@ clean.lint: $(CLEAN_LINT_DEPS)
 
 install: $(INSTALL_DEPS)
 
-MAPFILE_32 = $(MAPFILE)
-MAPFILE_64 = $(MAPFILE).amd64
+MAPFILE_32 = $(UNIX_MAPFILE)
+MAPFILE_64 = $(UNIX_MAPFILE).amd64
 
 MAPFILE_NAME = $(MAPFILE_$(CLASS))
 
