@@ -5,15 +5,21 @@
 #
 
 #
-# Copyright 2019 Joyent, Inc.
+# Copyright (c) 2019, Joyent, Inc.
+# Copyright (c) 2019, Erigones, s. r. o.
 #
 
-PATH=/usr/bin:/usr/sbin:/smartdc/bin:/opt/smartdc/bin:/opt/local/bin:/opt/local/sbin:/opt/tools/bin:/opt/tools/sbin:/opt/smartdc/agents/bin
-MANPATH=/usr/share/man:/smartdc/man:/opt/smartdc/man:/opt/local/man:/opt/tools/man
+ERIGONES_HOME="/opt/erigones"
+VIRTUAL_ENV="$ERIGONES_HOME/envs"
+PATH="/usr/bin:/usr/sbin:$ERIGONES_HOME/bin:$VIRTUAL_ENV/bin:/smartdc/bin:/opt/smartdc/bin:/opt/local/bin:/opt/local/sbin:/opt/tools/sbin:/opt/smartdc/agents/bin"
+MANPATH="/usr/share/man:/smartdc/man:/opt/smartdc/man:/opt/local/man:/opt/tools/man"
+PYTHONPATH="$ERIGONES_HOME:$PYTHONPATH"
 PAGER=less
+export PATH MANPATH PAGER ERIGONES_HOME PYTHONPATH VIRTUAL_ENV
+
 # If pkgsrc-tools is set up and the mozilla-rootcerts package is installed
 # configure the platform curl to use it.
 if [[ -f /opt/tools/share/mozilla-rootcerts/cacert.pem ]]; then
 	CURL_CA_BUNDLE=/opt/tools/share/mozilla-rootcerts/cacert.pem
 fi
-export PATH MANPATH PAGER CURL_CA_BUNDLE
+export CURL_CA_BUNDLE

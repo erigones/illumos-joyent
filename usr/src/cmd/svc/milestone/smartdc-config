@@ -20,6 +20,7 @@
 # CDDL HEADER END
 #
 # Copyright 2019 Joyent, Inc.
+# Copyright 2019 Erigones, s. r. o.
 #
 
 #
@@ -72,16 +73,36 @@ case "$1" in
         fi
     elif /bin/bootparams | grep "^smartos=true" > /dev/null 2>&1; then
         USB_PATH=/`svcprop -p "joyentfs/usb_copy_path" svc:/system/filesystem/smartdc:default`
+        USBMOUNT=/mnt/`svcprop -p "joyentfs/usb_mountpoint" svc:/system/filesystem/smartdc:default`
 
         # Check for config and run interactive if it doesn't exist.
         if [[ ! -f ${USB_PATH}/config ]]; then
             if /bin/bootparams | grep "^noimport=true" >/dev/null 2>&1; then
+                if /bin/bootparams | grep "^root_shadow=" >/dev/null 2>&1; then
+                    set_root_password "$(/bin/bootparams | grep "^root_shadow=" | cut -d'=' -f2-)"
+                    echo "Set root password from boot parameters."
+                fi
                 # Skipping interactive config, bypass rest of script.
                 exit $SMF_EXIT_OK
             fi
 
-            /smartdc/lib/sdc-on-tty -d /dev/console \
-                /smartdc/lib/smartos_prompt_config.sh "${USB_PATH}"
+            if /bin/bootparams | grep "^netboot_install_script=" > /dev/null 2>&1; then
+                if ! netboot_config; then
+                    exit ${SMF_EXIT_ERR_CONFIG}
+                fi
+            else
+                if [[ -f "${USBMOUNT}/scripts/prompt-config.sh" ]]; then
+                    USB_PATH="${USBMOUNT}"
+                    prompt_config="${USBMOUNT}/scripts/prompt-config.sh"
+                elif [[ -f "${USB_PATH}/scripts/prompt-config.sh" ]]; then
+                    prompt_config="${USB_PATH}/scripts/prompt-config.sh"
+                else
+                    prompt_config="/smartdc/lib/smartos_prompt_config.sh"
+                fi
+
+                /smartdc/lib/sdc-on-tty -d /dev/console \
+                    "${prompt_config}" "${USB_PATH}"
+            fi
 
             # If user quit from interactive configuration then we're done.
             [[ ! -f ${USB_PATH}/config ]] && exit $SMF_EXIT_OK
@@ -117,6 +138,30 @@ case "$1" in
         mkdir -p /root/.ssh
         cp "${CONFIG_config_inc_dir}/${CONFIG_root_authorized_keys_file}" /root/.ssh/authorized_keys
         chmod 0600 /root/.ssh/authorized_keys
+        chmod 0700 /root/.ssh
+    fi
+
+    # Copy private part of root's SSH key
+    if [[ -n "${CONFIG_ssh_private_key_file}" ]] \
+        && [[ -n "${CONFIG_config_inc_dir}" ]] \
+        && [[ -d "${CONFIG_config_inc_dir}" ]] \
+        && [[ -f "${CONFIG_config_inc_dir}/${CONFIG_ssh_private_key_file}" ]]; then
+
+        mkdir -p /root/.ssh
+        cp "${CONFIG_config_inc_dir}/${CONFIG_ssh_private_key_file}" /root/.ssh/id_rsa
+        chmod 0600 /root/.ssh/id_rsa
+        chmod 0700 /root/.ssh
+    fi
+
+    # Copy public part of root's SSH key
+    if [[ -n "${CONFIG_ssh_public_key_file}" ]] \
+        && [[ -n "${CONFIG_config_inc_dir}" ]] \
+        && [[ -d "${CONFIG_config_inc_dir}" ]] \
+        && [[ -f "${CONFIG_config_inc_dir}/${CONFIG_ssh_public_key_file}" ]]; then
+
+        mkdir -p /root/.ssh
+        cp "${CONFIG_config_inc_dir}/${CONFIG_ssh_public_key_file}" /root/.ssh/id_rsa.pub
+        chmod 0644 /root/.ssh/id_rsa.pub
         chmod 0700 /root/.ssh
     fi
 

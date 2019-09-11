@@ -53,7 +53,8 @@ NETSVCS= \
 	network-netcfg.xml \
 	network-physical.xml \
 	network-routing-setup.xml \
-	network-service.xml
+	network-service.xml \
+	network-virtual.xml
 
 NETMANIFESTS= $(NETSVCS:%=$(ROOTSVCNETWORK)/%)
 
@@ -81,6 +82,9 @@ SYSTEMSVCS= \
 	manifest-import.xml \
 	mdata.xml \
 	process-security.xml \
+	rc-post-vmadmd.xml \
+	rc-pre-network.xml \
+	rc-pre-vmadmd.xml \
 	rmtmpfiles.xml	\
 	smartdc-config.xml \
 	smartdc-init.xml \
@@ -121,6 +125,7 @@ SVCMETHOD=\
 	manifest-import \
 	mdata-execute \
 	mdata-fetch \
+	net-cleanup \
 	net-early-admin \
 	net-loc \
 	net-loopback \
@@ -133,6 +138,8 @@ SVCMETHOD=\
 	net-physical \
 	net-routing-setup \
 	net-svc \
+	net-virtual \
+	postboot-rc-init \
 	rmtmpfiles \
 	smartdc-config \
 	smartdc-init \

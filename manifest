@@ -1726,6 +1726,7 @@ f lib/svc/manifest/network/ldap/client.xml 0444 root sys
 d lib/svc/manifest/network/loadbalancer 0755 root sys
 f lib/svc/manifest/network/loadbalancer/ilbd.xml 0444 root sys
 f lib/svc/manifest/network/login.xml 0444 root sys
+f lib/svc/manifest/network/network-cleanup.xml 0444 root sys
 f lib/svc/manifest/network/network-early-admin.xml 0444 root sys
 f lib/svc/manifest/network/network-initial.xml 0444 root sys
 f lib/svc/manifest/network/network-install.xml 0444 root sys
@@ -1738,6 +1739,7 @@ f lib/svc/manifest/network/network-netmask.xml 0444 root sys
 f lib/svc/manifest/network/network-physical.xml 0444 root sys
 f lib/svc/manifest/network/network-routing-setup.xml 0444 root sys
 f lib/svc/manifest/network/network-service.xml 0444 root sys
+f lib/svc/manifest/network/network-virtual.xml 0444 root sys
 d lib/svc/manifest/network/nfs 0755 root sys
 f lib/svc/manifest/network/nfs/client.xml 0444 root sys
 f lib/svc/manifest/network/nfs/mapid.xml 0444 root sys
@@ -1831,6 +1833,9 @@ f lib/svc/manifest/system/picl.xml 0444 root sys
 f lib/svc/manifest/system/power.xml 0444 root sys
 f lib/svc/manifest/system/process-security.xml 0444 root sys
 f lib/svc/manifest/system/rbac.xml 0444 root sys
+f lib/svc/manifest/system/rc-post-vmadmd.xml 0444 root sys
+f lib/svc/manifest/system/rc-pre-network.xml 0444 root sys
+f lib/svc/manifest/system/rc-pre-vmadmd.xml 0444 root sys
 f lib/svc/manifest/system/rcap.xml 0444 root sys
 f lib/svc/manifest/system/resource-mgmt.xml 0444 root sys
 f lib/svc/manifest/system/rmtmpfiles.xml 0444 root sys
@@ -1878,6 +1883,7 @@ f lib/svc/method/manifest-import 0555 root bin
 f lib/svc/method/mdata-execute 0555 root bin
 f lib/svc/method/mdata-fetch 0555 root bin
 f lib/svc/method/mpxio-upgrade 0555 root bin
+f lib/svc/method/net-cleanup 0555 root sys
 f lib/svc/method/net-early-admin 0555 root bin
 f lib/svc/method/net-init 0555 root bin
 f lib/svc/method/net-install 0555 root bin
@@ -1890,10 +1896,12 @@ f lib/svc/method/net-netmask 0555 root bin
 f lib/svc/method/net-physical 0555 root sys
 f lib/svc/method/net-routing-setup 0555 root bin
 f lib/svc/method/net-svc 0555 root bin
+f lib/svc/method/net-virtual 0555 root sys
 f lib/svc/method/nfs-client 0555 root bin
 f lib/svc/method/nfs-server 0555 root sys
 f lib/svc/method/nlockmgr 0555 root bin
 f lib/svc/method/npivconfig 0555 root sys
+f lib/svc/method/postboot-rc-init 0555 root sys
 f lib/svc/method/rmtmpfiles 0555 root bin
 f lib/svc/method/rpc-bind 0555 root bin
 f lib/svc/method/sendmail-client 0555 root sys

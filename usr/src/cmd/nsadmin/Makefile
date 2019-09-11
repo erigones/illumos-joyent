@@ -23,13 +23,14 @@
 # Use is subject to license terms.
 #
 # Copyright 2019 Joyent, Inc.
+# Copyright (c) 2019, Erigones, s. r. o.
 #
 
 ETCFILES = profile .login ksh.kshrc system zshrc
 ETCSKELFILES = .profile .kshrc .bashrc
 ETCBASHFILES = bash_completion
 ETCBASHCOMPLETIONDFILES = dladm zones zone_alias
-ROOTFILES = .profile .bashrc .bash_profile
+ROOTFILES = .profile .bashrc .bash_profile .vimrc
 
 include ../Makefile.cmd
 
@@ -76,6 +77,9 @@ $(ROOTETCSKEL)/.bashrc: etc-skel-bashrc.sh
 	$(INS.rename)
 
 $(ROOTROOT)/.bash_profile: dot-bash_profile.sh
+	$(INS.rename)
+
+$(ROOTROOT)/.vimrc: dot-vimrc.sh
 	$(INS.rename)
 
 $(ROOTROOT)/.bashrc: dot-bashrc.sh
