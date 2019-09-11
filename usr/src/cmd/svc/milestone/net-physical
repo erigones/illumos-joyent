@@ -19,12 +19,11 @@
 #
 # CDDL HEADER END
 #
-# Copyright (c) 1999, 2010, Oracle and/or its affiliates. All rights reserved.
-# Copyright 2012 Milan Jurik. All rights reserved.
-# Copyright 2019 Joyent, Inc.
 #
-# Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T.
-# All rights reserved.
+# Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T. All rights reserved.
+# Copyright (c) 1999, 2010, Oracle and/or its affiliates. All rights reserved.
+# Copyright 2017 Joyent, Inc.
+# Copyright 2019 Erigones, s. r. o.
 #
 
 . /lib/svc/share/smf_include.sh
@@ -45,12 +44,26 @@ smf_configure_ip || exit ${SMF_EXIT_OK}
 # Make sure that the libraries essential to this stage of booting can be found.
 LD_LIBRARY_PATH=/lib; export LD_LIBRARY_PATH
 
+# Hard-coded in nictagadm and in other places
+OVERLAY_RULES="/var/run/smartdc/networking/overlay_rules.json"
+
 # Time (in seconds) to wait for admin NIC to get DHCP address before continuing.
 ADMIN_DHCP_TIMEOUT=300
 ActiveAggrLinks=
 typeset -A ActiveAggrLinks
 
 smf_netstrategy
+
+function normalize_mac
+{
+    typeset mac
+
+    mac="$1"
+
+    echo "${mac}" | awk -F':' '{ print $1, $2, $3, $4, $5, $6 }' | { read o1 o2 o3 o4 o5 o6 junk
+        printf "%02x:%02x:%02x:%02x:%02x:%02x" 0x${o1} 0x${o2} 0x${o3} 0x${o4} 0x${o5} 0x${o6}
+    }
+}
 
 function add_active_aggr_links
 {
@@ -380,10 +393,10 @@ function setup_mtu
         curmtu=$(/usr/sbin/dladm show-linkprop -c -o value -p mtu ${link})
         [[ $? -eq 0 ]] && [[ "$curmtu" -eq "${mtus[$mac]}" ]] && continue
 
-            if ! /usr/sbin/dladm set-linkprop -p mtu=${mtus[$mac]} ${link}; then
-                echo "Failed to set mtu to ${mtus[$mac]} for link ${link}"
-                exit $SMF_EXIT_ERR_FATAL
-            fi
+        if ! /usr/sbin/dladm set-linkprop -p mtu=${mtus[$mac]} ${link}; then
+            echo "Failed to set mtu to ${mtus[$mac]} for link ${link}"
+            exit $SMF_EXIT_ERR_FATAL
+        fi
     done
 }
 
@@ -441,9 +454,39 @@ if smf_is_globalzone; then
     fi
 
     # Set up etherstubs
-    for stub in $(echo "${CONFIG_etherstub}" | sed -e "s/,/ /g"); do
-        /usr/sbin/dladm create-etherstub -t $stub || echo "ERROR: could not create etherstub ${stub}."
-    done
+    if [[ -n "${CONFIG_etherstub}" ]]; then
+        typeset -a Etherstubs=(${CONFIG_etherstub//,/ })
+
+        for stub in "${Etherstubs[@]}"; do
+            # Must fail on error (etherstubs are part of SYSINFO_Nic_Tags)
+            /usr/sbin/dladm create-etherstub -t $stub
+        done
+
+        # Reload sysinfo (etherstubs are part of SYSINFO_Nic_Tags)
+        /usr/bin/sysinfo -u
+        load_sdc_sysinfo
+    fi
+
+    # Change MAC addresses
+    if [[ -n "${CONFIG_change_mac}" ]]; then
+        sysinfo_ifaces=$(sysinfo -p | grep "^Network_Interface_.*_MAC_Address" || true)
+
+        for mac_pair in $(echo "${CONFIG_change_mac}" | sed -e "s/;/ /g"); do
+            cur_mac="${mac_pair%,*}"
+            new_mac="${mac_pair#*,}"
+            sysinfo_iface=$(echo "${sysinfo_ifaces}" | grep "$(normalize_mac "${cur_mac}")" || true)
+
+            if [[ -n "${sysinfo_iface}" ]]; then
+                iface=$(echo "${sysinfo_iface}" | cut -d '_' -f 3)
+                echo "changing MAC address of ${iface}: ${cur_mac} -> ${new_mac}"
+                ifconfig "${iface}" ether "${new_mac}"
+            fi
+        done
+
+        # Reload sysinfo
+        /usr/bin/sysinfo -u
+        load_sdc_sysinfo
+    fi
 
     # Create aggregations
     create_aggrs
@@ -499,7 +542,8 @@ if smf_is_globalzone; then
         exit ${SMF_EXIT_ERR_CONFIG}
     fi
 
-    [[ -n "$EARLY_ADMIN" ]] || plumb_admin
+    [[ -z "$EARLY_ADMIN" ]] && [[ -z "${nic_admin_on_etherstub}" ]] && plumb_admin
+    eval "nic_admin_on_etherstub=\${SYSINFO_Etherstub_${SYSINFO_NIC_admin}_NIC_Names}"
 
     # If we performed early configuration of the admin network and
     # the admin interface is on a link aggregation, the aggregation
@@ -523,9 +567,28 @@ if smf_is_globalzone; then
         admin_netmask=${BOOT_admin_netmask}
     fi
 
+    admin_vlan_id=${CONFIG_admin_vlan_id}
+    if [[ -z "$admin_vlan_id" ]]; then
+        admin_vlan_id=${BOOT_admin_vlan_id}
+    fi
+
     admin_ip6=${CONFIG_admin_ip6}
     if [[ -z "$admin_ip6" ]]; then
         admin_ip6=${BOOT_admin_ip6}
+    fi
+
+    if [[ -n "${admin_vlan_id}" ]] || [[ -n "${nic_admin_on_etherstub}" ]]; then
+        if [[ "${admin_vlan_id}" -ne 0 ]]; then
+            admin_vnic_opts="-v ${admin_vlan_id}"
+        else
+            admin_vnic_opts=""
+        fi
+
+        admin_iface_active="admin0"
+        dladm create-vnic -l ${SYSINFO_NIC_admin} $admin_vnic_opts ${admin_iface_active}
+        /sbin/ifconfig ${admin_iface_active} plumb
+    else
+        admin_iface_active="${SYSINFO_NIC_admin}"
     fi
 
     if [[ $admin_ip == 'none' ]]; then
@@ -534,7 +597,7 @@ if smf_is_globalzone; then
         echo 'INFO: admin interface already configured (early setup)'
         ADMIN_NIC_UP=true
     elif [[ -n $admin_ip ]] && [[ -n $admin_netmask ]]; then
-        /sbin/ifconfig ${SYSINFO_NIC_admin} inet ${admin_ip} \
+        /sbin/ifconfig ${admin_iface_active} inet ${admin_ip} \
             netmask ${admin_netmask} up
         ADMIN_NIC_UP=true
 
@@ -549,6 +612,9 @@ if smf_is_globalzone; then
             for serv in $(echo "${CONFIG_dns_resolvers}" | sed -e "s/,/ /g"); do
                 echo "nameserver ${serv}" >> /etc/resolv.conf
             done
+            if [[ -n "${CONFIG_dns_options}" ]]; then
+                echo "options ${CONFIG_dns_options}" >> /etc/resolv.conf
+            fi
         fi
     else
         if [[ ${headnode} == "true" ]]; then
@@ -558,13 +624,13 @@ if smf_is_globalzone; then
         else
             # We ignore errors here because the most common one is that DHCP is
             # already running.
-            /sbin/ifconfig ${SYSINFO_NIC_admin} dhcp || /bin/true
+            /sbin/ifconfig ${admin_iface_active} dhcp || /bin/true
 
             # Wait for DHCP
             timeout=${ADMIN_DHCP_TIMEOUT}
-            dhcp_admin_ip=$(/sbin/ifconfig ${SYSINFO_NIC_admin} | grep inet | awk '{ print $2 }')
+            dhcp_admin_ip=$(/sbin/ifconfig ${admin_iface_active} | grep inet | awk '{ print $2 }')
             while [[ (-z ${dhcp_admin_ip} || ${dhcp_admin_ip} == "0.0.0.0") && ${timeout} -gt 0 ]]; do
-                dhcp_admin_ip=$(/sbin/ifconfig ${SYSINFO_NIC_admin} | grep inet | awk '{ print $2 }')
+                dhcp_admin_ip=$(/sbin/ifconfig ${admin_iface_active} | grep inet | awk '{ print $2 }')
                 timeout=$((${timeout} - 1))
                 sleep 1
             done
@@ -575,7 +641,7 @@ if smf_is_globalzone; then
 
     if [[ -n ${admin_ip6} && -z "$EARLY_ADMIN" ]]; then
         # Plumb interface for inet6
-        ifconfig ${SYSINFO_NIC_admin} inet6 \
+        ifconfig ${admin_iface_active} inet6 \
             plumb mtu ${CONFIG_admin_mtu:-1500} up
 
         # Autodiscovery IPv6 using SLAAC
@@ -587,7 +653,7 @@ if smf_is_globalzone; then
 
         # Configure static IPv6
         if [[ ${admin_ip6} != "addrconf" ]]; then
-            /sbin/ifconfig ${SYSINFO_NIC_admin} inet6 \
+            /sbin/ifconfig ${admin_iface_active} inet6 \
                 addif ${admin_ip6} preferred up
         fi
 
@@ -602,7 +668,7 @@ if smf_is_globalzone; then
         && [[ ${SYSINFO_Product} == "Parallels Virtual Platform" \
               || ${SYSINFO_Product} == "VirtualBox" ]] \
         && [[ -z $(/usr/sbin/dladm show-bridge -p vmwarebr) ]]; then
-        /usr/sbin/dladm create-bridge -l ${SYSINFO_NIC_admin} vmwarebr
+        /usr/sbin/dladm create-bridge -l ${admin_iface_active} vmwarebr
     fi
 
     # Setup the external NIC. The installer may have already set up external0,
@@ -626,92 +692,6 @@ if smf_is_globalzone; then
     fi
 
     set_default_route
-
-    # Setup extra nics, if specified in the config file
-    nic_tags="${SYSINFO_Nic_Tags}"
-    if [[ -n "${nic_tags}" ]]; then
-        tags=(${nic_tags//,/ })
-
-        if boot_file_config_enabled; then
-            bootparam_ip_keys=""
-            bootparam_ip6_keys=""
-            config_ip_keys=${CONFIG_bootfile_ip_keys//,/ }
-            config_ip6_keys=${CONFIG_bootfile_ip6_keys//,/ }
-        else
-            bootparam_ip_keys=$(sdc_bootparams_keys | grep -- "-ip$" || true)
-            bootparam_ip6_keys=$(sdc_bootparams_keys | grep -- "-ip6$" || true)
-            config_ip_keys=$(sdc_config_keys | grep "_ip$" || true)
-            config_ip6_keys=$(sdc_config_keys | grep "_ip6$" || true)
-        fi
-
-        for tag in "${tags[@]}"; do
-
-            eval "link=\${SYSINFO_NIC_${tag}}"
-            if [[ -z "${link}" ]]; then
-                echo "WARNING: No link found with tag '${tag}'"
-                continue
-            fi
-
-            for key in ${config_ip_keys}; do
-                if [[ ${key} == ${tag}[0-9]_ip ]] || [[ ${key} == ${tag}[0-9][0-9]_ip ]]; then
-                    iface=${key//_ip/}
-                    #echo "   iface=$iface"
-                    eval "ip=\${CONFIG_${iface}_ip}"
-                    eval "netmask=\${CONFIG_${iface}_netmask}"
-                    eval "vlan=\${CONFIG_${iface}_vlan_id}"
-                    eval "macaddr=\${CONFIG_${iface}_mac}"
-                    eval "mtu=\${CONFIG_${iface}_mtu}"
-
-                    echo vnic_up "${link}" "${iface}" "${ip}" "${netmask}" "${vlan}" "${macaddr}" "${mtu}"
-                    vnic_up "${link}" "${iface}" "${ip}" "${netmask}" \
-                        "${vlan}" "${macaddr}" "" "${mtu}"
-                fi
-            done
-
-            for key in ${bootparam_ip_keys}; do
-                if [[ ${key} == ${tag}[0-9]-ip ]] || [[ ${key} == ${tag}[0-9][0-9]-ip ]]; then
-                    iface=${key//-ip/}
-                    eval "ip=\${BOOT_${iface}_ip}"
-                    eval "netmask=\${BOOT_${iface}_netmask}"
-                    eval "vlan=\${BOOT_${iface}_vlan_id}"
-                    eval "macaddr=\${BOOT_${iface}_mac}"
-                    eval "mtu=\${CONFIG_${iface}_mtu}"
-                    echo vnic_up "${link}" "${iface}" "${ip}" "${netmask}" "${vlan}" "${macaddr}" "${mtu}"
-                    vnic_up "${link}" "${iface}" "${ip}" "${netmask}" \
-                        "${vlan}" "${macaddr}" "" "${mtu}"
-                fi
-            done
-
-            for key in ${config_ip6_keys}; do
-                if [[ ${key} == ${tag}[0-9]_ip6 ]] || [[ ${key} == ${tag}[0-9][0-9]_ip6 ]]; then
-                    iface=${key//_ip6/}
-                    #echo "   iface=$iface"
-                    eval "ip=\${CONFIG_${iface}_ip6}"
-                    eval "vlan=\${CONFIG_${iface}_vlan_id}"
-                    eval "macaddr=\${CONFIG_${iface}_mac}"
-                    eval "mtu=\${CONFIG_${iface}_mtu}"
-
-                    echo vnic_up6 "${link}" "${iface}" "${ip}" "${vlan}" "${macaddr}" "${mtu}"
-                    vnic_up6 "${link}" "${iface}" "${ip}" \
-                        "${vlan}" "${macaddr}" "${mtu}"
-                fi
-            done
-
-            for key in ${bootparam_ip6_keys}; do
-                if [[ ${key} == ${tag}[0-9]-ip6 ]] || [[ ${key} == ${tag}[0-9][0-9]-ip6 ]]; then
-                    iface=${key//-ip6/}
-                    eval "ip=\${BOOT_${iface}_ip6}"
-                    eval "vlan=\${BOOT_${iface}_vlan_id}"
-                    eval "macaddr=\${BOOT_${iface}_mac}"
-                    eval "mtu=\${CONFIG_${iface}_mtu}"
-                    echo vnic_up6 "${link}" "${iface}" "${ip}" "${vlan}" "${macaddr}" "${mtu}"
-                    vnic_up6 "${link}" "${iface}" "${ip}" \
-                        "${vlan}" "${macaddr}" "${mtu}"
-                fi
-            done
-
-        done
-    fi
 else
     # Non-global zones
 

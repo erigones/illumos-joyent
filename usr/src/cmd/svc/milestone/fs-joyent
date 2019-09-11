@@ -12,6 +12,7 @@
 
 #
 # Copyright (c) 2018, Joyent, Inc.
+# Copyright (c) 2019, Erigones, s. r. o.
 #
 
 set -o xtrace
@@ -70,14 +71,36 @@ function mount_zfs
     echo ${output} 1>&2
 }
 
+# Assume the system zpool is zones, but if a different system pool
+# identifies itself (by virtue of the .system_pool file being present in the
+# pool's root dataset), then use that system pool instead.
+SYS_ZPOOL=zones
+
+# Are we booted from HDD? (0/1)
+BOOTED_FROM_HDD=1
+
+# Placeholder for current Boot Environment name
+BENAME="dcos-1"
+
+# Try to determine if we are booted from HDD
+# Do this by finding out whether "/" is being mounted as "zfs"
+mounted "/" "-" "zfs" < /etc/mnttab || BOOTED_FROM_HDD=0
+
+if [ ${BOOTED_FROM_HDD} -ne 0 ]; then
+    BENAME=$(/usr/sbin/beadm list -H | grep ';N' | nawk -F';' '{ print $1 }')
+    # Determine "bootfs" to help us decide whether we run from HDD or not.
+    # bootfs will be "-" if we (most probably) do not run from HDD
+    # This can be also checked with beadm list - XXX
+    bootfs=$(zpool get -H -o value bootfs ${SYS_ZPOOL})
+    [ "x${bootfs}" == "x" ] && fatal "Root pool bootfs property not defined"
+
+    # SYS_ZPOOL is to be determined from bootfs property
+    SYS_ZPOOL=$(echo ${bootfs} | awk -F'/' '{ print $1 }')
+fi
+
 /bin/bootparams | grep "^noimport=true" >/dev/null
 if [ $? -ne 0 ]; then
     # If the zpool doesn't exist, then there's nothing to mount.
-
-    # Assume the system zpool is zones, but if a different system pool
-    # identifies itself (by virtue of the .system_pool file being present in the
-    # pool's root dataset), then use that system pool instead.
-    SYS_ZPOOL=zones
 
     # Import specified zpools, or all zpools available
     pools=$(/bin/bootparams | egrep "^zpools?=" | cut -d= -f2 | tr , ' ')
@@ -87,29 +110,37 @@ if [ $? -ne 0 ]; then
 
     for pool in $pools; do
         zpool import -f $pool
-	# Due to early, failed attempts to support the filesystem_limits
-	# feature we now need to ensure the dependent feature is enabled.
-	zpool set feature@extensible_dataset=enabled $pool
-        if [[ -f /$pool/.system_pool ]]; then
+        # Due to early, failed attempts to support the filesystem_limits
+        # feature we now need to ensure the dependent feature is enabled.
+        zpool set feature@extensible_dataset=enabled $pool
+        if [[ ${BOOTED_FROM_HDD} -ne 1 && -f /${pool}/.system_pool ]]; then
             SYS_ZPOOL=$pool
         fi
     done
 
+#    # Explicitly set features and mount system zpool default dataset
+#    zpool set feature@extensible_dataset=enabled ${SYS_ZPOOL}
+#    zfs mount ${SYS_ZPOOL}
+#
     svccfg -s svc:/system/smartdc/init setprop \
         config/zpool=${SYS_ZPOOL}
     svccfg -s svc:/system/smartdc/init:default refresh
 
-    # If the destroy_zpools boot parameter is set, destroy all zpools
-    /bin/bootparams | grep "^destroy_zpools=true" >/dev/null
-    if [ $? -eq 0 ]; then
-        destroy_zpools
-    fi
+    # Can destroy pools only when running from USB
+    if [ ${BOOTED_FROM_HDD} -eq 0 ]; then
 
-    # A machine is reset to its original unsetup state (i.e. a 'factory reset')
-    # when the smartdc:factoryreset ZFS user property is set on the var dataset.
-    reset=$(zfs get -H -o value smartdc:factoryreset ${SYS_ZPOOL}/var)
-    if [ "${reset}" == "yes" ]; then
-        destroy_zpools
+        # If the destroy_zpools boot parameter is set, destroy all zpools
+        /bin/bootparams | grep "^destroy_zpools=true" >/dev/null
+        if [ $? -eq 0 ]; then
+            destroy_zpools
+        fi
+
+        # A machine is reset to its original unsetup state (i.e. a 'factory reset')
+        # when the smartdc:factoryreset ZFS user property is set on the var dataset.
+        reset=$(zfs get -H -o value smartdc:factoryreset ${SYS_ZPOOL}/var)
+        if [ ${reset} == "yes" ]; then
+            destroy_zpools
+        fi
     fi
 
     # Capture the zpool's status output in the method's log file for
@@ -126,8 +157,18 @@ if [ $? -ne 0 ]; then
         # persistent version after mounting zones/config.
         cp /etc/zones/SUNWdefault.xml /tmp/
 
-        # Mount and configure all system datasets
-        mount_zfs ${SYS_ZPOOL}/var /var
+        if [ ${BOOTED_FROM_HDD} -eq 0 ]; then
+            VARDS="${SYS_ZPOOL}/var"
+            if [[ -n $(/bin/bootparams | grep '^smartos=true') ]]; then
+                mount -F lofs /usbkey/shadow /etc/shadow
+                mount -F lofs /usbkey/ssh /etc/ssh
+            fi
+        else
+            VARDS="${bootfs}/var"
+        fi
+
+        # We are running from USB thus we have to mount some directories read-write
+        mount_zfs "${VARDS}" /var
         mount_zfs ${SYS_ZPOOL}/config /etc/zones
         mount_zfs ${SYS_ZPOOL}/opt /opt
 
@@ -163,13 +204,11 @@ if [ $? -ne 0 ]; then
             mount_zfs ${SYS_ZPOOL}/usbkey /usbkey
         fi
 
-        if [[ -n $(/bin/bootparams | grep '^smartos=true') ]]; then
-            mount -F lofs /usbkey/shadow /etc/shadow
-            mount -F lofs /usbkey/ssh /etc/ssh
+        _swapdev=/dev/zvol/dsk/${SYS_ZPOOL}/swap
+        if ! swap -l | grep -q ^${_swapdev}; then
+            swap -a ${_swapdev} || fatal "failed to configure swap device"
         fi
 
-        swap -a /dev/zvol/dsk/${SYS_ZPOOL}/swap || \
-            fatal "failed to configure swap device"
 
         #
         # Configure the dump device on top of a ZFS volume.  In addition to the
@@ -198,7 +237,7 @@ if [ $? -ne 0 ]; then
                 ${SYS_ZPOOL}/cores/global
         fi
 
-        ln -s /${SYS_ZPOOL}/global/cores /cores
+        [[ ! -d /cores ]] && ln -s /${SYS_ZPOOL}/global/cores /cores
 
         [[ -f /${SYS_ZPOOL}/currbooted ]] && \
             mv /${SYS_ZPOOL}/currbooted /${SYS_ZPOOL}/lastbooted
@@ -206,9 +245,19 @@ if [ $? -ne 0 ]; then
     fi
 fi
 
+if [ ${BOOTED_FROM_HDD} -eq 1 ]; then
+    # Booted from HDD
+    echo "Running from HDD..." > /dev/console
+    exit 0
+elif /bin/bootparams | grep "^netboot=true" > /dev/null; then
+    echo "Running from NET..." > /dev/console
+	exit 0
+else
+    echo "Running from USB..." > /dev/console
+fi
 
-# The rest only applies to the headnode
-/bin/bootparams | grep "^headnode=true" >/dev/null || exit $SMF_EXIT_OK
+# The rest only applies to the headnode and Danube Cloud compute node
+/bin/bootparams | egrep "^(headnode=true|computenode=true)" >/dev/null || exit $SMF_EXIT_OK
 
 # If we rebooted during an upgrade, we're in deep trouble.
 if [ -d /var/upgrade_in_progress ]; then
@@ -251,7 +300,7 @@ function make_usb_copy_if_possible
 
     echo "" > /dev/console
     echo "Moving files from USB boot device onto disk storage." > /dev/console
-    echo "This may take several minutes. Please note the time..." > /dev/console
+    echo "This may take several minutes." > /dev/console
     echo "" > /dev/console
     echo "" > /dev/console
 

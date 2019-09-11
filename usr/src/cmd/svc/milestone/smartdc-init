@@ -11,13 +11,15 @@
 #
 
 #
-# Copyright (c) 2018, Joyent, Inc.
+# Copyright 2016 Joyent, Inc.
+# Copyright 2018 Erigones, s. r. o.
 #
 
 export PS4='[\D{%FT%TZ}] ${BASH_SOURCE}:${LINENO}: ${FUNCNAME[0]:+${FUNCNAME[0]}(): }'
 set -o xtrace
 
 . /lib/svc/share/smf_include.sh
+. /lib/svc/share/fs_include.sh
 . /lib/sdc/config.sh
 
 # Make sure working directory is / to prevent unmounting problems.
@@ -40,6 +42,26 @@ wait_and_clear()
         done
         sleep 1
     done
+}
+
+create_setup_status()
+{
+    [[ -e /var/lib/setup.json ]] && rm -f /var/lib/setup.json
+    echo "{" \
+	"\"node_type\": \"computenode\"," \
+	"\"start_time\": \"$(date "+%Y-%m-%dT%H:%M:%SZ")\"," \
+	"\"current_state\": \"setup_complete\"," \
+	"\"seen_states\": [" \
+	"\"zpool_created\"," \
+	"\"filesystems_setup\"," \
+	"\"agents_installed\"," \
+	"\"upgrade_complete\"," \
+	"\"setup_complete\"" \
+	"]," \
+	"\"complete\": true," \
+	"\"last_updated\": \"$(date "+%Y-%m-%dT%H:%M:%SZ")\"" \
+	"}" >/var/lib/setup.json
+    chmod 400 /var/lib/setup.json
 }
 
 # Sets the default firewall rules for a node (unless they're already set)
@@ -183,13 +205,18 @@ install_config()
     fi
 }
 
+# Are we booted from HDD? (0/1)
+BOOTED_FROM_HDD=1
+
+# Try to determine if we are booted from HDD
+# Do this by finding out whether "/" is being mounted as "zfs"
+mounted "/" "-" "zfs" < /etc/mnttab || BOOTED_FROM_HDD=0
+
 case "$1" in
 'start')
 
     # Always setup socket filter no matter what happens next.
     /sbin/soconfig -F datafilt datafilt prog '2:2:0,2:2:6,26:2:0,26:2:6'
-
-    USBMOUNT=
 
     # If we're not importing the pools, we shouldn't try to setup as a headnode
     # (since there'll be no zpool)
@@ -197,16 +224,20 @@ case "$1" in
         exit $SMF_EXIT_OK
     fi
 
-    # If we're a headnode, we'll not have AMQP args on the cmdline, and we want
-    # to run an initial_script first anyway.
-    if /bin/bootparams | grep "^headnode=true" > /dev/null 2>&1; then
-        USBMOUNT=/mnt/`svcprop -p joyentfs/usb_mountpoint svc:/system/filesystem/smartdc:default`
+    USB_PATH="/$(svcprop -p joyentfs/usb_copy_path svc:/system/filesystem/smartdc:default)"
+    USBMOUNT="/mnt/$(svcprop -p joyentfs/usb_mountpoint svc:/system/filesystem/smartdc:default)"
 
-	# No config file (e.g. user quit during interactive configuration), so
-	# treat as if "noimport=true".
-	[[ ! -f $USBMOUNT/config ]] && exit $SMF_EXIT_OK
+    # We want to run
+    if /bin/bootparams | egrep "^(headnode=true|computenode=true)" > /dev/null 2>&1; then
+        if [[ -n $(/bin/bootparams | grep "^headnode=true") && ${BOOTED_FROM_HDD} -eq 0 ]]; then
+            USB_PATH="${USBMOUNT}"
+        fi
 
-        initial_script=${USBMOUNT}/$(grep "^initial_script=" $USBMOUNT/config.inc/generic 2>/dev/null | cut -d'=' -f2-)
+        # No config file (e.g. user quit during interactive configuration), so
+        # treat as if "noimport=true".
+        [[ ! -f "${USB_PATH}/config" ]] && exit $SMF_EXIT_OK
+
+        initial_script=${USB_PATH}/$(grep "^initial_script=" "${USB_PATH}/config.inc/generic" 2>/dev/null | cut -d'=' -f2-)
         if [ -n ${initial_script} ] && [ -e ${initial_script} ]; then
             # Execute the script
             ${initial_script}
@@ -220,17 +251,19 @@ case "$1" in
                 exit $SMF_EXIT_ERR_FATAL
             fi
         fi
-    elif /bin/bootparams | grep "^smartos=true" > /dev/null 2>&1; then
+    fi
+    if /bin/bootparams | grep "^smartos=true" > /dev/null 2>&1; then
         set_default_fw_rules
     else
-	install_config
+        install_config
     fi
 
     configure_fwadm
     configure_vmadm
 
-    if /bin/bootparams | grep "^headnode=true" > /dev/null 2>&1; then
-        /usr/sbin/umount $USBMOUNT
+    # Unmount only if running from live image
+    if [[ ${BOOTED_FROM_HDD} -eq 0 ]]; then
+        /usr/sbin/umount "${USBMOUNT}"
     fi
 
     ;;
