@@ -41,6 +41,7 @@ FSSVCS= \
 FSMANIFESTS= $(FSSVCS:%=$(ROOTSVCSYSTEMFILESYSTEM)/%)
 
 NETSVCS= \
+	network-cleanup.xml \
 	network-early-admin.xml \
 	network-initial.xml \
 	network-install.xml \
