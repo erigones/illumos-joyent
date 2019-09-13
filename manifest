@@ -30,7 +30,6 @@ d boot 0755 root sys
 d boot/acpi 0755 root sys
 d boot/acpi/tables 0755 root sys
 f boot/cdboot 0444 root sys
-d boot/conf.d 0755 root sys
 d boot/defaults 0755 root sys
 f boot/defaults/loader.conf 0444 root sys
 d boot/fonts 0755 root sys
@@ -50,6 +49,7 @@ f boot/forth/beadm.4th 0444 root sys
 f boot/forth/beastie.4th 0444 root sys
 f boot/forth/brand-danubecloud.4th 0444 root sys
 f boot/forth/brand-illumos.4th 0444 root sys
+f boot/forth/brand-smartos.4th 0444 root sys
 f boot/forth/brand.4th 0444 root sys
 f boot/forth/check-password.4th 0444 root sys
 f boot/forth/color.4th 0444 root sys
@@ -59,6 +59,7 @@ f boot/forth/frames.4th 0444 root sys
 f boot/forth/loader.4th 0444 root sys
 f boot/forth/logo-beastie.4th 0444 root sys
 f boot/forth/logo-beastiebw.4th 0444 root sys
+f boot/forth/logo-danubecloud.4th 0444 root sys
 f boot/forth/logo-fbsdbw.4th 0444 root sys
 f boot/forth/logo-illumos.4th 0444 root sys
 f boot/forth/logo-orb.4th 0444 root sys
@@ -100,12 +101,13 @@ f boot/grub/ufs_stage1_5 0644 root sys
 f boot/grub/vstafs_stage1_5 0644 root sys
 f boot/grub/xfs_stage1_5 0644 root sys
 f boot/grub/zfs_stage1_5 0644 root sys
+f boot/loader 0444 root sys
+f boot/loader64.efi 0555 root sys
 f boot/loader.help 0444 root sys
 f boot/loader.rc 0444 root sys
 f boot/pmbr 0444 root sys
 f boot/pxeboot 0444 root sys
 d boot/solaris 0755 root sys
-f boot/solaris/bootenv.rc 0644 root root
 f boot/solaris.xpm 0644 root sys
 d boot/solaris/bin 0755 root sys
 f boot/solaris/bin/create_diskmap 0555 root sys
@@ -113,12 +115,13 @@ f boot/solaris/bin/create_ramdisk 0555 root sys
 f boot/solaris/bin/extract_boot_filelist 0555 root sys
 f boot/solaris/bin/symdef 0555 root sys
 f boot/solaris/bin/update_grub 0555 root sys
+f boot/solaris/bootenv.rc 0644 root sys
 d boot/solaris/devicedb 0755 root sys
 f boot/solaris/devicedb/master 0644 root sys
-f boot/solaris/filelist.safe 0644 root sys
 f boot/solaris/filelist.ramdisk 0644 root sys
+f boot/solaris/filelist.safe 0644 root sys
 f boot/splashimage.xpm 0644 root sys
-f boot/loader 0444 root sys
+f boot/danubecloud.png 0444 root sys
 
 d dev 0755 root sys
 s dev/allkmem=../devices/pseudo/mm@0:allkmem

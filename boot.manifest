@@ -27,6 +27,7 @@ f boot/defaults/loader.conf 0444 root sys
 d boot/forth 0755 root sys
 f boot/forth/beadm.4th 0444 root sys
 f boot/forth/beastie.4th 0444 root sys
+f boot/forth/brand-danubecloud.4th 0444 root sys
 f boot/forth/brand-illumos.4th 0444 root sys
 f boot/forth/brand-smartos.4th 0444 root sys
 f boot/forth/brand.4th 0444 root sys
@@ -38,6 +39,7 @@ f boot/forth/frames.4th 0444 root sys
 f boot/forth/loader.4th 0444 root sys
 f boot/forth/logo-beastie.4th 0444 root sys
 f boot/forth/logo-beastiebw.4th 0444 root sys
+f boot/forth/logo-danubecloud.4th 0444 root sys
 f boot/forth/logo-fbsdbw.4th 0444 root sys
 f boot/forth/logo-illumos.4th 0444 root sys
 f boot/forth/logo-orb.4th 0444 root sys
@@ -74,4 +76,4 @@ f boot/solaris/devicedb/master 0644 root sys
 f boot/solaris/filelist.ramdisk 0644 root sys
 f boot/solaris/filelist.safe 0644 root sys
 f boot/splashimage.xpm 0644 root sys
-f boot/triton.png 0444 root sys
+f boot/danubecloud.png 0444 root sys
