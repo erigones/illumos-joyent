@@ -138,7 +138,7 @@ if [ $? -ne 0 ]; then
         # A machine is reset to its original unsetup state (i.e. a 'factory reset')
         # when the smartdc:factoryreset ZFS user property is set on the var dataset.
         reset=$(zfs get -H -o value smartdc:factoryreset ${SYS_ZPOOL}/var)
-        if [ ${reset} == "yes" ]; then
+        if [ "${reset}" == "yes" ]; then
             destroy_zpools
         fi
     fi
