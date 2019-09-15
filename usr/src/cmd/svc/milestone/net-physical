@@ -453,6 +453,11 @@ if smf_is_globalzone; then
         load_sdc_bootparams
     fi
 
+    if [[ "${BOOT_noimport}" == "true" ]]; then
+        echo 'Boot flag "noimport=true" is set. Not configuring network.'
+        exit ${SMF_EXIT_OK}
+    fi
+
     # Set up etherstubs
     if [[ -n "${CONFIG_etherstub}" ]]; then
         typeset -a Etherstubs=(${CONFIG_etherstub//,/ })
