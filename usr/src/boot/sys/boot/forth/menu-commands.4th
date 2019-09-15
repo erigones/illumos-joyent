@@ -358,6 +358,45 @@ create chaincmd 1030 chars allot
 ;
 
 \
+\ Destroy zpools at boot
+\
+
+: destroy_zpools_enabled? ( -- flag )
+	s" destroy_zpools" getenv -1 <> dup if
+		swap drop ( c-addr flag -- flag )
+	then
+;
+
+: destroy_zpools_enable ( -- )
+	s" set destroy_zpools=true" evaluate
+;
+
+: destroy_zpools_disable ( -- )
+	s" destroy_zpools" unsetenv
+;
+
+: init_destroy_zpools ( N -- N )
+	destroy_zpools_enabled? if
+		toggle_menuitem ( n -- n )
+	then
+;
+
+: toggle_destroy_zpools ( N -- N TRUE )
+	toggle_menuitem
+	menu-redraw
+
+	\ Now we're going to make the change effective
+
+	dup toggle_stateN @ 0= if
+		destroy_zpools_disable
+	else
+		destroy_zpools_enable
+	then
+
+	TRUE \ loop menu again
+;
+
+\
 \ Disaster Recovery boot
 \
 
@@ -371,16 +410,16 @@ create chaincmd 1030 chars allot
 	s" set noimport=true" evaluate
 	s" smartos" getenv? if
 		s" set standalone=true" evaluate
-		s" set smartos=false" evaluate
+		s" set hostname=danubecloud" evaluate
 	then
+	singleuser_enable
 ;
 
 : rescue_disable ( -- )
 	s" noimport" unsetenv
 	s" standalone" unsetenv
-	s" smartos" getenv? if
-		s" set smartos=true" evaluate
-	then
+	s" hostname" unsetenv
+	singleuser_disable
 ;
 
 : init_rescue ( N -- N )

@@ -122,6 +122,8 @@ f boot/solaris/filelist.ramdisk 0644 root sys
 f boot/solaris/filelist.safe 0644 root sys
 f boot/splashimage.xpm 0644 root sys
 f boot/danubecloud.png 0444 root sys
+f boot/danubecloud-banner.png 0444 root sys
+f boot/danubecloud-logo.png 0444 root sys
 
 d dev 0755 root sys
 s dev/allkmem=../devices/pseudo/mm@0:allkmem

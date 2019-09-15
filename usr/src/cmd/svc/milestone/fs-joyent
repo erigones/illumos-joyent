@@ -118,10 +118,10 @@ if [ $? -ne 0 ]; then
         fi
     done
 
-#    # Explicitly set features and mount system zpool default dataset
-#    zpool set feature@extensible_dataset=enabled ${SYS_ZPOOL}
-#    zfs mount ${SYS_ZPOOL}
-#
+    # Explicitly set features and mount system zpool default dataset
+    zpool set feature@extensible_dataset=enabled ${SYS_ZPOOL}
+    zfs mount ${SYS_ZPOOL}
+
     svccfg -s svc:/system/smartdc/init setprop \
         config/zpool=${SYS_ZPOOL}
     svccfg -s svc:/system/smartdc/init:default refresh

@@ -26,8 +26,8 @@ set menuset_name1="main"
 
 set mainmenu_init[1]="init_boot"
 
-set mainmenu_caption[1]="Boot SmartOS [Enter]"
-set mainansi_caption[1]="^[1mB^[moot SmartOS ^[1m[Enter]^[m"
+set mainmenu_caption[1]="Boot Danube Cloud [Enter]"
+set mainansi_caption[1]="^[1mB^[moot Danube Cloud ^[1m[Enter]^[m"
 set mainmenu_command[1]="boot"
 \ keycode set by init_boot
 
@@ -50,6 +50,28 @@ set mainmenu_caption[4]="Configure Boot [O]ptions..."
 set mainmenu_command[4]="2 goto_menu"
 set mainmenu_keycode[4]=111
 set mainansi_caption[4]="Configure Boot ^[1mO^[mptions..."
+
+\ Boot Environments are (supported) only on ZFS
+s" currdev" getenv drop 4 s" zfs:" compare 0= be-pages and [if]
+set mainmenu_caption[5]="Select Boot [E]nvironment..."
+set mainmenu_command[5]="3 goto_menu"
+set mainmenu_keycode[5]=101
+set mainansi_caption[5]="Select Boot ^[1mE^[mnvironment..."
+
+  s" chain_disk" getenv? [if]
+	set mainmenu_caption[6]="Chain[L]oad ${chain_disk}"
+	set mainmenu_command[6]="chain ${chain_disk}"
+	set mainmenu_keycode[6]=108
+	set mainansi_caption[6]="Chain^[1mL^[moad ${chain_disk}"
+  [then]
+[else]
+  s" chain_disk" getenv? [if]
+	set mainmenu_caption[5]="Chain[L]oad ${chain_disk}"
+	set mainmenu_command[5]="chain ${chain_disk}"
+	set mainmenu_keycode[5]=108
+	set mainansi_caption[5]="Chain^[1mL^[moad ${chain_disk}"
+  [then]
+[then]
 
 \
 \ BOOT OPTIONS MENU
@@ -93,13 +115,79 @@ set optionsmenu_keycode[5]=100
 set optionsansi_caption[5]="^[1mD^[mrop into kmdb........ ^[34;1mOff^[m"
 set optionstoggled_ansi[5]="^[1mD^[mrop into kmdb........ ^[32;7mOn^[m"
 
-set optionsmenu_init[6]="init_rescue"
-set optionsmenu_caption[6]="[R]escue Mode......... Off"
-set optionstoggled_text[6]="[R]escue Mode......... On"
-set optionsmenu_command[6]="toggle_rescue"
-set optionsmenu_keycode[6]=114
-set optionsansi_caption[6]="^[1mR^[mescue Mode........... ^[34;1mOff^[m"
-set optionstoggled_ansi[6]="^[1mR^[mescue Mode........... ^[32;7mOn^[m"
+\ if we boot from USB, enable rescue and destroy_zpools
+\ if we boot from disk, enable single user and reset password (== recovery)
+s" currdev" getenv drop 4 s" zfs:" compare 0= be-pages and invert [if]
+	set optionsmenu_init[6]="init_rescue"
+	set optionsmenu_caption[6]="[R]escue Mode......... Off"
+	set optionstoggled_text[6]="[R]escue Mode......... On"
+	set optionsmenu_command[6]="toggle_rescue"
+	set optionsmenu_keycode[6]=114
+	set optionsansi_caption[6]="^[1mR^[mescue Mode........... ^[34;1mOff^[m"
+	set optionstoggled_ansi[6]="^[1mR^[mescue Mode........... ^[32;7mOn^[m"
+
+	set optionsmenu_init[7]="init_destroy_zpools"
+	set optionsmenu_caption[7]="Destroy [Z]pools...... Off"
+	set optionstoggled_text[7]="Destroy [Z]pools...... On"
+	set optionsmenu_command[7]="toggle_destroy_zpools"
+	set optionsmenu_keycode[7]=122
+	set optionsansi_caption[7]="Destroy ^[1mR^[mpools........ ^[34;1mOff^[m"
+	set optionstoggled_ansi[7]="Destroy ^[1mR^[mpools........ ^[32;7mOn^[m"
+  [else]
+	set optionsmenu_init[6]="init_singleuser"
+	set optionsmenu_caption[6]="[S]ingle User......... Off"
+	set optionstoggled_text[6]="[S]ingle User......... On"
+	set optionsmenu_command[6]="toggle_singleuser"
+	set optionsmenu_keycode[6]=115
+	set optionsansi_caption[6]="^[1mS^[mingle User........... ^[34;1mOff^[m"
+	set optionstoggled_ansi[6]="^[1mS^[mingle User........... ^[32;7mOn^[m"
+
+	set optionsmenu_init[7]="init_rescue"
+	set optionsmenu_caption[7]="[R]esetPwd (root/root) Off"
+	set optionstoggled_text[7]="[R]esetPwd (root/root) On"
+	set optionsmenu_command[7]="toggle_rescue"
+	set optionsmenu_keycode[7]=114
+	set optionsansi_caption[7]="^[1mR^[meset Pass (root/root) ^[34;1mOff^[m"
+	set optionstoggled_ansi[7]="^[1mR^[meset Pass (root/root) ^[32;7mOn^[m"
+[then]
+
+\
+\ BOOT ENVIRONMENT MENU
+\
+
+\ the BE list is read from [pool]/boot/menu.lst, the list in file
+\ is ordered from oldest to most recent.
+\ the BE menu will list entries from most recent to oldest,
+\ so the first page in menu is last page in menu.lst
+
+be-pages [if]
+  set zfs_be_currpage=1
+  be-set-page			\ set page data
+  set menuset_name3="bootenv"
+
+  set bootenvmenu_command[1]="be_draw_screen 1 goto_menu"
+  set bootenvmenu_keycode[1]=8
+
+  set bootenvmenu_keycode[2]=8
+  set bootenvmenu_command[2]="be_draw_screen 1 goto_menu"
+
+  set bemenu_current="Active: "
+  set beansi_current="^[1m${bemenu_current}^[m"
+  set bemenu_bootfs="bootfs: "
+  set beansi_bootfs="^[1m${bemenu_bootfs}^[m"
+  set bemenu_page="[P]age: "
+  set beansi_page="^[1mP^[mage: "
+  set bemenu_pageof=" of "
+  set beansi_pageof="${bemenu_pageof}"
+
+  set bootenvmenu_init="init_bootenv"
+
+  set bootenvmenu_keycode[3]=112
+  set bootenvmenu_command[3]="set_be_page"
+
+  set bootenvmenu_options=4
+  set bootenvmenu_optionstext="Boot Environments:"
+[then]
 
 \ Enable automatic booting (add ``autoboot_delay=N'' to loader.conf(5) to
 \ customize the timeout; default is 10-seconds)

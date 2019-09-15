@@ -77,3 +77,5 @@ f boot/solaris/filelist.ramdisk 0644 root sys
 f boot/solaris/filelist.safe 0644 root sys
 f boot/splashimage.xpm 0644 root sys
 f boot/danubecloud.png 0444 root sys
+f boot/danubecloud-banner.png 0444 root sys
+f boot/danubecloud-logo.png 0444 root sys
