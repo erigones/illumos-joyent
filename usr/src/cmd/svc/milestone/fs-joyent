@@ -159,10 +159,6 @@ if [ $? -ne 0 ]; then
 
         if [ ${BOOTED_FROM_HDD} -eq 0 ]; then
             VARDS="${SYS_ZPOOL}/var"
-            if [[ -n $(/bin/bootparams | grep '^smartos=true') ]]; then
-                mount -F lofs /usbkey/shadow /etc/shadow
-                mount -F lofs /usbkey/ssh /etc/ssh
-            fi
         else
             VARDS="${bootfs}/var"
         fi
@@ -202,6 +198,12 @@ if [ $? -ne 0 ]; then
             -n $(/bin/bootparams | grep '^smartos=true') ]]; then
             mkdir /usbkey
             mount_zfs ${SYS_ZPOOL}/usbkey /usbkey
+        fi
+
+        if [[ -n $(/bin/bootparams | grep '^smartos=true') ]] || \
+           [[ ${BOOTED_FROM_HDD} -eq 0 ]]; then
+            mount -F lofs /usbkey/shadow /etc/shadow
+            mount -F lofs /usbkey/ssh /etc/ssh
         fi
 
         _swapdev=/dev/zvol/dsk/${SYS_ZPOOL}/swap
