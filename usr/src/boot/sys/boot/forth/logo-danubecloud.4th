@@ -34,6 +34,15 @@
 
 : logo ( x y -- ) \ B/W Orb Danube Cloud
 
+	s" efi-version" getenv? if
+		s" currdev" getenv drop 4 s" zfs:" compare 0= be-pages and if
+			\ don't display logo when diskbooting using EFI
+			\ because the layout of boot screen is different
+			2drop exit
+		then
+	then
+
+
 	0 530 210 0 0 s" /boot/danubecloud-logo.png" fb-putimage if 2drop exit then
                                                  
 	s"                    ,(((((((((,                   logo+
