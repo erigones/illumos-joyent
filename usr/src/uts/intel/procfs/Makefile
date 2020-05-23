@@ -24,7 +24,8 @@
 # Copyright 2006 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
-# Copyright (c) 2018, Joyent, Inc.
+# Copyright 2019 Joyent, Inc.
+# Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
 
 #
 #	This makefile drives the production of the procfs file system
@@ -83,8 +84,7 @@ $(OBJS_DIR)/prsubr.o := SMOFF += all_func_returns
 $(OBJS_DIR)/prcontrol.o := SMOFF += all_func_returns
 $(OBJS_DIR)/prioctl.o := SMOFF += signed
 
-# false positives
-$(OBJS_DIR)/prvnops.o := SMOFF += strcpy_overflow
+LDFLAGS         += -dy -Nfs/namefs
 
 #
 #	Default build targets.

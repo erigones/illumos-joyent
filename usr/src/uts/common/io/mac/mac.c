@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2019 Joyent, Inc.
+ * Copyright 2020 Joyent, Inc.
  * Copyright 2015 Garrett D'Amore <garrett@damore.org>
  */
 
@@ -1648,7 +1648,8 @@ mac_hwrings_idx_get(mac_handle_t mh, uint_t idx, mac_group_handle_t *hwgh,
 
 	if (rtype == MAC_RING_TYPE_RX) {
 		grp = mip->mi_rx_groups;
-	} else if (rtype == MAC_RING_TYPE_TX) {
+	} else {
+		ASSERT(rtype == MAC_RING_TYPE_TX);
 		grp = mip->mi_tx_groups;
 	}
 
@@ -2610,7 +2611,7 @@ mac_client_restart(mac_client_impl_t *mcip)
 minor_t
 mac_minor_hold(boolean_t sleep)
 {
-	minor_t	minor;
+	id_t id;
 
 	/*
 	 * Grab a value from the arena.
@@ -2618,16 +2619,14 @@ mac_minor_hold(boolean_t sleep)
 	atomic_inc_32(&minor_count);
 
 	if (sleep)
-		minor = (uint_t)id_alloc(minor_ids);
-	else
-		minor = (uint_t)id_alloc_nosleep(minor_ids);
+		return ((uint_t)id_alloc(minor_ids));
 
-	if (minor == 0) {
+	if ((id = id_alloc_nosleep(minor_ids)) == -1) {
 		atomic_dec_32(&minor_count);
 		return (0);
 	}
 
-	return (minor);
+	return ((uint_t)id);
 }
 
 /*
@@ -4738,6 +4737,32 @@ mac_bridge_tx(mac_impl_t *mip, mac_ring_handle_t rh, mblk_t *mp)
 	if (mh == NULL) {
 		mp = mac_ring_tx((mac_handle_t)mip, rh, mp);
 	} else {
+		/*
+		 * The bridge may place this mblk on a provider's Tx
+		 * path, a mac's Rx path, or both. Since we don't have
+		 * enough information at this point, we can't be sure
+		 * that the destination(s) are capable of handling the
+		 * hardware offloads requested by the mblk. We emulate
+		 * them here as it is the safest choice. In the
+		 * future, if bridge performance becomes a priority,
+		 * we can elide the emulation here and leave the
+		 * choice up to bridge.
+		 *
+		 * We don't clear the DB_CKSUMFLAGS here because
+		 * HCK_IPV4_HDRCKSUM (Tx) and HCK_IPV4_HDRCKSUM_OK
+		 * (Rx) still have the same value. If the bridge
+		 * receives a packet from a HCKSUM_IPHDRCKSUM NIC then
+		 * the mac(s) it is forwarded on may calculate the
+		 * checksum again, but incorrectly (because the
+		 * checksum field is not zero). Until the
+		 * HCK_IPV4_HDRCKSUM/HCK_IPV4_HDRCKSUM_OK issue is
+		 * resovled, we leave the flag clearing in bridge
+		 * itself.
+		 */
+		if ((DB_CKSUMFLAGS(mp) & (HCK_TX_FLAGS | HW_LSO_FLAGS)) != 0) {
+			mac_hw_emul(&mp, NULL, NULL, MAC_ALL_EMULS);
+		}
+
 		mp = mac_bridge_tx_cb(mh, rh, mp);
 		mac_bridge_ref_cb(mh, B_FALSE);
 	}
@@ -5210,7 +5235,7 @@ mac_group_mov_ring(mac_impl_t *mip, mac_group_t *d_group, mac_ring_t *ring)
 
 	ASSERT(MAC_PERIM_HELD((mac_handle_t)mip));
 	ASSERT(d_group != NULL);
-	ASSERT(s_group->mrg_mh == d_group->mrg_mh);
+	ASSERT(s_group == NULL || s_group->mrg_mh == d_group->mrg_mh);
 
 	if (s_group == d_group)
 		return (0);
@@ -5512,6 +5537,11 @@ mac_add_macaddr_vlan(mac_impl_t *mip, mac_group_t *group, uint8_t *addr,
 		return (0);
 	}
 
+	/*
+	 * We failed to set promisc mode and we are about to free 'map'.
+	 */
+	map->ma_nusers = 0;
+
 bail:
 	if (hw_vlan) {
 		int err2 = mac_group_remvlan(group, vid);
@@ -5567,6 +5597,8 @@ mac_remove_macaddr_vlan(mac_address_t *map, uint16_t vid)
 	if (map->ma_nusers > 0)
 		return (0);
 
+	VERIFY3S(map->ma_nusers, ==, 0);
+
 	/*
 	 * The MAC address is no longer used by any MAC client, so
 	 * remove it from its associated group. Turn off promiscuous
@@ -5591,7 +5623,16 @@ mac_remove_macaddr_vlan(mac_address_t *map, uint16_t vid)
 			 * If we fail to remove the MAC address HW
 			 * filter but then also fail to re-add the
 			 * VLAN HW filter then we are in a busted
-			 * state and should just crash.
+			 * state. We do our best by logging a warning
+			 * and returning the original 'err' that got
+			 * us here. At this point, traffic for this
+			 * address + VLAN combination will be dropped
+			 * until the user reboots the system. In the
+			 * future, it would be nice to have a system
+			 * that can compare the state of expected
+			 * classification according to mac to the
+			 * actual state of the provider, and report
+			 * and fix any inconsistencies.
 			 */
 			if (MAC_GROUP_HW_VLAN(group)) {
 				int err2;
@@ -5605,6 +5646,7 @@ mac_remove_macaddr_vlan(mac_address_t *map, uint16_t vid)
 				}
 			}
 
+			map->ma_nusers = 1;
 			return (err);
 		}
 
@@ -5618,8 +5660,10 @@ mac_remove_macaddr_vlan(mac_address_t *map, uint16_t vid)
 		    map->ma_type, __FILE__, __LINE__);
 	}
 
-	if (err != 0)
+	if (err != 0) {
+		map->ma_nusers = 1;
 		return (err);
+	}
 
 	/*
 	 * We created MAC address for the primary one at registration, so we
@@ -8832,7 +8876,7 @@ mac_provider_tx(mac_impl_t *mip, mac_ring_handle_t rh, mblk_t *mp,
 		rh = mip->mi_default_tx_ring;
 
 	if (mip->mi_promisc_list != NULL)
-		mac_promisc_dispatch(mip, mp, mcip);
+		mac_promisc_dispatch(mip, mp, mcip, B_FALSE);
 
 	if (mip->mi_bridge_link == NULL)
 		return (mac_ring_tx((mac_handle_t)mip, rh, mp));

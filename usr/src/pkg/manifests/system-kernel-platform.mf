@@ -23,7 +23,9 @@
 # Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright 2012 Nexenta Systems, Inc. All rights reserved.
 # Copyright 2014 Gary Mills
-# Copyright 2019 Peter Tribble.
+# Copyright 2020 Peter Tribble.
+# Copyright 2019 Joyent, Inc.
+# Copyright 2019 OmniOS Community Edition (OmniOSce) Association.
 #
 
 #
@@ -86,14 +88,6 @@ $(sparc_ONLY)dir path=platform/SUNW,SPARC-Enterprise/kernel/drv/$(ARCH64) \
     group=sys
 $(sparc_ONLY)dir path=platform/SUNW,SPARC-Enterprise/kernel/misc group=sys
 $(sparc_ONLY)dir path=platform/SUNW,SPARC-Enterprise/kernel/misc/$(ARCH64) \
-    group=sys
-$(sparc_ONLY)dir path=platform/SUNW,Serverblade1 group=sys
-$(sparc_ONLY)dir path=platform/SUNW,Serverblade1/kernel group=sys
-$(sparc_ONLY)dir path=platform/SUNW,Serverblade1/kernel/drv group=sys
-$(sparc_ONLY)dir path=platform/SUNW,Serverblade1/kernel/drv/$(ARCH64) \
-    group=sys
-$(sparc_ONLY)dir path=platform/SUNW,Serverblade1/kernel/misc group=sys
-$(sparc_ONLY)dir path=platform/SUNW,Serverblade1/kernel/misc/$(ARCH64) \
     group=sys
 $(sparc_ONLY)dir path=platform/SUNW,Sun-Blade-100 group=sys
 $(sparc_ONLY)dir path=platform/SUNW,Sun-Blade-100/kernel group=sys
@@ -382,7 +376,6 @@ $(sparc_ONLY)driver name=grppm alias=SUNW,smbus-ppm
 $(sparc_ONLY)driver name=hpc3130 perms="* 0644 root sys" \
     alias=FJSV,hpc3130 \
     alias=i2c-hpc3130
-$(sparc_ONLY)driver name=i2bsc alias=SUNW,i2bsc
 $(sparc_ONLY)driver name=ics951601 alias=i2c-ics951601
 $(i386_ONLY)driver name=isa alias=pciclass,060100 class=sysbus
 $(sparc_ONLY)driver name=isadma
@@ -568,19 +561,6 @@ $(sparc_ONLY)file \
 $(sparc_ONLY)file \
     path=platform/SUNW,SPARC-Enterprise/kernel/misc/$(ARCH64)/platmod \
     group=sys mode=0755
-$(sparc_ONLY)file path=platform/SUNW,Serverblade1/kernel/drv/$(ARCH64)/bscbus \
-    group=sys
-$(sparc_ONLY)file path=platform/SUNW,Serverblade1/kernel/drv/$(ARCH64)/bscv \
-    group=sys
-$(sparc_ONLY)file path=platform/SUNW,Serverblade1/kernel/drv/bscbus.conf \
-    group=sys
-$(sparc_ONLY)file path=platform/SUNW,Serverblade1/kernel/drv/bscv.conf \
-    group=sys
-$(sparc_ONLY)file path=platform/SUNW,Serverblade1/kernel/drv/options.conf \
-    group=sys
-$(sparc_ONLY)file \
-    path=platform/SUNW,Serverblade1/kernel/misc/$(ARCH64)/platmod group=sys \
-    mode=0755
 $(sparc_ONLY)file path=platform/SUNW,Sun-Blade-100/kernel/drv/$(ARCH64)/grfans \
     group=sys
 $(sparc_ONLY)file path=platform/SUNW,Sun-Blade-100/kernel/drv/$(ARCH64)/grppm \
@@ -751,12 +731,6 @@ $(i386_ONLY)file path=platform/i86pc/kernel/misc/$(ARCH64)/acpidev group=sys \
     mode=0755
 $(i386_ONLY)file path=platform/i86pc/kernel/misc/$(ARCH64)/gfx_private \
     group=sys mode=0755
-$(i386_ONLY)file path=platform/i86pc/ucode/amd-ucode.bin group=sys mode=0444 \
-    original_name=SUNWcakr:platform/i86pc/ucode/amd-ucode.bin preserve=true \
-    reboot-needed=true
-$(i386_ONLY)file path=platform/i86pc/ucode/intel-ucode.txt group=sys mode=0444 \
-    original_name=SUNWcakr:platform/i86pc/ucode/intel-ucode.txt preserve=true \
-    reboot-needed=true
 $(i386_ONLY)file path=platform/i86xpv/kernel/$(ARCH64)/unix group=sys \
     mode=0755
 $(i386_ONLY)file path=platform/i86xpv/kernel/cpu/$(ARCH64)/cpu.generic \
@@ -843,7 +817,6 @@ $(sparc_ONLY)file path=platform/sun4u/kernel/drv/$(ARCH64)/fd group=sys
 $(sparc_ONLY)file path=platform/sun4u/kernel/drv/$(ARCH64)/gpio_87317 \
     group=sys
 $(sparc_ONLY)file path=platform/sun4u/kernel/drv/$(ARCH64)/grbeep group=sys
-$(sparc_ONLY)file path=platform/sun4u/kernel/drv/$(ARCH64)/i2bsc group=sys
 $(sparc_ONLY)file path=platform/sun4u/kernel/drv/$(ARCH64)/ics951601 group=sys
 $(sparc_ONLY)file path=platform/sun4u/kernel/drv/$(ARCH64)/isadma group=sys
 $(sparc_ONLY)file path=platform/sun4u/kernel/drv/$(ARCH64)/jbusppm group=sys
@@ -889,7 +862,6 @@ $(sparc_ONLY)file path=platform/sun4u/kernel/drv/$(ARCH64)/trapstat group=sys
 $(sparc_ONLY)file path=platform/sun4u/kernel/drv/$(ARCH64)/upa64s group=sys
 $(sparc_ONLY)file path=platform/sun4u/kernel/drv/$(ARCH64)/zs group=sys
 $(sparc_ONLY)file path=platform/sun4u/kernel/drv/$(ARCH64)/zsh group=sys
-$(sparc_ONLY)file path=platform/sun4u/kernel/drv/i2bsc.conf group=sys
 $(sparc_ONLY)file path=platform/sun4u/kernel/drv/mem_cache.conf group=sys
 $(sparc_ONLY)file path=platform/sun4u/kernel/drv/rmc_comm.conf group=sys
 $(sparc_ONLY)file path=platform/sun4u/kernel/drv/rmcadm.conf group=sys
@@ -918,8 +890,6 @@ $(sparc_ONLY)file path=platform/sun4u/kernel/misc/$(ARCH64)/platmod group=sys \
 $(sparc_ONLY)file path=platform/sun4u/kernel/misc/$(ARCH64)/sbd group=sys \
     mode=0755
 $(sparc_ONLY)file path=platform/sun4u/kernel/misc/$(ARCH64)/vis group=sys \
-    mode=0755
-$(sparc_ONLY)file path=platform/sun4u/kernel/tod/$(ARCH64)/todblade group=sys \
     mode=0755
 $(sparc_ONLY)file path=platform/sun4u/kernel/tod/$(ARCH64)/todbq4802 group=sys \
     mode=0755
@@ -992,7 +962,6 @@ $(sparc_ONLY)file path=usr/share/man/man7d/gpio_87317.7d
 $(sparc_ONLY)file path=usr/share/man/man7d/grbeep.7d
 $(sparc_ONLY)file path=usr/share/man/man7d/mc-opl.7d
 $(sparc_ONLY)file path=usr/share/man/man7d/n2rng.7d
-$(sparc_ONLY)file path=usr/share/man/man7d/ncp.7d
 $(i386_ONLY)file path=usr/share/man/man7d/npe.7d
 $(sparc_ONLY)file path=usr/share/man/man7d/ntwdt.7d
 $(sparc_ONLY)file path=usr/share/man/man7d/oplmsu.7d
@@ -1132,3 +1101,5 @@ $(sparc_ONLY)link path=platform/sun4v/kernel/unix target=$(ARCH64)/unix
 $(i386_ONLY)link path=usr/share/man/man4/isa.4 target=sysbus.4
 $(sparc_ONLY)link path=usr/share/man/man7d/drmach.7d target=dr.7d
 link path=usr/share/man/man7d/fdc.7d target=fd.7d
+$(i386_ONLY)depend fmri=system/microcode/amd type=require
+$(i386_ONLY)depend fmri=system/microcode/intel type=require

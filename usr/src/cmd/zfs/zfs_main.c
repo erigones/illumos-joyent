@@ -68,6 +68,7 @@
 #include <libzfs_core.h>
 #include <zfs_prop.h>
 #include <zfs_deleg.h>
+#include <libzutil.h>
 #include <libuutil.h>
 #include <aclutils.h>
 #include <directory.h>
@@ -4246,7 +4247,7 @@ zfs_do_send(int argc, char **argv)
 			 * Incremental source name begins with # or @.
 			 * Default to same fs as target.
 			 */
-			(void) strncpy(frombuf, argv[0], sizeof (frombuf));
+			(void) strlcpy(frombuf, argv[0], sizeof (frombuf));
 			cp = strchr(frombuf, '@');
 			if (cp != NULL)
 				*cp = '\0';
@@ -6999,6 +7000,30 @@ unshare_unmount(int op, int argc, char **argv)
 		}
 
 		/*
+		 * Initialize libshare SA_INIT_SHARE_API_SELECTIVE here
+		 * to avoid unnecessary load/unload of the libshare API
+		 * per shared dataset downstream.
+		 */
+		if (op == OP_SHARE) {
+			get_all_cb_t dslist = { 0 };
+			get_all_datasets(&dslist, B_FALSE);
+
+			if (dslist.cb_used != 0) {
+				sa_init_selective_arg_t sharearg;
+				sharearg.zhandle_arr = dslist.cb_handles;
+				sharearg.zhandle_len = dslist.cb_used;
+				if ((ret = zfs_init_libshare_arg(g_zfs,
+				    SA_INIT_SHARE_API_SELECTIVE, &sharearg)) !=
+				    SA_OK) {
+					(void) fprintf(stderr, gettext(
+					    "Could not initialize libshare, "
+					    "%d"), ret);
+					return (1);
+				}
+			}
+		}
+
+		/*
 		 * Walk the AVL tree in reverse, unmounting each filesystem and
 		 * removing it from the AVL tree in the process.
 		 */
@@ -7455,7 +7480,7 @@ zfs_do_bookmark(int argc, char **argv)
 		*strchr(snapname, '#') = '\0';
 		(void) strlcat(snapname, argv[0], sizeof (snapname));
 	} else {
-		(void) strncpy(snapname, argv[0], sizeof (snapname));
+		(void) strlcpy(snapname, argv[0], sizeof (snapname));
 	}
 	zhp = zfs_open(g_zfs, snapname, ZFS_TYPE_SNAPSHOT);
 	if (zhp == NULL)

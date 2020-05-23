@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 1991, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2017 Joyent, Inc.
+ * Copyright 2019 Joyent, Inc.
  * Copyright (c) 2011 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2013, 2017 by Delphix. All rights reserved.
  * Copyright 2014, OmniTI Computer Consulting, Inc. All rights reserved.
@@ -3332,9 +3332,11 @@ tcp_update_lso(tcp_t *tcp, ip_xmit_attr_t *ixa)
 	 */
 	if (ixa->ixa_flags & IXAF_LSO_CAPAB) {
 		ill_lso_capab_t	*lsoc = &ixa->ixa_lso_capab;
+		uint_t lso_max = (ixa->ixa_flags & IXAF_IS_IPV4) ?
+		    lsoc->ill_lso_max_tcpv4 : lsoc->ill_lso_max_tcpv6;
 
-		ASSERT(lsoc->ill_lso_max > 0);
-		tcp->tcp_lso_max = MIN(TCP_MAX_LSO_LENGTH, lsoc->ill_lso_max);
+		ASSERT3U(lso_max, >, 0);
+		tcp->tcp_lso_max = MIN(TCP_MAX_LSO_LENGTH, lso_max);
 
 		DTRACE_PROBE3(tcp_update_lso, boolean_t, tcp->tcp_lso,
 		    boolean_t, B_TRUE, uint32_t, tcp->tcp_lso_max);
@@ -4349,11 +4351,11 @@ tcp_do_listen(conn_t *connp, struct sockaddr *sa, socklen_t len,
 		}
 		return (-TOUTSTATE);
 	} else {
-		if (sa == NULL) {
-			sin6_t	addr;
-			sin_t *sin;
-			sin6_t *sin6;
+		sin6_t	addr;
+		sin_t *sin;
+		sin6_t *sin6;
 
+		if (sa == NULL) {
 			ASSERT(IPCL_IS_NONSTR(connp));
 			/* Do an implicit bind: Request for a generic port. */
 			if (connp->conn_family == AF_INET) {

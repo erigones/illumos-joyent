@@ -2328,7 +2328,7 @@ startup_end(void)
 	 */
 	for (i = DDI_IPL_1; i <= DDI_IPL_10; i++) {
 		(void) add_avsoftintr((void *)&softlevel_hdl[i-1], i,
-		    (avfunc)ddi_periodic_softintr, "ddi_periodic",
+		    (avfunc)(uintptr_t)ddi_periodic_softintr, "ddi_periodic",
 		    (caddr_t)(uintptr_t)i, NULL);
 	}
 
@@ -2579,9 +2579,7 @@ add_physmem_cb(page_t *pp, pfn_t pnum)
  * kphysm_init() initializes physical memory.
  */
 static pgcnt_t
-kphysm_init(
-	page_t *pp,
-	pgcnt_t npages)
+kphysm_init(page_t *pp, pgcnt_t npages)
 {
 	struct memlist	*pmem;
 	struct memseg	*cur_memseg;
@@ -2655,9 +2653,8 @@ kphysm_init(
 		 * of these large pages, configure the memsegs based on the
 		 * memory node ranges which had been made non-contiguous.
 		 */
+		end_pfn = base_pfn + num - 1;
 		if (mnode_xwa > 1) {
-
-			end_pfn = base_pfn + num - 1;
 			ms = PFN_2_MEM_NODE(base_pfn);
 			me = PFN_2_MEM_NODE(end_pfn);
 
@@ -2716,8 +2713,14 @@ kphysm_init(
 			/* process next memory node range */
 			ms++;
 			base_pfn = mem_node_config[ms].physbase;
-			num = MIN(mem_node_config[ms].physmax,
-			    end_pfn) - base_pfn + 1;
+
+			if (mnode_xwa > 1) {
+				num = MIN(mem_node_config[ms].physmax,
+				    end_pfn) - base_pfn + 1;
+			} else {
+				num = mem_node_config[ms].physmax -
+				    base_pfn + 1;
+			}
 		}
 	}
 

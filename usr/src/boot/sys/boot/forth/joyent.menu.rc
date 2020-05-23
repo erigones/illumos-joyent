@@ -99,10 +99,8 @@ set optionsmenu_keycode[3]=118
 set optionsansi_caption[3]="^[1mV^[merbose............... ^[34;1mOff^[m"
 set optionstoggled_ansi[3]="^[1mV^[merbose............... ^[32;7mOn^[m"
 
-set optionsmenu_init[4]="init_kmdb"
-set optionsmenu_caption[4]="Load [k]mdb........... Off"
-set optionstoggled_text[4]="Load [k]mdb........... On"
-set optionsmenu_command[4]="toggle_kmdb"
+set optionsmenu_kmdb=4
+set optionsmenu_command[4]="cycle_kmdb"
 set optionsmenu_keycode[4]=107
 set optionsansi_caption[4]="Load ^[1mk^[mmdb............. ^[34;1mOff^[m"
 set optionstoggled_ansi[4]="Load ^[1mk^[mmdb............. ^[32;7mOn^[m"

@@ -1061,6 +1061,8 @@ static vmem_t		*kmem_default_arena;
 static vmem_t		*kmem_firewall_va_arena;
 static vmem_t		*kmem_firewall_arena;
 
+static int		kmem_zerosized;		/* # of zero-sized allocs */
+
 /*
  * kmem slab consolidator thresholds (tunables)
  */
@@ -3872,6 +3874,7 @@ kmem_cache_create(
 		size_t chunks, bestfit, waste, slabsize;
 		size_t minwaste = LONG_MAX;
 
+		bestfit = 0;
 		for (chunks = 1; chunks <= KMEM_VOID_FRACTION; chunks++) {
 			slabsize = P2ROUNDUP(chunksize * chunks,
 			    vmp->vm_quantum);

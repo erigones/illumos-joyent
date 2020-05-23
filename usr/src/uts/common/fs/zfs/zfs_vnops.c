@@ -23,7 +23,7 @@
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012, 2017 by Delphix. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
- * Copyright 2019 Joyent, Inc.
+ * Copyright 2020 Joyent, Inc.
  * Copyright 2017 Nexenta Systems, Inc.
  */
 
@@ -374,6 +374,46 @@ zfs_ioctl(vnode_t *vp, int com, intptr_t data, int flag, cred_t *cred,
 	case _FIOGDIO:
 	case _FIOSDIO:
 	{
+		return (0);
+	}
+
+	case _FIODIRECTIO:
+	{
+		/*
+		 * ZFS inherently provides the basic semantics for directio.
+		 * This is the summary from the ZFS on Linux support for
+		 * O_DIRECT, which is the common form of directio, and required
+		 * no changes to ZFS.
+		 *
+		 * 1. Minimize cache effects of the I/O.
+		 *
+		 *    By design the ARC is already scan-resistant, which helps
+		 *    mitigate the need for special O_DIRECT handling.
+		 *
+		 * 2. O_DIRECT _MAY_ impose restrictions on IO alignment and
+		 *    length.
+		 *
+		 *    No additional alignment or length restrictions are
+		 *    imposed by ZFS.
+		 *
+		 * 3. O_DIRECT _MAY_ perform unbuffered IO operations directly
+		 *    between user memory and block device.
+		 *
+		 *    No unbuffered IO operations are currently supported. In
+		 *    order to support features such as compression, encryption,
+		 *    and checksumming a copy must be made to transform the
+		 *    data.
+		 *
+		 * 4. O_DIRECT _MAY_ imply O_DSYNC (XFS).
+		 *
+		 *    O_DIRECT does not imply O_DSYNC for ZFS.
+		 *
+		 * 5. O_DIRECT _MAY_ disable file locking that serializes IO
+		 *    operations.
+		 *
+		 *    All I/O in ZFS is locked for correctness and this locking
+		 *    is not disabled by O_DIRECT.
+		 */
 		return (0);
 	}
 
@@ -1915,7 +1955,7 @@ top:
 	txtype = TX_REMOVE;
 	if (flags & FIGNORECASE)
 		txtype |= TX_CI;
-	zfs_log_remove(zilog, tx, txtype, dzp, name, obj);
+	zfs_log_remove(zilog, tx, txtype, dzp, name, obj, unlinked);
 
 	dmu_tx_commit(tx);
 out:
@@ -2231,7 +2271,8 @@ top:
 		uint64_t txtype = TX_RMDIR;
 		if (flags & FIGNORECASE)
 			txtype |= TX_CI;
-		zfs_log_remove(zilog, tx, txtype, dzp, name, ZFS_NO_OBJECT);
+		zfs_log_remove(zilog, tx, txtype, dzp, name, ZFS_NO_OBJECT,
+		    B_FALSE);
 	}
 
 	dmu_tx_commit(tx);
@@ -2808,11 +2849,12 @@ zfs_setattr_dir(znode_t *dzp)
 	znode_t		*zp = NULL;
 	dmu_tx_t	*tx = NULL;
 	sa_bulk_attr_t	bulk[4];
-	int		count = 0;
+	int		count;
 	int		err;
 
 	zap_cursor_init(&zc, os, dzp->z_id);
 	while ((err = zap_cursor_retrieve(&zc, &zap)) == 0) {
+		count = 0;
 		if (zap.za_integer_length != 8 || zap.za_num_integers != 1) {
 			err = ENXIO;
 			break;

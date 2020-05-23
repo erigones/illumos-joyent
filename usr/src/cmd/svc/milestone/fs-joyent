@@ -11,8 +11,8 @@
 #
 
 #
-# Copyright (c) 2018, Joyent, Inc.
-# Copyright (c) 2019, Erigones, s. r. o.
+# Copyright 2020 Joyent, Inc.
+# Copyright (c) 2020, Erigones, s. r. o.
 #
 
 set -o xtrace
@@ -71,6 +71,24 @@ function mount_zfs
     echo ${output} 1>&2
 }
 
+function unlock_pool
+{
+    local pool=$1
+
+    # If the key is already loaded, don't bother trying again
+    local keystatus="$(zfs get -Hpo value keystatus $pool)"
+    if [[ "$keystatus" == "available" ]]; then
+        return
+    fi
+
+    kbmadm unlock $pool && return
+
+    echo "Failed to unlock $pool; recovery may be required" | \
+        tee -a /dev/console >&2
+
+    exit $SMF_EXIT_ERR_FATAL
+}
+
 # Assume the system zpool is zones, but if a different system pool
 # identifies itself (by virtue of the .system_pool file being present in the
 # pool's root dataset), then use that system pool instead.
@@ -109,12 +127,18 @@ if [ $? -ne 0 ]; then
     fi
 
     for pool in $pools; do
-        zpool import -f $pool
+        zpool import -f $pool || continue
+
+        is_encr="$(zfs get -Hpo value encryption $pool)"
+
+        [[ "$is_encr" != "off" ]] && unlock_pool $pool
+
         # Due to early, failed attempts to support the filesystem_limits
         # feature we now need to ensure the dependent feature is enabled.
         zpool set feature@extensible_dataset=enabled $pool
         if [[ ${BOOTED_FROM_HDD} -ne 1 && -f /${pool}/.system_pool ]]; then
             SYS_ZPOOL=$pool
+            [[ "$is_encr" != "off" ]] && kbmadm set-syspool $pool
         fi
     done
 

@@ -26,7 +26,7 @@
 # Copyright (c) 2017 by Tim Chase. All rights reserved.
 # Copyright (c) 2017 by Nexenta Systems, Inc. All rights reserved.
 # Copyright (c) 2017 Datto Inc.
-# Copyright 2019 Joyent, Inc.
+# Copyright 2020 Joyent, Inc.
 #
 
 . ${STF_TOOLS}/contrib/include/logapi.shlib
@@ -1568,7 +1568,7 @@ function get_disklist # pool
 
 	disklist=$(zpool iostat -v $1 | nawk '(NR >4) {print $1}' | \
 	    grep -v "\-\-\-\-\-" | \
-	    egrep -v -e "^(mirror|raidz1|raidz2|spare|log|cache)$")
+	    egrep -v -e "^(mirror|raidz[1-3]|spare|log|cache|special|dedup)$")
 
 	echo $disklist
 }
@@ -2839,13 +2839,13 @@ function set_tunable_impl
 	Linux)
 		typeset zfs_tunables="/sys/module/$module/parameters"
 		[[ -w "$zfs_tunables/$tunable" ]] || return 1
-		echo -n "$value" > "$zfs_tunables/$tunable"
-		return "$?"
+		cat >"$zfs_tunables/$tunable" <<<"$value"
+		return $?
 		;;
 	SunOS)
 		[[ "$module" -eq "zfs" ]] || return 1
 		echo "${tunable}/${mdb_cmd}0t${value}" | mdb -kw
-		return "$?"
+		return $?
 		;;
 	esac
 }
@@ -2872,7 +2872,7 @@ function get_tunable_impl
 		typeset zfs_tunables="/sys/module/$module/parameters"
 		[[ -f "$zfs_tunables/$tunable" ]] || return 1
 		cat $zfs_tunables/$tunable
-		return "$?"
+		return $?
 		;;
 	SunOS)
 		typeset value=$(mdb -k -e "$tunable/X | ::eval .=U")
@@ -2886,4 +2886,23 @@ function get_tunable_impl
 	esac
 
 	return 1
+}
+
+#
+# Compute SHA256 digest for given file or stdin if no file given.
+# Note: file path must not contain spaces
+#
+function sha256digest
+{
+        typeset file=$1
+
+	if [ -x /usr/bin/digest ]; then
+		/usr/bin/digest -a sha256 $file
+	elif [ -x /usr/bin/sha256sum ]; then
+		/usr/bin/sha256sum -b $file | awk '{ print $1 }'
+	else
+		echo "Cannot calculate SHA256 digest"
+		return 1
+	fi
+	return 0
 }
