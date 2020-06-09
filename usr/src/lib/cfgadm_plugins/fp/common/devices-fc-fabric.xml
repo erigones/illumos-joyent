@@ -38,14 +38,6 @@ Use is subject to license terms.
 
 	<single_instance/>
 
-        <dependency
-                name='sysevent'
-                grouping='require_all'
-                restart_on='none'
-                type='service'>
-                <service_fmri value='svc:/system/sysevent' />
-        </dependency>
-
 	<dependent
 		name='devices'
 		grouping='require_all'

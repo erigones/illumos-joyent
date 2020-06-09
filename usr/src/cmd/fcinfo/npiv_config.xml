@@ -46,14 +46,6 @@ Service manifests for the NPIV configure
 
 	<single_instance/>
 
-	<dependency
-		name='npivsysevent'
-		grouping='require_all'
-		restart_on='none'
-		type='service'>
-		<service_fmri value='svc:/system/sysevent' />
-	</dependency>
-
 	<dependent
 		name='npiv-filesystem'
 		grouping='require_all'

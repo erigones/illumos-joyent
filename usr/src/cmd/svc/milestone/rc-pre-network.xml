@@ -20,13 +20,6 @@
         </dependency>
 
         <dependent
-                name='net-lo'
-                grouping='require_all'
-                restart_on='none' >
-                <service_fmri value='svc:/network/loopback' />
-        </dependent>
-
-        <dependent
                 name='net-physical'
                 grouping='require_all'
                 restart_on='none' >
