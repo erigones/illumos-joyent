@@ -12,7 +12,7 @@
 
 : brand ( x y -- ) \ "danubecloud" [wide] logo in B/W
 
-	0 70 15 0 0 s" /boot/danubecloud-banner.png" fb-putimage if 2drop exit then
+	0 1 45 0 0 s" /boot/danubecloud-banner.png" fb-putimage if 2drop exit then
 
     s"                                                           " brand+
     s"  ___  ____ _  _ _  _ ___  ____    ____ _    ____ _  _ ___ " brand+

@@ -43,7 +43,7 @@
 	then
 
 
-	0 530 210 0 0 s" /boot/danubecloud-logo.png" fb-putimage if 2drop exit then
+	0 630 210 0 0 s" /boot/danubecloud-logo.png" fb-putimage if 2drop exit then
                                                  
 	s"                    ,(((((((((,                   logo+
 	s"               ((((((((*...*((((((((              logo+
