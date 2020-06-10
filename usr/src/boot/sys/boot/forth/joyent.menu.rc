@@ -105,48 +105,40 @@ set optionsmenu_keycode[4]=107
 set optionsansi_caption[4]="Load ^[1mk^[mmdb............. ^[34;1mOff^[m"
 set optionstoggled_ansi[4]="Load ^[1mk^[mmdb............. ^[32;7mOn^[m"
 
-set optionsmenu_init[5]="init_drop_into_kmdb"
-set optionsmenu_caption[5]="[D]rop into kmdb...... Off"
-set optionstoggled_text[5]="[D]rop into kmdb...... On"
-set optionsmenu_command[5]="toggle_drop_into_kmdb"
-set optionsmenu_keycode[5]=100
-set optionsansi_caption[5]="^[1mD^[mrop into kmdb........ ^[34;1mOff^[m"
-set optionstoggled_ansi[5]="^[1mD^[mrop into kmdb........ ^[32;7mOn^[m"
-
 \ if we boot from USB, enable rescue and destroy_zpools
 \ if we boot from disk, enable single user and reset password (== recovery)
 s" currdev" getenv drop 4 s" zfs:" compare 0= be-pages and invert [if]
+	set optionsmenu_init[5]="init_rescue"
+	set optionsmenu_caption[5]="[R]escue Mode......... Off"
+	set optionstoggled_text[5]="[R]escue Mode......... On"
+	set optionsmenu_command[5]="toggle_rescue"
+	set optionsmenu_keycode[5]=114
+	set optionsansi_caption[5]="^[1mR^[mescue Mode........... ^[34;1mOff^[m"
+	set optionstoggled_ansi[5]="^[1mR^[mescue Mode........... ^[32;7mOn^[m"
+
+	set optionsmenu_init[6]="init_destroy_zpools"
+	set optionsmenu_caption[6]="Destroy [Z]pools...... Off"
+	set optionstoggled_text[6]="Destroy [Z]pools...... On"
+	set optionsmenu_command[6]="toggle_destroy_zpools"
+	set optionsmenu_keycode[6]=122
+	set optionsansi_caption[6]="Destroy ^[1mR^[mpools........ ^[34;1mOff^[m"
+	set optionstoggled_ansi[6]="Destroy ^[1mR^[mpools........ ^[32;7mOn^[m"
+  [else]
+	set optionsmenu_init[5]="init_singleuser"
+	set optionsmenu_caption[5]="[S]ingle User......... Off"
+	set optionstoggled_text[5]="[S]ingle User......... On"
+	set optionsmenu_command[5]="toggle_singleuser"
+	set optionsmenu_keycode[5]=115
+	set optionsansi_caption[5]="^[1mS^[mingle User........... ^[34;1mOff^[m"
+	set optionstoggled_ansi[5]="^[1mS^[mingle User........... ^[32;7mOn^[m"
+
 	set optionsmenu_init[6]="init_rescue"
-	set optionsmenu_caption[6]="[R]escue Mode......... Off"
-	set optionstoggled_text[6]="[R]escue Mode......... On"
+	set optionsmenu_caption[6]="[R]esetPwd (root/root) Off"
+	set optionstoggled_text[6]="[R]esetPwd (root/root) On"
 	set optionsmenu_command[6]="toggle_rescue"
 	set optionsmenu_keycode[6]=114
-	set optionsansi_caption[6]="^[1mR^[mescue Mode........... ^[34;1mOff^[m"
-	set optionstoggled_ansi[6]="^[1mR^[mescue Mode........... ^[32;7mOn^[m"
-
-	set optionsmenu_init[7]="init_destroy_zpools"
-	set optionsmenu_caption[7]="Destroy [Z]pools...... Off"
-	set optionstoggled_text[7]="Destroy [Z]pools...... On"
-	set optionsmenu_command[7]="toggle_destroy_zpools"
-	set optionsmenu_keycode[7]=122
-	set optionsansi_caption[7]="Destroy ^[1mR^[mpools........ ^[34;1mOff^[m"
-	set optionstoggled_ansi[7]="Destroy ^[1mR^[mpools........ ^[32;7mOn^[m"
-  [else]
-	set optionsmenu_init[6]="init_singleuser"
-	set optionsmenu_caption[6]="[S]ingle User......... Off"
-	set optionstoggled_text[6]="[S]ingle User......... On"
-	set optionsmenu_command[6]="toggle_singleuser"
-	set optionsmenu_keycode[6]=115
-	set optionsansi_caption[6]="^[1mS^[mingle User........... ^[34;1mOff^[m"
-	set optionstoggled_ansi[6]="^[1mS^[mingle User........... ^[32;7mOn^[m"
-
-	set optionsmenu_init[7]="init_rescue"
-	set optionsmenu_caption[7]="[R]esetPwd (root/root) Off"
-	set optionstoggled_text[7]="[R]esetPwd (root/root) On"
-	set optionsmenu_command[7]="toggle_rescue"
-	set optionsmenu_keycode[7]=114
-	set optionsansi_caption[7]="^[1mR^[meset Pass (root/root) ^[34;1mOff^[m"
-	set optionstoggled_ansi[7]="^[1mR^[meset Pass (root/root) ^[32;7mOn^[m"
+	set optionsansi_caption[6]="^[1mR^[meset Pass (root/root) ^[34;1mOff^[m"
+	set optionstoggled_ansi[6]="^[1mR^[meset Pass (root/root) ^[32;7mOn^[m"
 [then]
 
 \
