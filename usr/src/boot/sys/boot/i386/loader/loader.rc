@@ -11,6 +11,7 @@ set tem.bg_color=black
 \ As another SmartOS customization, work around OS-8160 by limiting the size of
 \ the framebuffer.
 framebuffer set 1024x768
+set screen-font=8x16
 
 try-include /boot/loader.rc.local
 
