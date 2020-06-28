@@ -46,6 +46,14 @@ Service manifests for the NPIV configure
 
 	<single_instance/>
 
+	<dependency
+		name='usr'
+		grouping='require_all'
+		restart_on='none'
+		type='service'>
+		<service_fmri value='svc:/system/filesystem/usr' />
+	</dependency>
+
 	<dependent
 		name='npiv-filesystem'
 		grouping='require_all'
