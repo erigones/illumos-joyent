@@ -39,6 +39,7 @@
  *
  * Copyright 2015 Pluribus Networks Inc.
  * Copyright 2018 Joyent, Inc.
+ * Copyright 2020 Oxide Computer Company
  */
 
 #include <sys/cdefs.h>
@@ -164,7 +165,7 @@ struct mem_map {
 	int		prot;
 	int		flags;
 };
-#define	VM_MAX_MEMMAPS	4
+#define	VM_MAX_MEMMAPS	8
 
 /*
  * Initialization:
@@ -203,35 +204,56 @@ struct vm {
 
 static int vmm_initialized;
 
-static struct vmm_ops *ops;
-#define	VMM_INIT(num)	(ops != NULL ? (*ops->init)(num) : 0)
-#define	VMM_CLEANUP()	(ops != NULL ? (*ops->cleanup)() : 0)
-#define	VMM_RESUME()	(ops != NULL ? (*ops->resume)() : 0)
 
-#define	VMINIT(vm, pmap) (ops != NULL ? (*ops->vminit)(vm, pmap): NULL)
+static void
+nullop_panic(void)
+{
+	panic("null vmm operation call");
+}
+
+/* Do not allow use of an un-set `ops` to do anything but panic */
+static struct vmm_ops vmm_ops_null = {
+	.init		= (vmm_init_func_t)nullop_panic,
+	.cleanup	= (vmm_cleanup_func_t)nullop_panic,
+	.resume		= (vmm_resume_func_t)nullop_panic,
+	.vminit		= (vmi_init_func_t)nullop_panic,
+	.vmrun		= (vmi_run_func_t)nullop_panic,
+	.vmcleanup	= (vmi_cleanup_func_t)nullop_panic,
+	.vmgetreg	= (vmi_get_register_t)nullop_panic,
+	.vmsetreg	= (vmi_set_register_t)nullop_panic,
+	.vmgetdesc	= (vmi_get_desc_t)nullop_panic,
+	.vmsetdesc	= (vmi_set_desc_t)nullop_panic,
+	.vmgetcap	= (vmi_get_cap_t)nullop_panic,
+	.vmsetcap	= (vmi_set_cap_t)nullop_panic,
+	.vmspace_alloc	= (vmi_vmspace_alloc)nullop_panic,
+	.vmspace_free	= (vmi_vmspace_free)nullop_panic,
+	.vlapic_init	= (vmi_vlapic_init)nullop_panic,
+	.vlapic_cleanup	= (vmi_vlapic_cleanup)nullop_panic,
+	.vmsavectx	= (vmi_savectx)nullop_panic,
+	.vmrestorectx	= (vmi_restorectx)nullop_panic,
+};
+
+static struct vmm_ops *ops = &vmm_ops_null;
+
+#define	VMM_INIT(num)			((*ops->init)(num))
+#define	VMM_CLEANUP()			((*ops->cleanup)())
+#define	VMM_RESUME()			((*ops->resume)())
+
+#define	VMINIT(vm, pmap)		((*ops->vminit)(vm, pmap))
 #define	VMRUN(vmi, vcpu, rip, pmap, evinfo) \
-	(ops != NULL ? (*ops->vmrun)(vmi, vcpu, rip, pmap, evinfo) : ENXIO)
-#define	VMCLEANUP(vmi)	(ops != NULL ? (*ops->vmcleanup)(vmi) : NULL)
-#define	VMSPACE_ALLOC(min, max) \
-	(ops != NULL ? (*ops->vmspace_alloc)(min, max) : NULL)
-#define	VMSPACE_FREE(vmspace) \
-	(ops != NULL ? (*ops->vmspace_free)(vmspace) : ENXIO)
-#define	VMGETREG(vmi, vcpu, num, retval)		\
-	(ops != NULL ? (*ops->vmgetreg)(vmi, vcpu, num, retval) : ENXIO)
-#define	VMSETREG(vmi, vcpu, num, val)		\
-	(ops != NULL ? (*ops->vmsetreg)(vmi, vcpu, num, val) : ENXIO)
-#define	VMGETDESC(vmi, vcpu, num, desc)		\
-	(ops != NULL ? (*ops->vmgetdesc)(vmi, vcpu, num, desc) : ENXIO)
-#define	VMSETDESC(vmi, vcpu, num, desc)		\
-	(ops != NULL ? (*ops->vmsetdesc)(vmi, vcpu, num, desc) : ENXIO)
-#define	VMGETCAP(vmi, vcpu, num, retval)	\
-	(ops != NULL ? (*ops->vmgetcap)(vmi, vcpu, num, retval) : ENXIO)
-#define	VMSETCAP(vmi, vcpu, num, val)		\
-	(ops != NULL ? (*ops->vmsetcap)(vmi, vcpu, num, val) : ENXIO)
-#define	VLAPIC_INIT(vmi, vcpu)			\
-	(ops != NULL ? (*ops->vlapic_init)(vmi, vcpu) : NULL)
-#define	VLAPIC_CLEANUP(vmi, vlapic)		\
-	(ops != NULL ? (*ops->vlapic_cleanup)(vmi, vlapic) : NULL)
+	((*ops->vmrun)(vmi, vcpu, rip, pmap, evinfo) )
+#define	VMCLEANUP(vmi)			((*ops->vmcleanup)(vmi) )
+#define	VMSPACE_ALLOC(min, max)		((*ops->vmspace_alloc)(min, max))
+#define	VMSPACE_FREE(vmspace)		((*ops->vmspace_free)(vmspace))
+
+#define	VMGETREG(vmi, vcpu, num, rv)	((*ops->vmgetreg)(vmi, vcpu, num, rv))
+#define	VMSETREG(vmi, vcpu, num, val)	((*ops->vmsetreg)(vmi, vcpu, num, val))
+#define	VMGETDESC(vmi, vcpu, num, dsc)	((*ops->vmgetdesc)(vmi, vcpu, num, dsc))
+#define	VMSETDESC(vmi, vcpu, num, dsc)	((*ops->vmsetdesc)(vmi, vcpu, num, dsc))
+#define	VMGETCAP(vmi, vcpu, num, rv)	((*ops->vmgetcap)(vmi, vcpu, num, rv))
+#define	VMSETCAP(vmi, vcpu, num, val)	((*ops->vmsetcap)(vmi, vcpu, num, val))
+#define	VLAPIC_INIT(vmi, vcpu)		((*ops->vlapic_init)(vmi, vcpu))
+#define	VLAPIC_CLEANUP(vmi, vlapic)	((*ops->vlapic_cleanup)(vmi, vlapic))
 
 #define	fpu_start_emulating()	load_cr0(rcr0() | CR0_TS)
 #define	fpu_stop_emulating()	clts()
@@ -243,7 +265,8 @@ static MALLOC_DEFINE(M_VM, "vm", "vm");
 /* statistics */
 static VMM_STAT(VCPU_TOTAL_RUNTIME, "vcpu total runtime");
 
-SYSCTL_NODE(_hw, OID_AUTO, vmm, CTLFLAG_RW, NULL, NULL);
+SYSCTL_NODE(_hw, OID_AUTO, vmm, CTLFLAG_RW | CTLFLAG_MPSAFE, NULL,
+    NULL);
 
 /*
  * Halt the guest if all vcpus are executing a HLT instruction with
@@ -379,14 +402,6 @@ vm_exitinfo(struct vm *vm, int cpuid)
 	return (&vcpu->exitinfo);
 }
 
-#ifdef __FreeBSD__
-static void
-vmm_resume(void)
-{
-	VMM_RESUME();
-}
-#endif
-
 static int
 vmm_init(void)
 {
@@ -410,7 +425,7 @@ vmm_init(void)
 
 	if (vmm_is_intel())
 		ops = &vmm_ops_intel;
-	else if (vmm_is_amd())
+	else if (vmm_is_svm())
 		ops = &vmm_ops_amd;
 	else
 		return (ENXIO);
@@ -422,66 +437,12 @@ vmm_init(void)
 	return (VMM_INIT(vmm_ipinum));
 }
 
-#ifdef __FreeBSD__
-
-static int
-vmm_handler(module_t mod, int what, void *arg)
-{
-	int error;
-
-	switch (what) {
-	case MOD_LOAD:
-		vmmdev_init();
-		error = vmm_init();
-		if (error == 0)
-			vmm_initialized = 1;
-		break;
-	case MOD_UNLOAD:
-		error = vmmdev_cleanup();
-		if (error == 0) {
-			vmm_resume_p = NULL;
-			iommu_cleanup();
-#ifdef __FreeBSD__
-			if (vmm_ipinum != IPI_AST)
-				lapic_ipi_free(vmm_ipinum);
-#endif
-			error = VMM_CLEANUP();
-			/*
-			 * Something bad happened - prevent new
-			 * VMs from being created
-			 */
-			if (error)
-				vmm_initialized = 0;
-		}
-		break;
-	default:
-		error = 0;
-		break;
-	}
-	return (error);
-}
-
-static moduledata_t vmm_kmod = {
-	"vmm",
-	vmm_handler,
-	NULL
-};
-
-/*
- * vmm initialization has the following dependencies:
- *
- * - VT-x initialization requires smp_rendezvous() and therefore must happen
- *   after SMP is fully functional (after SI_SUB_SMP).
- */
-DECLARE_MODULE(vmm, vmm_kmod, SI_SUB_SMP + 1, SI_ORDER_ANY);
-MODULE_VERSION(vmm, 1);
-
-#else /* __FreeBSD__ */
-
 int
 vmm_mod_load()
 {
 	int	error;
+
+	VERIFY(vmm_initialized == 0);
 
 	error = vmm_init();
 	if (error == 0)
@@ -495,6 +456,8 @@ vmm_mod_unload()
 {
 	int	error;
 
+	VERIFY(vmm_initialized == 1);
+
 	iommu_cleanup();
 	error = VMM_CLEANUP();
 	if (error)
@@ -503,8 +466,6 @@ vmm_mod_unload()
 
 	return (0);
 }
-
-#endif /* __FreeBSD__ */
 
 static void
 vm_init(struct vm *vm, bool create)
@@ -1677,51 +1638,89 @@ static int
 vm_handle_suspend(struct vm *vm, int vcpuid, bool *retu)
 {
 #ifdef __FreeBSD__
-	int i, done;
+	int error, i;
 	struct vcpu *vcpu;
+	struct thread *td;
 
-	done = 0;
+	error = 0;
+	vcpu = &vm->vcpu[vcpuid];
+	td = curthread;
 #else
 	int i;
 	struct vcpu *vcpu;
-#endif
+
 	vcpu = &vm->vcpu[vcpuid];
+#endif
 
 	CPU_SET_ATOMIC(vcpuid, &vm->suspended_cpus);
 
+#ifdef __FreeBSD__
 	/*
 	 * Wait until all 'active_cpus' have suspended themselves.
+	 *
+	 * Since a VM may be suspended at any time including when one or
+	 * more vcpus are doing a rendezvous we need to call the rendezvous
+	 * handler while we are waiting to prevent a deadlock.
 	 */
 	vcpu_lock(vcpu);
-	while (1) {
+	while (error == 0) {
 		if (CPU_CMP(&vm->suspended_cpus, &vm->active_cpus) == 0) {
 			VCPU_CTR0(vm, vcpuid, "All vcpus suspended");
 			break;
 		}
 
-		VCPU_CTR0(vm, vcpuid, "Sleeping during suspend");
-		vcpu_require_state_locked(vm, vcpuid, VCPU_SLEEPING);
-#ifdef __FreeBSD__
-		msleep_spin(vcpu, &vcpu->mtx, "vmsusp", hz);
+		if (vm->rendezvous_func == NULL) {
+			VCPU_CTR0(vm, vcpuid, "Sleeping during suspend");
+			vcpu_require_state_locked(vm, vcpuid, VCPU_SLEEPING);
+			msleep_spin(vcpu, &vcpu->mtx, "vmsusp", hz);
+			vcpu_require_state_locked(vm, vcpuid, VCPU_FROZEN);
+			if ((td->td_flags & TDF_NEEDSUSPCHK) != 0) {
+				vcpu_unlock(vcpu);
+				error = thread_check_susp(td, false);
+				vcpu_lock(vcpu);
+			}
+		} else {
+			VCPU_CTR0(vm, vcpuid, "Rendezvous during suspend");
+			vcpu_unlock(vcpu);
+			error = vm_handle_rendezvous(vm, vcpuid);
+			vcpu_lock(vcpu);
+		}
+	}
+	vcpu_unlock(vcpu);
 #else
+	vcpu_lock(vcpu);
+	while (1) {
+		int rc;
+
+		if (CPU_CMP(&vm->suspended_cpus, &vm->active_cpus) == 0) {
+			VCPU_CTR0(vm, vcpuid, "All vcpus suspended");
+			break;
+		}
+
+		vcpu_require_state_locked(vm, vcpuid, VCPU_SLEEPING);
+		rc = cv_reltimedwait_sig(&vcpu->vcpu_cv, &vcpu->mtx.m, hz,
+		    TR_CLOCK_TICK);
+		vcpu_require_state_locked(vm, vcpuid, VCPU_FROZEN);
+
 		/*
-		 * To prevent vm_handle_suspend from becoming stuck in the
-		 * kernel if the bhyve process driving its vCPUs is killed,
-		 * offer a bail-out, even though not all the vCPUs have reached
-		 * the suspended state.
+		 * If the userspace process driving the instance is killed, any
+		 * vCPUs yet to be marked suspended (because they are not
+		 * VM_RUN-ing in the kernel presently) will never reach that
+		 * state.
+		 *
+		 * To avoid vm_handle_suspend() getting stuck in the kernel
+		 * waiting for those vCPUs, offer a bail-out even though it
+		 * means returning without all vCPUs in a suspended state.
 		 */
-		if (cv_reltimedwait_sig(&vcpu->vcpu_cv, &vcpu->mtx.m,
-		    hz, TR_CLOCK_TICK) <= 0) {
+		if (rc <= 0) {
 			if ((curproc->p_flag & SEXITING) != 0) {
-				vcpu_require_state_locked(vm, vcpuid,
-				    VCPU_FROZEN);
 				break;
 			}
 		}
-#endif
-		vcpu_require_state_locked(vm, vcpuid, VCPU_FROZEN);
 	}
 	vcpu_unlock(vcpu);
+
+#endif
 
 	/*
 	 * Wakeup the other sleeping vcpus and return to userspace.
@@ -1775,7 +1774,7 @@ vm_suspend(struct vm *vm, enum vm_suspend_how how)
 	if (how <= VM_SUSPEND_NONE || how >= VM_SUSPEND_LAST)
 		return (EINVAL);
 
-	if (atomic_cmpset_int((uint_t *)&vm->suspend, 0, how) == 0) {
+	if (atomic_cmpset_int(&vm->suspend, 0, how) == 0) {
 		VM_CTR2(vm, "virtual machine already suspended %d/%d",
 		    vm->suspend, how);
 		return (EALREADY);
@@ -2451,18 +2450,38 @@ vm_inject_exception(struct vm *vm, int vcpuid, int vector, int errcode_valid,
 }
 
 void
-vm_inject_fault(void *vmarg, int vcpuid, int vector, int errcode_valid,
+vm_inject_fault(struct vm *vm, int vcpuid, int vector, int errcode_valid,
     int errcode)
 {
-	struct vm *vm;
-	int error, restart_instruction;
-
-	vm = vmarg;
-	restart_instruction = 1;
+	int error;
 
 	error = vm_inject_exception(vm, vcpuid, vector, errcode_valid,
-	    errcode, restart_instruction);
+	    errcode, 1);
 	KASSERT(error == 0, ("vm_inject_exception error %d", error));
+}
+
+void
+vm_inject_ud(struct vm *vm, int vcpuid)
+{
+	vm_inject_fault(vm, vcpuid, IDT_UD, 0, 0);
+}
+
+void
+vm_inject_gp(struct vm *vm, int vcpuid)
+{
+	vm_inject_fault(vm, vcpuid, IDT_GP, 1, 0);
+}
+
+void
+vm_inject_ac(struct vm *vm, int vcpuid, int errcode)
+{
+	vm_inject_fault(vm, vcpuid, IDT_AC, 1, errcode);
+}
+
+void
+vm_inject_ss(struct vm *vm, int vcpuid, int errcode)
+{
+	vm_inject_fault(vm, vcpuid, IDT_SS, 1, errcode);
 }
 
 void

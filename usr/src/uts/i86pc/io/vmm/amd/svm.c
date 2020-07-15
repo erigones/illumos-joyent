@@ -27,6 +27,15 @@
  */
 
 /*
+ * This file and its contents are supplied under the terms of the
+ * Common Development and Distribution License ("CDDL"), version 1.0.
+ * You may only use this file in accordance with the terms of version
+ * 1.0 of the CDDL.
+ *
+ * A full copy of the text of the CDDL should have accompanied this
+ * source.  A copy of the CDDL is also available via the Internet at
+ * http://www.illumos.org/license/CDDL.
+ *
  * Copyright 2018 Joyent, Inc.
  * Copyright 2020 Oxide Computer Company
  */
@@ -77,7 +86,8 @@ __FBSDID("$FreeBSD$");
 #include "npt.h"
 
 SYSCTL_DECL(_hw_vmm);
-SYSCTL_NODE(_hw_vmm, OID_AUTO, svm, CTLFLAG_RW, NULL, NULL);
+SYSCTL_NODE(_hw_vmm, OID_AUTO, svm, CTLFLAG_RW | CTLFLAG_MPSAFE, NULL,
+    NULL);
 
 /*
  * SVM CPUID function 0x8000_000A, edx bit decoding.
@@ -470,7 +480,7 @@ vmcb_init(struct svm_softc *sc, int vcpu, uint64_t iopm_base_pa,
 	ctrl->msrpm_base_pa = msrpm_base_pa;
 
 	/* Enable nested paging */
-	ctrl->np_enable = 1;
+	ctrl->np_ctrl = NP_ENABLE;
 	ctrl->n_cr3 = np_pml4;
 
 	/*
@@ -536,10 +546,10 @@ vmcb_init(struct svm_softc *sc, int vcpu, uint64_t iopm_base_pa,
 	 *
 	 * This must be set for %rflag and %cr8 isolation of guest and host.
 	 */
-	ctrl->v_intr_masking = 1;
+	ctrl->v_intr_ctrl |= V_INTR_MASKING;
 
 	/* Enable Last Branch Record aka LBR for debugging */
-	ctrl->lbr_virt_en = 1;
+	ctrl->misc_ctrl |= LBR_VIRT_ENABLE;
 	state->dbgctl = BIT(0);
 
 	/* EFER_SVM must always be set when the guest is executing */
@@ -1035,16 +1045,17 @@ enable_intr_window_exiting(struct svm_softc *sc, int vcpu)
 
 	ctrl = svm_get_vmcb_ctrl(sc, vcpu);
 
-	if (ctrl->v_irq && ctrl->v_intr_vector == 0) {
-		KASSERT(ctrl->v_ign_tpr, ("%s: invalid v_ign_tpr", __func__));
+	if ((ctrl->v_irq & V_IRQ) != 0 && ctrl->v_intr_vector == 0) {
+		KASSERT(ctrl->v_intr_prio & V_IGN_TPR,
+		    ("%s: invalid v_ign_tpr", __func__));
 		KASSERT(vintr_intercept_enabled(sc, vcpu),
 		    ("%s: vintr intercept should be enabled", __func__));
 		return;
 	}
 
 	VCPU_CTR0(sc->vm, vcpu, "Enable intr window exiting");
-	ctrl->v_irq = 1;
-	ctrl->v_ign_tpr = 1;
+	ctrl->v_irq |= V_IRQ;
+	ctrl->v_intr_prio |= V_IGN_TPR;
 	ctrl->v_intr_vector = 0;
 	svm_set_dirty(sc, vcpu, VMCB_CACHE_TPR);
 	svm_enable_intercept(sc, vcpu, VMCB_CTRL1_INTCPT, VMCB_INTCPT_VINTR);
@@ -1057,14 +1068,14 @@ disable_intr_window_exiting(struct svm_softc *sc, int vcpu)
 
 	ctrl = svm_get_vmcb_ctrl(sc, vcpu);
 
-	if (!ctrl->v_irq && ctrl->v_intr_vector == 0) {
+	if ((ctrl->v_irq & V_IRQ) == 0 && ctrl->v_intr_vector == 0) {
 		KASSERT(!vintr_intercept_enabled(sc, vcpu),
 		    ("%s: vintr intercept should be disabled", __func__));
 		return;
 	}
 
 	VCPU_CTR0(sc->vm, vcpu, "Disable intr window exiting");
-	ctrl->v_irq = 0;
+	ctrl->v_irq &= ~V_IRQ;
 	ctrl->v_intr_vector = 0;
 	svm_set_dirty(sc, vcpu, VMCB_CACHE_TPR);
 	svm_disable_intercept(sc, vcpu, VMCB_CTRL1_INTCPT, VMCB_INTCPT_VINTR);
@@ -1562,6 +1573,9 @@ svm_vmexit(struct svm_softc *svm_sc, int vcpu, struct vm_exit *vmexit)
 	VCPU_CTR4(svm_sc->vm, vcpu, "%s %s vmexit at %#lx/%d",
 	    handled ? "handled" : "unhandled", exit_reason_to_str(code),
 	    vmexit->rip, vmexit->inst_length);
+
+	DTRACE_PROBE3(vmm__vexit, int, vcpu, uint64_t, vmexit->rip, uint32_t,
+	    code);
 
 	if (handled) {
 		vmexit->rip += vmexit->inst_length;
@@ -2293,6 +2307,11 @@ svm_setreg(void *arg, int vcpu, int ident, uint64_t val)
 
 	if (reg != NULL) {
 		*reg = val;
+		return (0);
+	}
+
+	if (ident == VM_REG_GUEST_ENTRY_INST_LENGTH) {
+		/* Ignore. */
 		return (0);
 	}
 

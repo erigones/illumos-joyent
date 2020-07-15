@@ -70,6 +70,7 @@ SYMBOL_SCOPE {
 	cv_reltimedwait			{ FLAGS = EXTERN };
 	ddi_cb_register			{ FLAGS = EXTERN };
 	ddi_cb_unregister		{ FLAGS = EXTERN };
+	ddi_create_minor_node		{ FLAGS = EXTERN };
 	ddi_dev_regsize			{ FLAGS = EXTERN };
 	ddi_dma_addr_bind_handle	{ FLAGS = EXTERN };
 	ddi_dma_alloc_handle		{ FLAGS = EXTERN };
@@ -139,6 +140,7 @@ SYMBOL_SCOPE {
 	ddi_ufm_image_set_nslots	{ FLAGS = EXTERN };
 	ddi_ufm_init			{ FLAGS = EXTERN };
 	ddi_ufm_slot_set_attrs		{ FLAGS = EXTERN };
+	ddi_ufm_slot_set_imgsize	{ FLAGS = EXTERN };
 	ddi_ufm_slot_set_misc		{ FLAGS = EXTERN };
 	ddi_ufm_slot_set_version	{ FLAGS = EXTERN };
 	ddi_ufm_update			{ FLAGS = EXTERN };
