@@ -28,7 +28,7 @@
  * $FreeBSD$
  */
 /*
- * Copyright 2017 Joyent, Inc.
+ * Copyright 2020 Joyent, Inc.
  */
 
 #include <sys/cdefs.h>
@@ -60,13 +60,6 @@ vmx_ctl_allows_zero_setting(uint64_t msr_val, int bitpos)
 {
 
 	return ((msr_val & (1UL << bitpos)) == 0);
-}
-
-uint32_t
-vmx_revision(void)
-{
-
-	return (rdmsr(MSR_VMX_BASIC) & 0xffffffff);
 }
 
 /*
@@ -405,7 +398,7 @@ vmx_msr_guest_exit(struct vmx *vmx, int vcpuid)
 }
 
 int
-vmx_rdmsr(struct vmx *vmx, int vcpuid, u_int num, uint64_t *val, bool *retu)
+vmx_rdmsr(struct vmx *vmx, int vcpuid, u_int num, uint64_t *val)
 {
 	const uint64_t *guest_msrs;
 	int error;
@@ -424,6 +417,14 @@ vmx_rdmsr(struct vmx *vmx, int vcpuid, u_int num, uint64_t *val, bool *retu)
 	case MSR_MTRR16kBase ... MSR_MTRR16kBase + 1:
 	case MSR_MTRR64kBase:
 		*val = 0;
+		break;
+	case MSR_IA32_FEATURE_CONTROL:
+		/*
+		 * We currently don't support SGX support in guests, so
+		 * always report those features as disabled with the MSR
+		 * locked so the guest won't attempt to write to it.
+		 */
+		*val = IA32_FEATURE_CONTROL_LOCK;
 		break;
 	case MSR_IA32_MISC_ENABLE:
 		*val = misc_enable;
@@ -446,12 +447,12 @@ vmx_rdmsr(struct vmx *vmx, int vcpuid, u_int num, uint64_t *val, bool *retu)
 }
 
 int
-vmx_wrmsr(struct vmx *vmx, int vcpuid, u_int num, uint64_t val, bool *retu)
+vmx_wrmsr(struct vmx *vmx, int vcpuid, u_int num, uint64_t val)
 {
 	uint64_t *guest_msrs;
 	uint64_t changed;
 	int error;
-	
+
 	guest_msrs = vmx->guest_msrs[vcpuid];
 	error = 0;
 

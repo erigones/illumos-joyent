@@ -1365,7 +1365,15 @@ LUA_OBJS +=			\
 	llex.o			\
 	lparser.o
 
+amd64_ZFS_OBJS +=		\
+	vdev_raidz_math_avx2.o	\
+	vdev_raidz_math_sse2.o	\
+	vdev_raidz_math_ssse3.o
+
+sparcv9_ZFS_OBJS +=
+
 ZFS_COMMON_OBJS +=		\
+	$($(MACH64)_ZFS_OBJS)	\
 	abd.o			\
 	aggsum.o		\
 	arc.o			\
@@ -1685,7 +1693,7 @@ TEM_OBJS += tem.o tem_safe.o
 #	Font data for generated console fonts
 #
 i386_FONT	= 8x16
-i386_FONT_SRC= ter-u16n
+i386_FONT_SRC= ter-u16b
 sparc_FONT	= 12x22
 sparc_FONT_SRC= Gallant19
 FONT=$($(MACH)_FONT)
@@ -2067,7 +2075,7 @@ I40E_OBJS =	i40e_main.o i40e_osdep.o i40e_intr.o i40e_transceiver.o \
 		i40e_stats.o i40e_gld.o
 # Intel-written ones.
 I40E_INTC_OBJS = i40e_adminq.o i40e_common.o i40e_hmc.o i40e_lan_hmc.o \
-		 i40e_nvm.o
+		 i40e_nvm.o i40e_dcb.o
 
 #
 #	Solarflare 1/10/40GbE NIC driver module
@@ -2333,4 +2341,4 @@ BNX_OBJS += \
 # mlxcx(7D)
 #
 MLXCX_OBJS +=	mlxcx.o mlxcx_dma.o mlxcx_cmd.o mlxcx_intr.o mlxcx_gld.o \
-		mlxcx_ring.o
+		mlxcx_ring.o mlxcx_sensor.o

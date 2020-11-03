@@ -14,6 +14,7 @@
  * Copyright 2015 Pluribus Networks Inc.
  * Copyright 2019 Joyent, Inc.
  * Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
+ * Copyright 2020 Oxide Computer Company
  */
 
 #include <sys/types.h>
@@ -184,25 +185,30 @@ vmmdev_devmem_create(vmm_softc_t *sc, struct vm_memseg *mseg, const char *name)
 }
 
 static boolean_t
-vmmdev_devmem_segid(vmm_softc_t *sc, off_t off, off_t len, int *segidp)
+vmmdev_devmem_segid(vmm_softc_t *sc, off_t off, off_t len, int *segidp,
+    off_t *map_offp)
 {
 	list_t *dl = &sc->vmm_devmem_list;
 	vmm_devmem_entry_t *de = NULL;
+	const off_t map_end = off + len;
 
 	VERIFY(off >= VM_DEVMEM_START);
 
-	for (de = list_head(dl); de != NULL; de = list_next(dl, de)) {
-		/* XXX: Only hit on direct offset/length matches for now */
-		if (de->vde_off == off && de->vde_len == len) {
-			break;
-		}
-	}
-	if (de == NULL) {
+	if (map_end < off) {
+		/* No match on overflow */
 		return (B_FALSE);
 	}
 
-	*segidp = de->vde_segid;
-	return (B_TRUE);
+	for (de = list_head(dl); de != NULL; de = list_next(dl, de)) {
+		const off_t item_end = de->vde_off + de->vde_len;
+
+		if (de->vde_off <= off && item_end >= map_end) {
+			*segidp = de->vde_segid;
+			*map_offp = off - de->vde_off;
+			return (B_TRUE);
+		}
+	}
+	return (B_FALSE);
 }
 
 static void
@@ -494,25 +500,35 @@ vmmdev_do_ioctl(vmm_softc_t *sc, int cmd, intptr_t arg, int md,
 	/* Execute the primary logic for the ioctl. */
 	switch (cmd) {
 	case VM_RUN: {
-		struct vm_run vmrun;
+		struct vm_entry entry;
 
-		if (ddi_copyin(datap, &vmrun, sizeof (vmrun), md)) {
+		if (ddi_copyin(datap, &entry, sizeof (entry), md)) {
 			error = EFAULT;
 			break;
 		}
-		vmrun.cpuid = vcpu;
 
 		if (!(curthread->t_schedflag & TS_VCPU))
 			smt_mark_as_vcpu();
 
-		error = vm_run(sc->vmm_vm, &vmrun);
+		error = vm_run(sc->vmm_vm, vcpu, &entry);
+
 		/*
-		 * XXXJOY: I think it's necessary to do copyout, even in the
-		 * face of errors, since the exit state is communicated out.
+		 * Unexpected states in vm_run() are expressed through positive
+		 * errno-oriented return values.  VM states which expect further
+		 * processing in userspace (necessary context via exitinfo) are
+		 * expressed through negative return values.  For the time being
+		 * a return value of 0 is not expected from vm_run().
 		 */
-		if (ddi_copyout(&vmrun, datap, sizeof (vmrun), md)) {
-			error = EFAULT;
-			break;
+		ASSERT(error != 0);
+		if (error < 0) {
+			const struct vm_exit *vme;
+			void *outp = entry.exit_data;
+
+			error = 0;
+			vme = vm_exitinfo(sc->vmm_vm, vcpu);
+			if (ddi_copyout(vme, outp, sizeof (*vme), md)) {
+				error = EFAULT;
+			}
 		}
 		break;
 	}
@@ -976,9 +992,6 @@ vmmdev_do_ioctl(vmm_softc_t *sc, int cmd, intptr_t arg, int md,
 	case VM_GET_KERNEMU_DEV: {
 		struct vm_readwrite_kernemu_device kemu;
 		size_t size = 0;
-		mem_region_write_t mwrite = NULL;
-		mem_region_read_t mread = NULL;
-		uint64_t ignored = 0;
 
 		if (ddi_copyin(datap, &kemu, sizeof (kemu), md)) {
 			error = EFAULT;
@@ -992,31 +1005,12 @@ vmmdev_do_ioctl(vmm_softc_t *sc, int cmd, intptr_t arg, int md,
 		size = (1 << kemu.access_width);
 		ASSERT(size >= 1 && size <= 8);
 
-		if (kemu.gpa >= DEFAULT_APIC_BASE &&
-		    kemu.gpa < DEFAULT_APIC_BASE + PAGE_SIZE) {
-			mread = lapic_mmio_read;
-			mwrite = lapic_mmio_write;
-		} else if (kemu.gpa >= VIOAPIC_BASE &&
-		    kemu.gpa < VIOAPIC_BASE + VIOAPIC_SIZE) {
-			mread = vioapic_mmio_read;
-			mwrite = vioapic_mmio_write;
-		} else if (kemu.gpa >= VHPET_BASE &&
-		    kemu.gpa < VHPET_BASE + VHPET_SIZE) {
-			mread = vhpet_mmio_read;
-			mwrite = vhpet_mmio_write;
-		} else {
-			error = EINVAL;
-			break;
-		}
-
 		if (cmd == VM_SET_KERNEMU_DEV) {
-			VERIFY(mwrite != NULL);
-			error = mwrite(sc->vmm_vm, vcpu, kemu.gpa, kemu.value,
-			    size, &ignored);
+			error = vm_service_mmio_write(sc->vmm_vm, vcpu,
+			    kemu.gpa, kemu.value, size);
 		} else {
-			VERIFY(mread != NULL);
-			error = mread(sc->vmm_vm, vcpu, kemu.gpa, &kemu.value,
-			    size, &ignored);
+			error = vm_service_mmio_read(sc->vmm_vm, vcpu,
+			    kemu.gpa, &kemu.value, size);
 		}
 
 		if (error == 0) {
@@ -1998,6 +1992,11 @@ vmm_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
 	vmm_softc_t	*sc;
 	minor_t		minor;
 
+	/* The structs in bhyve ioctls assume a 64-bit datamodel */
+	if (ddi_model_convert_from(mode & FMODELS) != DDI_MODEL_NONE) {
+		return (ENOTSUP);
+	}
+
 	minor = getminor(dev);
 
 	if (minor == VMM_CTL_MINOR) {
@@ -2076,9 +2075,10 @@ vmm_segmap(dev_t dev, off_t off, struct as *as, caddr_t *addrp, off_t len,
 	vms = vm_get_vmspace(vm);
 	if (off >= VM_DEVMEM_START) {
 		int segid;
+		off_t map_off = 0;
 
 		/* Mapping a devmem "device" */
-		if (!vmmdev_devmem_segid(sc, off, len, &segid)) {
+		if (!vmmdev_devmem_segid(sc, off, len, &segid, &map_off)) {
 			err = ENODEV;
 			goto out;
 		}
@@ -2086,7 +2086,8 @@ vmm_segmap(dev_t dev, off_t off, struct as *as, caddr_t *addrp, off_t len,
 		if (err != 0) {
 			goto out;
 		}
-		err = vm_segmap_obj(vms, vmo, as, addrp, prot, maxprot, flags);
+		err = vm_segmap_obj(vmo, map_off, len, as, addrp, prot, maxprot,
+		    flags);
 	} else {
 		/* Mapping a part of the guest physical space */
 		err = vm_segmap_space(vms, off, as, addrp, len, prot, maxprot,

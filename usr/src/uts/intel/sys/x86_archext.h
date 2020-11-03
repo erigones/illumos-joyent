@@ -603,13 +603,6 @@ extern "C" {
 #define	IA32_PKG_THERM_INTERRUPT_TR2_IE		0x00800000
 #define	IA32_PKG_THERM_INTERRUPT_PL_NE		0x01000000
 
-/*
- * This MSR exists on families, 10h, 12h+ for AMD. This controls instruction
- * decoding. Most notably, for the AMD variant of retpolines, we must improve
- * the serializability of lfence for the lfence based method to work.
- */
-#define	MSR_AMD_DECODE_CONFIG			0xc0011029
-#define	AMD_DECODE_CONFIG_LFENCE_DISPATCH	0x02
 
 #define	MCI_CTL_VALUE		0xffffffff
 
@@ -969,6 +962,9 @@ extern "C" {
 #define	X86_CHIPREV_AMD_17_SSP_B0 \
 	_X86_CHIPREV_MKREV(X86_VENDOR_AMD, 0x17, 0x0008)
 
+#define	X86_CHIPREV_AMD_17_MTS_B0 \
+	_X86_CHIPREV_MKREV(X86_VENDOR_AMD, 0x17, 0x0009)
+
 /*
  * Various socket/package types, extended as the need to distinguish
  * a new type arises.  The top 8 byte identfies the vendor and the
@@ -1024,7 +1020,8 @@ extern "C" {
 #define	X86_SOCKET_SP3		_X86_SOCKET_MKVAL(X86_VENDOR_AMD, 0x1f)
 #define	X86_SOCKET_SP3R2	_X86_SOCKET_MKVAL(X86_VENDOR_AMD, 0x20)
 #define	X86_SOCKET_FP5		_X86_SOCKET_MKVAL(X86_VENDOR_AMD, 0x21)
-#define	X86_NUM_SOCKETS_AMD	0x22
+#define	X86_SOCKET_FP6		_X86_SOCKET_MKVAL(X86_VENDOR_AMD, 0x22)
+#define	X86_NUM_SOCKETS_AMD	0x23
 
 
 /*
