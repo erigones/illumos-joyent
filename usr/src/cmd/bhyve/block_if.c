@@ -1073,4 +1073,22 @@ blockif_set_wce(struct blockif_ctxt *bc, int wc_enable)
 
 	return (res);
 }
+
+int
+blockif_check_size(struct blockif_ctxt *bc, size_t *newsize)
+{
+	struct stat sbuf;
+
+	if (fstat(bc->bc_fd, &sbuf) != 0) {
+		return (-1);
+	}
+	if (sbuf.st_size == bc->bc_size) {
+		return (-1);
+	}
+
+	bc->bc_size = sbuf.st_size;
+	*newsize = bc->bc_size;
+
+	return (0);
+}
 #endif /* __FreeBSD__ */
