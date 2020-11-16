@@ -209,6 +209,7 @@
 #include <errno.h>
 
 #define	DWARF_VERSION_TWO	2
+#define	DWARF_VERSION_FOUR	4
 #define	DWARF_VARARGS_NAME	"..."
 
 /*
@@ -262,6 +263,8 @@ typedef struct ctf_die {
 	Dwarf_Die	cu_cu;		/* libdwarf compilation unit */
 	Dwarf_Off	cu_cuoff;	/* cu's offset */
 	Dwarf_Off	cu_maxoff;	/* maximum offset */
+	Dwarf_Half	cu_vers;	/* Dwarf Version */
+	Dwarf_Half	cu_addrsz;	/* Dwarf Address Size */
 	ctf_file_t	*cu_ctfp;	/* output CTF file */
 	avl_tree_t	cu_map;		/* map die offsets to CTF types */
 	char		*cu_errbuf;	/* error message buffer */
@@ -576,6 +579,13 @@ ctf_dwarf_string(ctf_cu_t *cup, Dwarf_Die die, Dwarf_Half name, char **strp)
 	return (ECTF_CONVBKERR);
 }
 
+/*
+ * The encoding of a DW_AT_data_member_location has changed between different
+ * revisions of the specification. It may be a general udata form or it may be
+ * location data information. In DWARF 2, it is only the latter. In later
+ * revisions of the spec, it may be either. To determine the form, we ask the
+ * class, which will be of type CONSTANT.
+ */
 static int
 ctf_dwarf_member_location(ctf_cu_t *cup, Dwarf_Die die, Dwarf_Unsigned *valp)
 {
@@ -584,10 +594,48 @@ ctf_dwarf_member_location(ctf_cu_t *cup, Dwarf_Die die, Dwarf_Unsigned *valp)
 	Dwarf_Attribute attr;
 	Dwarf_Locdesc *loc;
 	Dwarf_Signed locnum;
+	Dwarf_Half form;
+	enum Dwarf_Form_Class class;
 
 	if ((ret = ctf_dwarf_attribute(cup, die, DW_AT_data_member_location,
 	    &attr)) != 0)
 		return (ret);
+
+	if (dwarf_whatform(attr, &form, &derr) != DW_DLV_OK) {
+		(void) snprintf(cup->cu_errbuf, cup->cu_errlen,
+		    "failed to get dwarf attribute for for member location: %s",
+		    dwarf_errmsg(derr));
+		dwarf_dealloc(cup->cu_dwarf, attr, DW_DLA_ATTR);
+		return (ECTF_CONVBKERR);
+	}
+
+	class = dwarf_get_form_class(cup->cu_vers, DW_AT_data_member_location,
+	    cup->cu_addrsz, form);
+	if (class == DW_FORM_CLASS_CONSTANT) {
+		Dwarf_Signed sign;
+
+		/*
+		 * We have a constant. We need to try to get both this as signed
+		 * and unsigned data, as unfortunately, DWARF doesn't define the
+		 * sign. Which is a joy. We try unsigned first. If neither
+		 * match, fall through to the normal path.
+		 */
+		if (dwarf_formudata(attr, valp, &derr) == DW_DLV_OK) {
+			dwarf_dealloc(cup->cu_dwarf, attr, DW_DLA_ATTR);
+			return (0);
+		}
+
+		if (dwarf_formsdata(attr, &sign, &derr) == DW_DLV_OK) {
+			dwarf_dealloc(cup->cu_dwarf, attr, DW_DLA_ATTR);
+			if (sign < 0) {
+				(void) snprintf(cup->cu_errbuf, cup->cu_errlen,
+				    "encountered negative member data "
+				    "location: %d", sign);
+			}
+			*valp = (Dwarf_Unsigned)sign;
+			return (0);
+		}
+	}
 
 	if (dwarf_loclist(attr, &loc, &locnum, &derr) != DW_DLV_OK) {
 		(void) snprintf(cup->cu_errbuf, cup->cu_errlen,
@@ -1456,13 +1504,118 @@ ctf_dwarf_create_sou(ctf_cu_t *cup, Dwarf_Die die, ctf_id_t *idp,
 }
 
 static int
+ctf_dwarf_array_upper_bound(ctf_cu_t *cup, Dwarf_Die range, ctf_arinfo_t *ar)
+{
+	Dwarf_Attribute attr;
+	Dwarf_Unsigned uval;
+	Dwarf_Signed sval;
+	Dwarf_Half form;
+	Dwarf_Error derr;
+	const char *formstr = NULL;
+	uint_t adj = 0;
+	int ret = 0;
+
+	ctf_dprintf("setting array upper bound\n");
+
+	ar->ctr_nelems = 0;
+
+	/*
+	 * Different compilers use different attributes to indicate the size of
+	 * an array. GCC has traditionally used DW_AT_upper_bound, while Clang
+	 * uses DW_AT_count. They have slightly different semantics. DW_AT_count
+	 * indicates the total number of elements that are present, while
+	 * DW_AT_upper_bound indicates the last index, hence we need to add one
+	 * to that index to get the count.
+	 *
+	 * We first search for DW_AT_count and then for DW_AT_upper_bound. If we
+	 * find neither, then we treat the lack of this as a zero element array.
+	 * Our value is initialized assuming we find a DW_AT_count value.
+	 */
+	ret = ctf_dwarf_attribute(cup, range, DW_AT_count, &attr);
+	if (ret != 0 && ret != ENOENT) {
+		return (ret);
+	} else if (ret == ENOENT) {
+		ret = ctf_dwarf_attribute(cup, range, DW_AT_upper_bound, &attr);
+		if (ret != 0 && ret != ENOENT) {
+			return (ret);
+		} else if (ret == ENOENT) {
+			return (0);
+		} else {
+			adj = 1;
+		}
+	}
+
+	if (dwarf_whatform(attr, &form, &derr) != DW_DLV_OK) {
+		(void) snprintf(cup->cu_errbuf, cup->cu_errlen,
+		    "failed to get DW_AT_upper_bound attribute form: %s\n",
+		    dwarf_errmsg(derr));
+		ret = ECTF_CONVBKERR;
+		goto done;
+	}
+
+	/*
+	 * Compilers can indicate array bounds using signed or unsigned values.
+	 * Additionally, some compilers may also store the array bounds
+	 * using as DW_FORM_data{1,2,4,8} (which DWARF treats as raw data and
+	 * expects the caller to understand how to interpret the value).
+	 *
+	 * GCC 4.4.4 appears to always use unsigned values to encode the
+	 * array size (using '(unsigned)-1' to represent a zero-length or
+	 * unknown length array). Later versions of GCC use a signed value of
+	 * -1 for zero/unknown length arrays, and unsigned values to encode
+	 * known array sizes.
+	 *
+	 * Both dwarf_formsdata() and dwarf_formudata() will retrieve values
+	 * as their respective signed/unsigned forms, but both will also
+	 * retreive DW_FORM_data{1,2,4,8} values and treat them as signed or
+	 * unsigned integers (i.e. dwarf_formsdata() treats DW_FORM_dataXX
+	 * as signed integers and dwarf_formudata() treats DW_FORM_dataXX as
+	 * unsigned integers). Both will return an error if the form is not
+	 * their respective signed/unsigned form, or DW_FORM_dataXX.
+	 *
+	 * To obtain the upper bound, we use the appropriate
+	 * dwarf_form[su]data() function based on the form of DW_AT_upper_bound.
+	 * Additionally, we let dwarf_formudata() handle the DW_FORM_dataXX
+	 * forms (via the default option in the switch). If the value is in an
+	 * unexpected form (i.e. not DW_FORM_udata or DW_FORM_dataXX),
+	 * dwarf_formudata() will return failure (i.e. not DW_DLV_OK) and set
+	 * derr with the specific error value.
+	 */
+	switch (form) {
+	case DW_FORM_sdata:
+		if (dwarf_formsdata(attr, &sval, &derr) == DW_DLV_OK) {
+			ar->ctr_nelems = sval + adj;
+			goto done;
+		}
+		break;
+	case DW_FORM_udata:
+	default:
+		if (dwarf_formudata(attr, &uval, &derr) == DW_DLV_OK) {
+			ar->ctr_nelems = uval + adj;
+			goto done;
+		}
+		break;
+	}
+
+	if (dwarf_get_FORM_name(form, &formstr) != DW_DLV_OK)
+		formstr = "unknown DWARF form";
+
+	(void) snprintf(cup->cu_errbuf, cup->cu_errlen,
+	    "failed to get %s (%hu) value for DW_AT_upper_bound: %s\n",
+	    formstr, form, dwarf_errmsg(derr));
+	ret = ECTF_CONVBKERR;
+
+done:
+	dwarf_dealloc(cup->cu_dwarf, attr, DW_DLA_ATTR);
+	return (ret);
+}
+
+static int
 ctf_dwarf_create_array_range(ctf_cu_t *cup, Dwarf_Die range, ctf_id_t *idp,
     ctf_id_t base, int isroot)
 {
 	int ret;
 	Dwarf_Die sib;
-	Dwarf_Unsigned val;
-	Dwarf_Signed sval;
 	ctf_arinfo_t ar;
 
 	ctf_dprintf("creating array range\n");
@@ -1482,30 +1635,8 @@ ctf_dwarf_create_array_range(ctf_cu_t *cup, Dwarf_Die range, ctf_id_t *idp,
 	if ((ar.ctr_index = ctf_dwarf_long(cup)) == CTF_ERR)
 		return (ctf_errno(cup->cu_ctfp));
 
-	/*
-	 * Array bounds can be signed or unsigned, but there are several kinds
-	 * of signless forms (data1, data2, etc) that take their sign from the
-	 * routine that is trying to interpret them.  That is, data1 can be
-	 * either signed or unsigned, depending on whether you use the signed or
-	 * unsigned accessor function.  GCC will use the signless forms to store
-	 * unsigned values which have their high bit set, so we need to try to
-	 * read them first as unsigned to get positive values.  We could also
-	 * try signed first, falling back to unsigned if we got a negative
-	 * value.
-	 */
-	if ((ret = ctf_dwarf_unsigned(cup, range, DW_AT_upper_bound,
-	    &val)) == 0) {
-		ar.ctr_nelems = val + 1;
-	} else if (ret != ENOENT) {
+	if ((ret = ctf_dwarf_array_upper_bound(cup, range, &ar)) != 0)
 		return (ret);
-	} else if ((ret = ctf_dwarf_signed(cup, range, DW_AT_upper_bound,
-	    &sval)) == 0) {
-		ar.ctr_nelems = sval + 1;
-	} else if (ret != ENOENT) {
-		return (ret);
-	} else {
-		ar.ctr_nelems = 0;
-	}
 
 	if ((*idp = ctf_add_array(cup->cu_ctfp, isroot, &ar)) == CTF_ERR)
 		return (ctf_errno(cup->cu_ctfp));
@@ -1684,40 +1815,12 @@ ctf_dwarf_create_reference(ctf_cu_t *cup, Dwarf_Die die, ctf_id_t *idp,
 	return (ctf_dwmap_add(cup, *idp, die, B_FALSE));
 }
 
-/*
- * Get the size of the type of a particular die. Note that this is a simple
- * version that doesn't attempt to traverse further than expecting a single
- * sized type reference (so no qualifiers etc.). Nor does it attempt to do as
- * much as ctf_type_size() - which we cannot use here as that doesn't look up
- * dynamic types, and we don't yet want to do a ctf_update().
- */
-static int
-ctf_dwarf_get_type_size(ctf_cu_t *cup, Dwarf_Die die, size_t *sizep)
-{
-	const ctf_type_t *t;
-	Dwarf_Die tdie;
-	ctf_id_t tid;
-	int ret;
-
-	if ((ret = ctf_dwarf_refdie(cup, die, DW_AT_type, &tdie)) != 0)
-		return (ret);
-
-	if ((ret = ctf_dwarf_convert_type(cup, tdie, &tid,
-	    CTF_ADD_NONROOT)) != 0)
-		return (ret);
-
-	if ((t = ctf_dyn_lookup_by_id(cup->cu_ctfp, tid)) == NULL)
-		return (ENOENT);
-
-	*sizep = ctf_get_ctt_size(cup->cu_ctfp, t, NULL, NULL);
-	return (0);
-}
-
 static int
 ctf_dwarf_create_enum(ctf_cu_t *cup, Dwarf_Die die, ctf_id_t *idp, int isroot)
 {
 	size_t size = 0;
 	Dwarf_Die child;
+	Dwarf_Unsigned dw;
 	ctf_id_t id;
 	char *name;
 	int ret;
@@ -1728,7 +1831,15 @@ ctf_dwarf_create_enum(ctf_cu_t *cup, Dwarf_Die die, ctf_id_t *idp, int isroot)
 	if (ret == ENOENT)
 		name = NULL;
 
-	(void) ctf_dwarf_get_type_size(cup, die, &size);
+	/*
+	 * Enumerations may have a size associated with them, particularly if
+	 * they're packed. Note, a Dwarf_Unsigned is larger than a size_t on an
+	 * ILP32 system.
+	 */
+	if (ctf_dwarf_unsigned(cup, die, DW_AT_byte_size, &dw) == 0 &&
+	    dw < SIZE_MAX) {
+		size = (size_t)dw;
+	}
 
 	id = ctf_add_enum(cup->cu_ctfp, isroot, name, size);
 	ctf_dprintf("added enum %s (%d)\n", name, id);
@@ -2923,7 +3034,11 @@ ctf_dwarf_count_dies(Dwarf_Debug dw, Dwarf_Error *derr, int *ndies,
 			return (ECTF_CONVBKERR);
 		}
 
-		if (vers != DWARF_VERSION_TWO) {
+		switch (vers) {
+		case DWARF_VERSION_TWO:
+		case DWARF_VERSION_FOUR:
+			break;
+		default:
 			(void) snprintf(errbuf, errlen,
 			    "unsupported DWARF version: %d\n", vers);
 			return (ECTF_CONVBKERR);
@@ -2940,11 +3055,11 @@ ctf_dwarf_init_die(int fd, Elf *elf, ctf_cu_t *cup, int ndie, char *errbuf,
 {
 	int ret;
 	Dwarf_Unsigned hdrlen, abboff, nexthdr;
-	Dwarf_Half addrsz;
+	Dwarf_Half addrsz, vers;
 	Dwarf_Unsigned offset = 0;
 	Dwarf_Error derr;
 
-	while ((ret = dwarf_next_cu_header(cup->cu_dwarf, &hdrlen, NULL,
+	while ((ret = dwarf_next_cu_header(cup->cu_dwarf, &hdrlen, &vers,
 	    &abboff, &addrsz, &nexthdr, &derr)) != DW_DLV_NO_ENTRY) {
 		char *name;
 		Dwarf_Die cu, child;
@@ -2965,6 +3080,8 @@ ctf_dwarf_init_die(int fd, Elf *elf, ctf_cu_t *cup, int ndie, char *errbuf,
 		cup->cu_longtid = CTF_ERR;
 		cup->cu_elf = elf;
 		cup->cu_maxoff = nexthdr - 1;
+		cup->cu_vers = vers;
+		cup->cu_addrsz = addrsz;
 		cup->cu_ctfp = ctf_fdcreate(fd, &ret);
 		if (cup->cu_ctfp == NULL)
 			return (ret);

@@ -33,17 +33,28 @@ f boot/cdboot 0444 root sys
 d boot/defaults 0755 root sys
 f boot/defaults/loader.conf 0444 root sys
 d boot/fonts 0755 root sys
-f boot/fonts/10x18.fnt 0444 root sys
-f boot/fonts/10x20.fnt 0444 root sys
-f boot/fonts/11x22.fnt 0444 root sys
-f boot/fonts/12x24.fnt 0444 root sys
-f boot/fonts/14x28.fnt 0444 root sys
-f boot/fonts/16x32.fnt 0444 root sys
-f boot/fonts/6x12.fnt 0444 root sys
-f boot/fonts/8x14.fnt 0444 root sys
-f boot/fonts/8x16.fnt 0444 root sys
-f boot/fonts/Gallant19.fnt 0444 root sys
-f boot/fonts/fonts.dir 0444 root sys
+f boot/fonts/10x18.fnt 0444 root bin
+f boot/fonts/10x18b.fnt 0444 root bin
+f boot/fonts/10x20.fnt 0444 root bin
+f boot/fonts/10x20b.fnt 0444 root bin
+f boot/fonts/11x22.fnt 0444 root bin
+f boot/fonts/11x22b.fnt 0444 root bin
+f boot/fonts/12x24.fnt 0444 root bin
+f boot/fonts/12x24b.fnt 0444 root bin
+f boot/fonts/14x28.fnt 0444 root bin
+f boot/fonts/14x28b.fnt 0444 root bin
+f boot/fonts/16x32.fnt 0444 root bin
+f boot/fonts/16x32b.fnt 0444 root bin
+f boot/fonts/6x12.fnt 0444 root bin
+f boot/fonts/6x12b.fnt 0444 root bin
+f boot/fonts/8x14.fnt 0444 root bin
+f boot/fonts/8x14b.fnt 0444 root bin
+f boot/fonts/8x14v.fnt 0444 root bin
+f boot/fonts/8x16.fnt 0444 root bin
+f boot/fonts/8x16b.fnt 0444 root bin
+f boot/fonts/8x16v.fnt 0444 root bin
+f boot/fonts/Gallant19.fnt 0444 root bin
+f boot/fonts/fonts.dir 0444 root bin
 d boot/forth 0755 root sys
 f boot/forth/beadm.4th 0444 root sys
 f boot/forth/beastie.4th 0444 root sys
@@ -614,6 +625,7 @@ d etc/skel 0755 root sys
 f etc/skel/.bashrc 0644 root other
 f etc/skel/.kshrc 0644 root other
 f etc/skel/.profile 0644 root other
+f etc/smhba.conf 0644 root sys
 d etc/sock2path.d 0755 root sys
 f etc/sock2path.d/driver%2Fnetwork%2Fbpf 0644 root sys
 f etc/sock2path.d/driver%2Fnetwork%2Fsdp 0644 root sys
@@ -687,6 +699,7 @@ f kernel/drv/aac.conf 0644 root sys
 f kernel/drv/acpi_drv.conf 0644 root sys
 f kernel/drv/adpu320.conf 0644 root sys
 f kernel/drv/aggr.conf 0644 root sys
+f kernel/drv/amdzen.conf 0644 root sys
 d kernel/drv/amd64 0755 root sys
 f kernel/drv/amd64/aac 0755 root sys
 f kernel/drv/amd64/acpi_drv 0755 root sys
@@ -695,7 +708,8 @@ f kernel/drv/amd64/afe 0755 root sys
 f kernel/drv/amd64/aggr 0755 root sys
 f kernel/drv/amd64/ahci 0755 root sys
 f kernel/drv/amd64/amd8111s 0755 root sys
-f kernel/drv/amd64/amdf17nbdf 0755 root sys
+f kernel/drv/amd64/amdzen 0755 root sys
+f kernel/drv/amd64/amdzen_stub 0755 root sys
 f kernel/drv/amd64/amdnbtemp 0755 root sys
 f kernel/drv/amd64/amr 0755 root sys
 f kernel/drv/amd64/arcmsr 0755 root sys
@@ -778,6 +792,7 @@ f kernel/drv/amd64/ixgb 0755 root sys
 f kernel/drv/amd64/ixgbe 0755 root sys
 f kernel/drv/amd64/kb8042 0755 root sys
 f kernel/drv/amd64/keysock 0755 root sys
+f kernel/drv/amd64/ksensor 0755 root sys
 f kernel/drv/amd64/kmdb 0755 root sys
 f kernel/drv/amd64/kssl 0755 root sys
 f kernel/drv/amd64/llc1 0755 root sys
@@ -839,6 +854,7 @@ f kernel/drv/amd64/si3124 0755 root sys
 f kernel/drv/amd64/simnet 0755 root sys
 f kernel/drv/amd64/skd 0755 root sys
 f kernel/drv/amd64/smbios 0755 root sys
+f kernel/drv/amd64/smntemp 0755 root sys
 f kernel/drv/amd64/smp 0755 root sys
 f kernel/drv/amd64/smrt 0755 root sys
 f kernel/drv/amd64/softmac 0755 root sys
@@ -954,6 +970,7 @@ f kernel/drv/iwscn.conf 0644 root sys
 f kernel/drv/ixgbe.conf 0644 root sys
 f kernel/drv/keysock.conf 0644 root sys
 f kernel/drv/kmdb.conf 0644 root sys
+f kernel/drv/ksensor.conf 0644 root sys
 f kernel/drv/kssl.conf 0644 root sys
 f kernel/drv/llc1.conf 0644 root sys
 f kernel/drv/lockstat.conf 0644 root sys
@@ -7026,8 +7043,6 @@ f usr/lib/libsun_ima.so.1 0755 root bin
 s usr/lib/libsun_ima.so=libsun_ima.so.1
 f usr/lib/libsun_sas.so.1 0755 root bin
 s usr/lib/libsun_sas.so=libsun_sas.so.1
-f usr/lib/libsys.so.1 0755 root bin
-s usr/lib/libsys.so=libsys.so.1
 s usr/lib/libsysevent.so.1=../../lib/libsysevent.so.1
 s usr/lib/libsysevent.so=../../lib/libsysevent.so.1
 f usr/lib/libtecla.so.1 0755 root bin
@@ -10170,6 +10185,7 @@ f usr/lib/mdb/kvm/amd64/scsi_vhci.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/sctp.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/sd.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/smbfs.so 0555 root sys
+f usr/lib/mdb/kvm/amd64/smbios.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/smbsrv.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/sockfs.so 0555 root sys
 f usr/lib/mdb/kvm/amd64/specfs.so 0555 root sys
@@ -10191,6 +10207,7 @@ f usr/lib/mdb/proc/amd64/libcmdutils.so 0555 root sys
 f usr/lib/mdb/proc/amd64/libnvpair.so 0555 root sys
 f usr/lib/mdb/proc/amd64/libproc.so 0555 root sys
 f usr/lib/mdb/proc/amd64/libpython2.6.so 0555 root sys
+f usr/lib/mdb/proc/amd64/libsmbios.so 0555 root sys
 f usr/lib/mdb/proc/amd64/libsysevent.so 0555 root sys
 f usr/lib/mdb/proc/amd64/libtopo.so 0555 root sys
 f usr/lib/mdb/proc/amd64/libumem.so 0555 root sys
@@ -10208,6 +10225,7 @@ f usr/lib/mdb/proc/libmlsvc.so 0555 root sys
 f usr/lib/mdb/proc/libnvpair.so 0555 root sys
 f usr/lib/mdb/proc/libproc.so 0555 root sys
 f usr/lib/mdb/proc/libpython2.6.so 0555 root sys
+f usr/lib/mdb/proc/libsmbios.so 0555 root sys
 f usr/lib/mdb/proc/libsysevent.so 0555 root sys
 f usr/lib/mdb/proc/libtopo.so 0555 root sys
 f usr/lib/mdb/proc/libumem.so 0555 root sys
@@ -11066,6 +11084,7 @@ f usr/sbin/rtquery 0555 root bin
 f usr/sbin/rwall 0555 root bin
 f usr/sbin/sacadm 4755 root sys
 f usr/sbin/safe_finger 0555 root bin
+f usr/sbin/sasinfo 0555 root bin
 f usr/sbin/sbdadm 0555 root bin
 s usr/sbin/sendmail=../lib/mailwrapper
 f usr/sbin/setmnt 0555 root bin
@@ -12893,6 +12912,7 @@ s usr/share/man/man2/fstat.2=stat.2
 s usr/share/man/man2/fstatat.2=stat.2
 s usr/share/man/man2/fstatvfs.2=statvfs.2
 s usr/share/man/man2/futimens.2=utimes.2
+s usr/share/man/man2/futimes.2=utimes.2
 s usr/share/man/man2/futimesat.2=utimes.2
 f usr/share/man/man2/getacct.2 0444 root bin
 f usr/share/man/man2/getaudit.2 0444 root bin
@@ -12932,6 +12952,7 @@ s usr/share/man/man2/linkat.2=link.2
 f usr/share/man/man2/llseek.2 0444 root bin
 f usr/share/man/man2/lseek.2 0444 root bin
 s usr/share/man/man2/lstat.2=stat.2
+s usr/share/man/man2/lutimes.2=utimes.2
 f usr/share/man/man2/memcntl.2 0444 root bin
 f usr/share/man/man2/meminfo.2 0444 root bin
 f usr/share/man/man2/mincore.2 0444 root bin
@@ -13798,8 +13819,7 @@ s usr/share/man/man3c/mbrlen_l.3c=mbrlen.3c
 f usr/share/man/man3c/mbrtoc16.3c 0444 root bin
 s usr/share/man/man3c/mbrtoc32.3c=mbrtoc16.3c
 s usr/share/man/man3c/mbrtowc.3c=mbrtoc16.3c
-s usr/share/man/man3c/mbrtowc32.3c=mbrtoc16.3c
-s usr/share/man/man3c/mbrtowc_l.3c=mbrtowc16.3c
+s usr/share/man/man3c/mbrtowc_l.3c=mbrtoc16.3c
 f usr/share/man/man3c/mbsinit.3c 0444 root bin
 s usr/share/man/man3c/mbsinit_l.3c=mbsinit.3c
 s usr/share/man/man3c/mbsnrtowcs.3c=mbsrtowcs.3c
@@ -14091,6 +14111,7 @@ s usr/share/man/man3c/qeconvert.3c=econvert.3c
 s usr/share/man/man3c/qfconvert.3c=econvert.3c
 s usr/share/man/man3c/qgconvert.3c=econvert.3c
 f usr/share/man/man3c/qsort.3c 0444 root bin
+s usr/share/man/man3c/qsort_r.3c=qsort.3c
 s usr/share/man/man3c/quadruple_to_decimal.3c=floating_to_decimal.3c
 f usr/share/man/man3c/quick_exit.3c 0444 root bin
 f usr/share/man/man3c/raise.3c 0444 root bin
@@ -15933,6 +15954,11 @@ f usr/share/man/man3gss/gss_verify_mic.3gss 0444 root bin
 f usr/share/man/man3gss/gss_wrap.3gss 0444 root bin
 f usr/share/man/man3gss/gss_wrap_size_limit.3gss 0444 root bin
 d usr/share/man/man3head 0755 root bin
+s usr/share/man/man3head/CMSG_DATA.3head=socket.h.3head
+s usr/share/man/man3head/CMSG_FIRSTHDR.3head=socket.h.3head
+s usr/share/man/man3head/CMSG_LEN.3head=socket.h.3head
+s usr/share/man/man3head/CMSG_NXTHDR.3head=socket.h.3head
+s usr/share/man/man3head/CMSG_SPACE.3head=socket.h.3head
 s usr/share/man/man3head/LIST_CLASS_ENTRY.3head=queue.h.3head
 s usr/share/man/man3head/LIST_CLASS_HEAD.3head=queue.h.3head
 s usr/share/man/man3head/LIST_CONCAT.3head=queue.h.3head
@@ -16021,6 +16047,8 @@ s usr/share/man/man3head/TAILQ_NEXT.3head=queue.h.3head
 s usr/share/man/man3head/TAILQ_PREV.3head=queue.h.3head
 s usr/share/man/man3head/TAILQ_REMOVE.3head=queue.h.3head
 s usr/share/man/man3head/TAILQ_SWAP.3head=queue.h.3head
+s usr/share/man/man3head/TIMESPEC_TO_TIMEVAL.3head=timespec.3head
+s usr/share/man/man3head/TIMEVAL_TO_TIMESPEC.3head=timespec.3head
 s usr/share/man/man3head/acct.3head=acct.h.3head
 f usr/share/man/man3head/acct.h.3head 0444 root bin
 s usr/share/man/man3head/aio.3head=aio.h.3head
@@ -16167,6 +16195,8 @@ s usr/share/man/man3head/timeb.3head=timeb.h.3head
 f usr/share/man/man3head/timeb.h.3head 0444 root bin
 s usr/share/man/man3head/times.3head=times.h.3head
 f usr/share/man/man3head/times.h.3head 0444 root bin
+f usr/share/man/man3head/timespec.3head 0444 root bin
+s usr/share/man/man3head/timeval.3head=timespec.3head
 s usr/share/man/man3head/types.3head=types.h.3head
 f usr/share/man/man3head/types.h.3head 0444 root bin
 s usr/share/man/man3head/types32.3head=types32.h.3head
@@ -16553,7 +16583,6 @@ f usr/share/man/man3lib/libslp.3lib 0444 root bin
 s usr/share/man/man3lib/libsmhbaapi.3lib=libSMHBAAPI.3lib
 f usr/share/man/man3lib/libsocket.3lib 0444 root bin
 f usr/share/man/man3lib/libstmf.3lib 0444 root bin
-f usr/share/man/man3lib/libsys.3lib 0444 root bin
 f usr/share/man/man3lib/libsysevent.3lib 0444 root bin
 f usr/share/man/man3lib/libtecla.3lib 0444 root bin
 s usr/share/man/man3lib/libtermcap.3lib=libcurses.3lib
@@ -19636,8 +19665,9 @@ f usr/share/man/man7d/afe.7d 0444 root bin
 f usr/share/man/man7d/ahci.7d 0444 root bin
 s usr/share/man/man7d/allkmem.7d=mem.7d
 f usr/share/man/man7d/amd8111s.7d 0444 root bin
-f usr/share/man/man7d/amdf17nbdf.7d 0444 root bin
 f usr/share/man/man7d/amdnbtemp.7d 0444 root bin
+f usr/share/man/man7d/amdzen.7d 0444 root bin
+s usr/share/man/man7d/amdzen_stub.7d=amdzen.7d
 f usr/share/man/man7d/amr.7d 0444 root bin
 f usr/share/man/man7d/arcmsr.7d 0444 root bin
 f usr/share/man/man7d/asy.7d 0444 root bin
@@ -19687,6 +19717,7 @@ f usr/share/man/man7d/iwn.7d 0444 root bin
 f usr/share/man/man7d/ixgbe.7d 0444 root bin
 f usr/share/man/man7d/kmdb.7d 0444 root bin
 s usr/share/man/man7d/kmem.7d=mem.7d
+f usr/share/man/man7d/ksensor.7d 0444 root bin
 f usr/share/man/man7d/kstat.7d 0444 root bin
 f usr/share/man/man7d/ksyms.7d 0444 root bin
 f usr/share/man/man7d/llc1.7d 0444 root bin
@@ -19742,6 +19773,7 @@ f usr/share/man/man7d/sgen.7d 0444 root bin
 f usr/share/man/man7d/si3124.7d 0444 root bin
 f usr/share/man/man7d/skd.7d 0444 root bin
 f usr/share/man/man7d/smbios.7d 0444 root bin
+f usr/share/man/man7d/smntemp.7d 0444 root bin
 f usr/share/man/man7d/st.7d 0444 root bin
 f usr/share/man/man7d/sysmsg.7d 0444 root bin
 f usr/share/man/man7d/systrace.7d 0444 root bin
@@ -19764,6 +19796,9 @@ f usr/share/man/man7d/usbftdi.7d 0444 root bin
 f usr/share/man/man7d/usbsacm.7d 0444 root bin
 f usr/share/man/man7d/usbsksp.7d 0444 root bin
 f usr/share/man/man7d/usbsprl.7d 0444 root bin
+f usr/share/man/man7d/vioblk.7d 0444 root bin
+f usr/share/man/man7d/vioif.7d 0444 root bin
+f usr/share/man/man7d/virtio.7d 0444 root bin
 f usr/share/man/man7d/virtualkm.7d 0444 root bin
 f usr/share/man/man7d/vnd.7d 0444 root bin
 f usr/share/man/man7d/vni.7d 0444 root bin
@@ -20011,6 +20046,7 @@ d usr/share/man/man9f 0755 root bin
 f usr/share/man/man9f/ASSERT.9f 0444 root bin
 s usr/share/man/man9f/AVL_NEXT.9f=avl.9f
 s usr/share/man/man9f/AVL_PREV.9f=avl.9f
+s usr/share/man/man9f/CRED.9f=credentials.9f
 f usr/share/man/man9f/Intro.9f 0444 root bin
 f usr/share/man/man9f/OTHERQ.9f 0444 root bin
 f usr/share/man/man9f/RD.9f 0444 root bin
@@ -20193,6 +20229,10 @@ f usr/share/man/man9f/copyb.9f 0444 root bin
 f usr/share/man/man9f/copyin.9f 0444 root bin
 f usr/share/man/man9f/copymsg.9f 0444 root bin
 f usr/share/man/man9f/copyout.9f 0444 root bin
+f usr/share/man/man9f/credentials.9f 0444 root bin
+s usr/share/man/man9f/crdup.9f=credentials.9f
+s usr/share/man/man9f/crfree.9f=credentials.9f
+s usr/share/man/man9f/crget.9f=credentials.9f
 s usr/share/man/man9f/crgetgid.9f=ddi_cred.9f
 s usr/share/man/man9f/crgetgroups.9f=ddi_cred.9f
 s usr/share/man/man9f/crgetngroups.9f=ddi_cred.9f
@@ -20202,6 +20242,7 @@ s usr/share/man/man9f/crgetsgid.9f=ddi_cred.9f
 s usr/share/man/man9f/crgetsuid.9f=ddi_cred.9f
 s usr/share/man/man9f/crgetuid.9f=ddi_cred.9f
 s usr/share/man/man9f/crgetzoneid.9f=ddi_cred.9f
+s usr/share/man/man9f/crhold.9f=credentials.9f
 f usr/share/man/man9f/csx_AccessConfigurationRegister.9f 0444 root bin
 f usr/share/man/man9f/csx_CS_DDI_Info.9f 0444 root bin
 f usr/share/man/man9f/csx_ConvertSize.9f 0444 root bin
@@ -20694,6 +20735,7 @@ s usr/share/man/man9f/inl.9f=inb.9f
 f usr/share/man/man9f/insq.9f 0444 root bin
 s usr/share/man/man9f/intro.9f=Intro.9f
 s usr/share/man/man9f/inw.9f=inb.9f
+s usr/share/man/man9f/kcred.9f=credentials.9f
 f usr/share/man/man9f/kiconv.9f 0444 root bin
 f usr/share/man/man9f/kiconv_close.9f 0444 root bin
 f usr/share/man/man9f/kiconv_open.9f 0444 root bin
@@ -21301,6 +21343,7 @@ s usr/share/man/man9f/vsprintf.9f=sprintf.9f
 s usr/share/man/man9f/vzcmn_err.9f=cmn_err.9f
 s usr/share/man/man9f/wr.9f=WR.9f
 s usr/share/man/man9f/zcmn_err.9f=cmn_err.9f
+s usr/share/man/man9f/zone_kcred.9f=credentials.9f
 d usr/share/man/man9p 0755 root bin
 s usr/share/man/man9p/Nblock.9p=size.9p
 s usr/share/man/man9p/blksize.9p=size.9p

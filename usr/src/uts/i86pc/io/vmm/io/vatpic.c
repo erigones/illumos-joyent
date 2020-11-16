@@ -709,34 +709,11 @@ vatpic_write(struct vatpic *vatpic, struct atpic *atpic, bool in, int port,
 }
 
 int
-vatpic_master_handler(struct vm *vm, int vcpuid, bool in, int port, int bytes,
+vatpic_master_handler(void *arg, bool in, uint16_t port, uint8_t bytes,
     uint32_t *eax)
 {
-	struct vatpic *vatpic;
-	struct atpic *atpic;
-
-	vatpic = vm_atpic(vm);
-	atpic = &vatpic->atpic[0];
-
-	if (bytes != 1)
-		return (-1);
- 
-	if (in) {
-		return (vatpic_read(vatpic, atpic, in, port, bytes, eax));
-	}
- 
-	return (vatpic_write(vatpic, atpic, in, port, bytes, eax));
-}
-
-int
-vatpic_slave_handler(struct vm *vm, int vcpuid, bool in, int port, int bytes,
-    uint32_t *eax)
-{
-	struct vatpic *vatpic;
-	struct atpic *atpic;
-
-	vatpic = vm_atpic(vm);
-	atpic = &vatpic->atpic[1];
+	struct vatpic *vatpic = arg;
+	struct atpic *atpic = &vatpic->atpic[0];
 
 	if (bytes != 1)
 		return (-1);
@@ -749,13 +726,29 @@ vatpic_slave_handler(struct vm *vm, int vcpuid, bool in, int port, int bytes,
 }
 
 int
-vatpic_elc_handler(struct vm *vm, int vcpuid, bool in, int port, int bytes,
+vatpic_slave_handler(void *arg, bool in, uint16_t port, uint8_t bytes,
     uint32_t *eax)
 {
-	struct vatpic *vatpic;
+	struct vatpic *vatpic = arg;
+	struct atpic *atpic = &vatpic->atpic[1];
+
+	if (bytes != 1)
+		return (-1);
+
+	if (in) {
+		return (vatpic_read(vatpic, atpic, in, port, bytes, eax));
+	}
+
+	return (vatpic_write(vatpic, atpic, in, port, bytes, eax));
+}
+
+int
+vatpic_elc_handler(void *arg, bool in, uint16_t port, uint8_t bytes,
+    uint32_t *eax)
+{
+	struct vatpic *vatpic = arg;
 	bool is_master;
 
-	vatpic = vm_atpic(vm);
 	is_master = (port == IO_ELCR1);
 
 	if (bytes != 1)

@@ -224,7 +224,7 @@ if [ $? -ne 0 ]; then
             mount_zfs ${SYS_ZPOOL}/usbkey /usbkey
         fi
 
-        if [[ -n $(/bin/bootparams | grep '^smartos=true') ]] || \
+        if [[ -n $(/bin/bootparams | grep '^smartos=true') ]] && \
            [[ ${BOOTED_FROM_HDD} -eq 0 ]]; then
             mount -F lofs /usbkey/shadow /etc/shadow
             mount -F lofs /usbkey/ssh /etc/ssh
