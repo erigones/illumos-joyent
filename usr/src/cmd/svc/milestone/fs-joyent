@@ -104,7 +104,16 @@ BENAME="dcos-1"
 # Do this by finding out whether "/" is being mounted as "zfs"
 mounted "/" "-" "zfs" < /etc/mnttab || BOOTED_FROM_HDD=0
 
-if [ ${BOOTED_FROM_HDD} -ne 0 ]; then
+if [ ${BOOTED_FROM_HDD} -eq 0 ] && \
+	/usr/sbin/beadm list -H 2>&1 | grep -vq "^No boot environments"; then
+	# OS has been installed to disk (BE is present) but now it has booted 
+	# from elsewhere. We are switching back to disk boot.
+	BOOTED_FROM_HDD=1
+	# But marking this event for next decisions.
+	SWITCHED_TO_HDD_BOOT=1
+fi
+
+if [ ${BOOTED_FROM_HDD} -eq 1 ]; then
     BENAME=$(/usr/sbin/beadm list -H | grep ';N' | nawk -F';' '{ print $1 }')
     # Determine "bootfs" to help us decide whether we run from HDD or not.
     # bootfs will be "-" if we (most probably) do not run from HDD
@@ -150,8 +159,8 @@ if [ $? -ne 0 ]; then
         config/zpool=${SYS_ZPOOL}
     svccfg -s svc:/system/smartdc/init:default refresh
 
-    # Can destroy pools only when running from USB
-    if [ ${BOOTED_FROM_HDD} -eq 0 ]; then
+    # Can destroy pools only when running from USB or PXE
+    if [ ${BOOTED_FROM_HDD} -eq 0 ] || [ ${SWITCHED_TO_HDD_BOOT} -eq 1 ]; then
 
         # If the destroy_zpools boot parameter is set, destroy all zpools
         /bin/bootparams | grep "^destroy_zpools=true" >/dev/null
@@ -271,7 +280,15 @@ if [ $? -ne 0 ]; then
     fi
 fi
 
-if [ ${BOOTED_FROM_HDD} -eq 1 ]; then
+if [ ${BOOTED_FROM_HDD} -eq 1 ] && [ ${SWITCHED_TO_HDD_BOOT} -eq 1 ]; then
+    # Booted from elsewhere
+    echo "WARNING: System has been installed on HDD but it has booted from elsewhere." > /dev/console
+	if ! /bin/bootparams | grep "^netboot=true" > /dev/null; then
+		echo "Did you forget to remove USB stick?" > /dev/console
+	fi
+    echo "Switched to HDD boot..." > /dev/console
+    exit 0
+elif [ ${BOOTED_FROM_HDD} -eq 1 ]; then
     # Booted from HDD
     echo "Running from HDD..." > /dev/console
     exit 0
