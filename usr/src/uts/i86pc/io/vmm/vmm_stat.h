@@ -104,7 +104,7 @@ int	vmm_stat_desc_copy(int index, char *buf, int buflen);
 
 static __inline void
 vmm_stat_array_incr(struct vm *vm, int vcpu, struct vmm_stat_type *vst,
-		    int statidx, uint64_t x)
+    int statidx, uint64_t x)
 {
 #ifdef VMM_KEEP_STATS
 	uint64_t *stats;
@@ -118,7 +118,7 @@ vmm_stat_array_incr(struct vm *vm, int vcpu, struct vmm_stat_type *vst,
 
 static __inline void
 vmm_stat_array_set(struct vm *vm, int vcpu, struct vmm_stat_type *vst,
-		   int statidx, uint64_t val)
+    int statidx, uint64_t val)
 {
 #ifdef VMM_KEEP_STATS
 	uint64_t *stats;
@@ -165,8 +165,7 @@ VMM_STAT_DECLARE(VMEXIT_NESTED_FAULT);
 VMM_STAT_DECLARE(VMEXIT_MMIO_EMUL);
 VMM_STAT_DECLARE(VMEXIT_UNKNOWN);
 VMM_STAT_DECLARE(VMEXIT_ASTPENDING);
-VMM_STAT_DECLARE(VMEXIT_USERSPACE);
-VMM_STAT_DECLARE(VMEXIT_RUNBLOCK);
 VMM_STAT_DECLARE(VMEXIT_EXCEPTION);
 VMM_STAT_DECLARE(VMEXIT_REQIDLE);
+VMM_STAT_DECLARE(VMEXIT_RUN_STATE);
 #endif

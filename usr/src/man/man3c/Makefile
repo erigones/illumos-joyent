@@ -14,7 +14,7 @@
 # Copyright 2018 Nexenta Systems, Inc.
 # Copyright 2013, OmniTI Computer Consulting, Inc. All rights reserved.
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
-# Copyright 2018 Joyent, Inc.
+# Copyright 2020 Joyent, Inc.
 # Copyright 2018 Jason King
 # Copyright 2019 OmniOS Community Edition (OmniOSce) Association.
 #
@@ -172,6 +172,7 @@ MANFILES=	__fbufsize.3c					\
 		getenv.3c					\
 		getexecname.3c					\
 		getgrnam.3c					\
+		getgrouplist.3c					\
 		gethostid.3c					\
 		gethostname.3c					\
 		gethrtime.3c					\
@@ -952,6 +953,7 @@ MANLINKS=	FD_CLR.3c				\
 		iswalnum_l.3c				\
 		iswalpha_l.3c				\
 		iswascii.3c				\
+		iswascii_l.3c				\
 		iswblank.3c				\
 		iswblank_l.3c				\
 		iswcntrl.3c				\
@@ -1964,6 +1966,7 @@ iswalnum.3c				:= LINKSRC = iswalpha.3c
 iswalnum_l.3c				:= LINKSRC = iswalpha.3c
 iswalpha_l.3c				:= LINKSRC = iswalpha.3c
 iswascii.3c				:= LINKSRC = iswalpha.3c
+iswascii_l.3c				:= LINKSRC = iswalpha.3c
 iswblank.3c				:= LINKSRC = iswalpha.3c
 iswblank_l.3c				:= LINKSRC = iswalpha.3c
 iswcntrl.3c				:= LINKSRC = iswalpha.3c

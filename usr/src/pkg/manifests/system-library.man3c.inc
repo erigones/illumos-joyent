@@ -15,7 +15,7 @@
 # Copyright 2013 OmniTI Computer Consulting, Inc. All rights reserved.
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
 # Copyright 2018 Jason King
-# Copyright 2018, Joyent, Inc.
+# Copyright 2020 Joyent, Inc.
 # Copyright 2019 OmniOS Community Edition (OmniOSce) Association.
 #
 
@@ -168,6 +168,7 @@ file path=usr/share/man/man3c/getentropy.3c
 file path=usr/share/man/man3c/getenv.3c
 file path=usr/share/man/man3c/getexecname.3c
 file path=usr/share/man/man3c/getgrnam.3c
+file path=usr/share/man/man3c/getgrouplist.3c
 file path=usr/share/man/man3c/gethostid.3c
 file path=usr/share/man/man3c/gethostname.3c
 file path=usr/share/man/man3c/gethrtime.3c
@@ -952,6 +953,7 @@ link path=usr/share/man/man3c/iswalnum.3c target=iswalpha.3c
 link path=usr/share/man/man3c/iswalnum_l.3c target=iswalpha.3c
 link path=usr/share/man/man3c/iswalpha_l.3c target=iswalpha.3c
 link path=usr/share/man/man3c/iswascii.3c target=iswalpha.3c
+link path=usr/share/man/man3c/iswascii_l.3c target=iswalpha.3c
 link path=usr/share/man/man3c/iswblank.3c target=iswalpha.3c
 link path=usr/share/man/man3c/iswblank_l.3c target=iswalpha.3c
 link path=usr/share/man/man3c/iswcntrl.3c target=iswalpha.3c

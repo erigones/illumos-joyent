@@ -38,6 +38,7 @@
  * http://www.illumos.org/license/CDDL.
  *
  * Copyright 2014 Pluribus Networks Inc.
+ * Copyright 2020 Oxide Computer Company
  */
 
 #include <sys/cdefs.h>
@@ -67,6 +68,7 @@ int
 lapic_set_intr(struct vm *vm, int cpu, int vector, bool level)
 {
 	struct vlapic *vlapic;
+	vcpu_notify_t notify;
 
 	if (cpu < 0 || cpu >= vm_get_maxcpus(vm))
 		return (EINVAL);
@@ -79,8 +81,8 @@ lapic_set_intr(struct vm *vm, int cpu, int vector, bool level)
 		return (EINVAL);
 
 	vlapic = vm_lapic(vm, cpu);
-	if (vlapic_set_intr_ready(vlapic, vector, level))
-		vcpu_notify_event(vm, cpu, true);
+	notify = vlapic_set_intr_ready(vlapic, vector, level);
+	vcpu_notify_event_type(vm, cpu, notify);
 	return (0);
 }
 
@@ -126,19 +128,18 @@ lapic_intr_msi(struct vm *vm, uint64_t addr, uint64_t msg)
 	}
 
 	/*
-	 * Extract the x86-specific fields from the MSI addr/msg
-	 * params according to the Intel Arch spec, Vol3 Ch 10.
+	 * Extract the x86-specific fields from the MSI addr/msg params
+	 * according to the Intel Arch spec, Vol3 Ch 10.
 	 *
-	 * The PCI specification does not support level triggered
-	 * MSI/MSI-X so ignore trigger level in 'msg'.
+	 * The PCI specification does not support level triggered MSI/MSI-X so
+	 * ignore trigger level in 'msg'.
 	 *
-	 * The 'dest' is interpreted as a logical APIC ID if both
-	 * the Redirection Hint and Destination Mode are '1' and
-	 * physical otherwise.
+	 * Certain kinds of interrupt broadcasts (physical or logical-clustered
+	 * for destination 0xff) are prohibited when the redirection hint bit is
+	 * set for a given message.  Those edge cases are ignored for now.
 	 */
 	dest = (addr >> 12) & 0xff;
-	phys = ((addr & (MSI_X86_ADDR_RH | MSI_X86_ADDR_LOG)) !=
-	    (MSI_X86_ADDR_RH | MSI_X86_ADDR_LOG));
+	phys = (addr & MSI_X86_ADDR_LOG) == 0;
 	delmode = msg & APIC_DELMODE_MASK;
 	vec = msg & 0xff;
 
@@ -150,30 +151,30 @@ lapic_intr_msi(struct vm *vm, uint64_t addr, uint64_t msg)
 }
 
 static bool
-x2apic_msr(u_int msr)
+x2apic_msr(uint_t msr)
 {
 	return (msr >= 0x800 && msr <= 0xBFF);
 }
 
-static u_int
-x2apic_msr_to_regoff(u_int msr)
+static uint_t
+x2apic_msr_to_regoff(uint_t msr)
 {
 
 	return ((msr - 0x800) << 4);
 }
 
 bool
-lapic_msr(u_int msr)
+lapic_msr(uint_t msr)
 {
 
 	return (x2apic_msr(msr) || msr == MSR_APICBASE);
 }
 
 int
-lapic_rdmsr(struct vm *vm, int cpu, u_int msr, uint64_t *rval)
+lapic_rdmsr(struct vm *vm, int cpu, uint_t msr, uint64_t *rval)
 {
 	int error;
-	u_int offset;
+	uint_t offset;
 	struct vlapic *vlapic;
 
 	vlapic = vm_lapic(vm, cpu);
@@ -190,10 +191,10 @@ lapic_rdmsr(struct vm *vm, int cpu, u_int msr, uint64_t *rval)
 }
 
 int
-lapic_wrmsr(struct vm *vm, int cpu, u_int msr, uint64_t val)
+lapic_wrmsr(struct vm *vm, int cpu, uint_t msr, uint64_t val)
 {
 	int error;
-	u_int offset;
+	uint_t offset;
 	struct vlapic *vlapic;
 
 	vlapic = vm_lapic(vm, cpu);
