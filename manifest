@@ -7126,6 +7126,8 @@ f usr/lib/libzfs_core.so.1 755 root bin
 s usr/lib/libzfs_core.so=libzfs_core.so.1
 f usr/lib/libzfs_jni.so.1 0755 root bin
 s usr/lib/libzfs_jni.so=libzfs_jni.so.1
+f usr/lib/libzfsbootenv.so.1 0755 root bin
+s usr/lib/libzfsbootenv.so=libzfsbootenv.so.1
 f usr/lib/libzonecfg.so.1 0755 root bin
 s usr/lib/libzonecfg.so=libzonecfg.so.1
 f usr/lib/libzoneinfo.so.1 0755 root bin
