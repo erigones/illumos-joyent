@@ -304,7 +304,9 @@ COMMON_SUBDIRS=		\
 	passwd		\
 	pathchk		\
 	pbind		\
+	pcidb		\
 	pcidr		\
+	pcieadm		\
 	pcieb		\
 	pcitool		\
 	pfexec		\
