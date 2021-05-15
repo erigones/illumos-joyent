@@ -174,12 +174,6 @@
 #define	VIRTIO_DEV_RANDOM	0x1005
 #define	VIRTIO_DEV_SCSI		0x1008
 
-/*
- * Bits in VTCFG_R_ISR.  These apply only if not using MSI-X.
- */
-#define	VTCFG_ISR_QUEUES	0x01	/* re-scan queues */
-#define	VTCFG_ISR_CONF_CHANGED	0x02	/* configuration changed */
-
 #define	VIRTIO_DEV_9P		0x1009
 
 /* From section 2.3, "Virtqueue Configuration", of the virtio specification */

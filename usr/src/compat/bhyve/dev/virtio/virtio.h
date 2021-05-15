@@ -112,7 +112,7 @@ struct vring_used {
 /*
  * Bits in VTCFG_R_ISR.  These apply only if not using MSI-X.
  *
- * (We don't [yet?] ever use CONF_CHANGED.)
+ * (We use CONF_CHANGED to live-resize disk.)
  */
 #define	VTCFG_ISR_QUEUES	0x01	/* re-scan queues */
 #define	VTCFG_ISR_CONF_CHANGED	0x80	/* configuration changed */
