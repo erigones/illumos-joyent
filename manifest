@@ -10903,7 +10903,6 @@ f usr/sbin/amd64/ipnat 0555 root bin
 f usr/sbin/amd64/ippool 0555 root bin
 f usr/sbin/amd64/lockstat 0555 root bin
 f usr/sbin/amd64/plockstat 0555 root bin
-f usr/sbin/amd64/zdb 0555 root bin
 f usr/sbin/amd64/zinject 0555 root bin
 f usr/sbin/arp 0555 root bin
 f usr/sbin/audit 0555 root bin
@@ -11180,7 +11179,7 @@ f usr/sbin/ypalias 0555 root bin
 f usr/sbin/ypinit 0555 root bin
 f usr/sbin/yppoll 0555 root bin
 f usr/sbin/ypset 0555 root bin
-h usr/sbin/zdb=usr/lib/isaexec
+f usr/sbin/zdb 0555 root bin
 f usr/sbin/zdump 0555 root bin
 s usr/sbin/zfs=../../sbin/zfs
 f usr/sbin/zic 0555 root bin
@@ -14801,6 +14800,7 @@ s usr/share/man/man3contract/ct_tmpl_set_informative.3contract=ct_tmpl_activate.
 d usr/share/man/man3cpc 0755 root bin
 f usr/share/man/man3cpc/amd_f17h_zen1_events.3cpc 0444 root bin
 f usr/share/man/man3cpc/amd_f17h_zen2_events.3cpc 0444 root bin
+f usr/share/man/man3cpc/amd_f19h_zen3_events.3cpc 0444 root bin
 f usr/share/man/man3cpc/bdw_de_events.3cpc 0444 root bin
 f usr/share/man/man3cpc/bdw_events.3cpc 0444 root bin
 f usr/share/man/man3cpc/bdx_events.3cpc 0444 root bin
