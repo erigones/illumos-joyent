@@ -114,6 +114,9 @@ __FBSDID("$FreeBSD$");
 #include "rtc.h"
 #include "vga.h"
 #include "vmgenc.h"
+#ifndef __FreeBSD__
+#include "privileges.h"
+#endif
 
 #define GUEST_NIO_PORT		0x488	/* guest upcalls via i/o port */
 
@@ -1545,6 +1548,10 @@ main(int argc, char *argv[])
 		exit(1);
 	}
 
+#ifndef __FreeBSD__
+	illumos_priv_init();
+#endif
+
 	calc_topolopgy();
 #ifdef __FreeBSD__
 	build_vcpumaps();
@@ -1713,6 +1720,8 @@ main(int argc, char *argv[])
 		errx(EX_OSERR, "cap_enter() failed");
 #endif
 
+/* XXX SmartOS:  Upstream drops privs here, but we can't yet.  See below... */
+
 #ifdef __FreeBSD__
 	/*
 	 * Add CPU 0
@@ -1730,6 +1739,14 @@ main(int argc, char *argv[])
 		spinup_halted_ap(ctx, i);
 	}
 	mark_provisioned();
+	/*
+	 * XXX SmartOS:  The mark_provisioned() call above required file-access
+	 * privileges that are dropped by the generic call.  We must widen the
+	 * full-privilege window a bit.  A better solution might be to have
+	 * a way to keep file-access a bit longer, and only have THAT privilege
+	 * to drop here.
+	 */
+	illumos_priv_lock();
 #endif
 
 	/*

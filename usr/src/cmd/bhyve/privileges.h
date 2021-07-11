@@ -8,21 +8,21 @@
  * source.  A copy of the CDDL is also available via the Internet at
  * http://www.illumos.org/license/CDDL.
  */
-/* This file is dual-licensed; see usr/src/contrib/bhyve/LICENSE */
 
 /*
- * Copyright 2017 Joyent, Inc.
+ * Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
  */
 
-#ifndef _PMAP_VM_
-#define	_PMAP_VM_
+#ifndef _BHYVE_PRIVILEGES_H
+#define	_BHYVE_PRIVILEGES_H
 
-#include <machine/pmap.h>
-#include "vm_glue.h"
+#include <priv.h>
+#include <stdbool.h>
 
-void	pmap_invalidate_cache(void);
-void	pmap_get_mapping(pmap_t pmap, vm_offset_t va, uint64_t *ptr, int *num);
-int	pmap_emulate_accessed_dirty(pmap_t pmap, vm_offset_t va, int ftype);
-long	pmap_wired_count(pmap_t pmap);
+void illumos_priv_init(void);
+void illumos_priv_lock(void);
+void illumos_priv_add(const char *, const char *);
+void illumos_priv_add_min(const char *, const char *);
+void illumos_priv_reduce(void);
 
-#endif /* _PMAP_VM_ */
+#endif /* _BHYVE_PRIVILEGES_H */
