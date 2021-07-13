@@ -121,8 +121,8 @@ s" currdev" getenv drop 4 s" zfs:" compare 0= be-pages and invert [if]
 	set optionstoggled_text[6]="Destroy [Z]pools...... On"
 	set optionsmenu_command[6]="toggle_destroy_zpools"
 	set optionsmenu_keycode[6]=122
-	set optionsansi_caption[6]="Destroy ^[1mR^[mpools........ ^[34;1mOff^[m"
-	set optionstoggled_ansi[6]="Destroy ^[1mR^[mpools........ ^[32;7mOn^[m"
+	set optionsansi_caption[6]="Destroy ^[1mZ^[mpools........ ^[34;1mOff^[m"
+	set optionstoggled_ansi[6]="Destroy ^[1mZ^[mpools........ ^[32;7mOn^[m"
   [else]
 	set optionsmenu_init[5]="init_singleuser"
 	set optionsmenu_caption[5]="[S]ingle User......... Off"
