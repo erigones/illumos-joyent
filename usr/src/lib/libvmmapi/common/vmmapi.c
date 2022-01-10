@@ -39,7 +39,7 @@
  *
  * Copyright 2015 Pluribus Networks Inc.
  * Copyright 2019 Joyent, Inc.
- * Copyright 2020 Oxide Computer Company
+ * Copyright 2021 Oxide Computer Company
  */
 
 #include <sys/cdefs.h>
@@ -109,12 +109,31 @@ struct vmctx {
 #ifdef	__FreeBSD__
 #define	CREATE(x)  sysctlbyname("hw.vmm.create", NULL, NULL, (x), strlen((x)))
 #define	DESTROY(x) sysctlbyname("hw.vmm.destroy", NULL, NULL, (x), strlen((x)))
-#else
-#define	CREATE(x)	vm_do_ctl(VMM_CREATE_VM, (x))
-#define	DESTROY(x)	vm_do_ctl(VMM_DESTROY_VM, (x))
 
+int
+vm_create(const char *name)
+{
+	/* Try to load vmm(4) module before creating a guest. */
+	if (modfind("vmm") < 0)
+		kldload("vmm");
+	return (CREATE(name));
+}
+
+void
+vm_destroy(struct vmctx *vm)
+{
+	assert(vm != NULL);
+
+	if (vm->fd >= 0)
+		close(vm->fd);
+	DESTROY(vm->name);
+
+	free(vm);
+}
+
+#else
 static int
-vm_do_ctl(int cmd, const char *name)
+vm_do_ctl(int cmd, void *req)
 {
 	int ctl_fd;
 
@@ -123,7 +142,7 @@ vm_do_ctl(int cmd, const char *name)
 		return (-1);
 	}
 
-	if (ioctl(ctl_fd, cmd, name) == -1) {
+	if (ioctl(ctl_fd, cmd, req) == -1) {
 		int err = errno;
 
 		/* Do not lose ioctl errno through the close(2) */
@@ -134,6 +153,46 @@ vm_do_ctl(int cmd, const char *name)
 	(void) close(ctl_fd);
 
 	return (0);
+}
+
+int
+vm_create(const char *name, uint64_t flags)
+{
+	struct vm_create_req req;
+
+	(void) strncpy(req.name, name, VM_MAX_NAMELEN);
+	req.flags = flags;
+
+	return (vm_do_ctl(VMM_CREATE_VM, &req));
+}
+
+void
+vm_close(struct vmctx *vm)
+{
+	assert(vm != NULL);
+	assert(vm->fd >= 0);
+
+	(void) close(vm->fd);
+
+	free(vm);
+}
+
+void
+vm_destroy(struct vmctx *vm)
+{
+	struct vm_destroy_req req;
+
+	assert(vm != NULL);
+
+	if (vm->fd >= 0) {
+		(void) close(vm->fd);
+		vm->fd = -1;
+	}
+
+	(void) strncpy(req.name, vm->name, VM_MAX_NAMELEN);
+	(void) vm_do_ctl(VMM_DESTROY_VM, &req);
+
+	free(vm);
 }
 #endif
 
@@ -155,21 +214,11 @@ vm_device_open(const char *name)
 	return (fd);
 }
 
-int
-vm_create(const char *name)
-{
-#ifdef __FreeBSD__
-	/* Try to load vmm(4) module before creating a guest. */
-	if (modfind("vmm") < 0)
-		kldload("vmm");
-#endif
-	return (CREATE((char *)name));
-}
-
 struct vmctx *
 vm_open(const char *name)
 {
 	struct vmctx *vm;
+	int saved_errno;
 
 	vm = malloc(sizeof(struct vmctx) + strlen(name) + 1);
 	assert(vm != NULL);
@@ -185,44 +234,22 @@ vm_open(const char *name)
 
 	return (vm);
 err:
+	saved_errno = errno;
 	free(vm);
+	errno = saved_errno;
 	return (NULL);
 }
 
-#ifndef __FreeBSD__
-void
-vm_close(struct vmctx *vm)
-{
-	assert(vm != NULL);
-	assert(vm->fd >= 0);
-
-	(void) close(vm->fd);
-
-	free(vm);
-}
-#endif
-
-void
-vm_destroy(struct vmctx *vm)
-{
-	assert(vm != NULL);
-
-	if (vm->fd >= 0)
-		close(vm->fd);
-	DESTROY(vm->name);
-
-	free(vm);
-}
 
 int
-vm_parse_memsize(const char *optarg, size_t *ret_memsize)
+vm_parse_memsize(const char *opt, size_t *ret_memsize)
 {
 	char *endptr;
 	size_t optval;
 	int error;
 
-	optval = strtoul(optarg, &endptr, 0);
-	if (*optarg != '\0' && *endptr == '\0') {
+	optval = strtoul(opt, &endptr, 0);
+	if (*opt != '\0' && *endptr == '\0') {
 		/*
 		 * For the sake of backward compatibility if the memory size
 		 * specified on the command line is less than a megabyte then
@@ -233,7 +260,7 @@ vm_parse_memsize(const char *optarg, size_t *ret_memsize)
 		*ret_memsize = optval;
 		error = 0;
 	} else
-		error = expand_number(optarg, ret_memsize);
+		error = expand_number(opt, ret_memsize);
 
 	return (error);
 }
@@ -798,12 +825,24 @@ vm_suspend(struct vmctx *ctx, enum vm_suspend_how how)
 	return (ioctl(ctx->fd, VM_SUSPEND, &vmsuspend));
 }
 
+#ifndef __FreeBSD__
+int
+vm_reinit(struct vmctx *ctx, uint64_t flags)
+{
+	struct vm_reinit reinit = {
+		.flags = flags
+	};
+
+	return (ioctl(ctx->fd, VM_REINIT, &reinit));
+}
+#else
 int
 vm_reinit(struct vmctx *ctx)
 {
 
 	return (ioctl(ctx->fd, VM_REINIT, 0));
 }
+#endif
 
 int
 vm_inject_exception(struct vmctx *ctx, int vcpu, int vector, int errcode_valid,
@@ -840,7 +879,7 @@ vm_inject_fault(struct vmctx *ctx, int vcpu, int vector, int errcode_valid,
 #endif /* __FreeBSD__ */
 
 int
-vm_apicid2vcpu(struct vmctx *ctx, int apicid)
+vm_apicid2vcpu(struct vmctx *ctx __unused, int apicid)
 {
 	/*
 	 * The apic id associated with the 'vcpu' has the same numerical value
@@ -1020,7 +1059,7 @@ vm_capability_name2type(const char *capname)
 {
 	int i;
 
-	for (i = 0; i < nitems(capstrmap); i++) {
+	for (i = 0; i < (int)nitems(capstrmap); i++) {
 		if (strcmp(capstrmap[i], capname) == 0)
 			return (i);
 	}
@@ -1031,7 +1070,7 @@ vm_capability_name2type(const char *capname)
 const char *
 vm_capability_type2name(int type)
 {
-	if (type >= 0 && type < nitems(capstrmap))
+	if (type >= 0 && type < (int)nitems(capstrmap))
 		return (capstrmap[type]);
 
 	return (NULL);
@@ -1614,8 +1653,8 @@ vm_copy_setup(struct vmctx *ctx, int vcpu, struct vm_guest_paging *paging,
     int *fault)
 {
 	void *va;
-	uint64_t gpa;
-	int error, i, n, off;
+	uint64_t gpa, off;
+	int error, i, n;
 
 	for (i = 0; i < iovcnt; i++) {
 		iov[i].iov_base = 0;
@@ -1629,7 +1668,7 @@ vm_copy_setup(struct vmctx *ctx, int vcpu, struct vm_guest_paging *paging,
 			return (error);
 
 		off = gpa & PAGE_MASK;
-		n = min(len, PAGE_SIZE - off);
+		n = MIN(len, PAGE_SIZE - off);
 
 		va = vm_map_gpa(ctx, gpa, n);
 		if (va == NULL)
@@ -1647,14 +1686,14 @@ vm_copy_setup(struct vmctx *ctx, int vcpu, struct vm_guest_paging *paging,
 }
 
 void
-vm_copy_teardown(struct vmctx *ctx, int vcpu, struct iovec *iov, int iovcnt)
+vm_copy_teardown(struct vmctx *ctx __unused, int vcpu __unused,
+    struct iovec *iov __unused, int iovcnt __unused)
 {
-
-	return;
 }
 
 void
-vm_copyin(struct vmctx *ctx, int vcpu, struct iovec *iov, void *vp, size_t len)
+vm_copyin(struct vmctx *ctx __unused, int vcpu __unused, struct iovec *iov,
+    void *vp, size_t len)
 {
 	const char *src;
 	char *dst;
@@ -1674,8 +1713,8 @@ vm_copyin(struct vmctx *ctx, int vcpu, struct iovec *iov, void *vp, size_t len)
 }
 
 void
-vm_copyout(struct vmctx *ctx, int vcpu, const void *vp, struct iovec *iov,
-    size_t len)
+vm_copyout(struct vmctx *ctx __unused, int vcpu __unused, const void *vp,
+    struct iovec *iov, size_t len)
 {
 	const char *src;
 	char *dst;
@@ -1942,14 +1981,6 @@ vm_set_run_state(struct vmctx *ctx, int vcpu, enum vcpu_run_state state,
 	return (0);
 }
 
-int
-vm_arc_resv(struct vmctx *ctx, size_t len)
-{
-	if (ioctl(ctx->fd, VM_ARC_RESV, (uint64_t)len) != 0) {
-		return (errno);
-	}
-	return (0);
-}
 #endif /* __FreeBSD__ */
 
 #ifdef __FreeBSD__

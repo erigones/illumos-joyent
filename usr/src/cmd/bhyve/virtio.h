@@ -175,6 +175,22 @@
 #define	VIRTIO_DEV_SCSI		0x1008
 
 #define	VIRTIO_DEV_9P		0x1009
+#define VIRTIO_DEV_INPUT	0x1052
+
+/*
+ * PCI revision IDs
+ */
+#define VIRTIO_REV_INPUT	1
+
+/*
+ * PCI subvendor IDs
+ */
+#define VIRTIO_SUBVEN_INPUT	0x108E
+
+/*
+ * PCI subdevice IDs
+ */
+#define VIRTIO_SUBDEV_INPUT	0x1100
 
 /* From section 2.3, "Virtqueue Configuration", of the virtio specification */
 static inline int
@@ -330,22 +346,17 @@ vq_has_descs(struct vqueue_info *vq)
 	    vq->vq_avail->idx);
 }
 
-#ifdef __FreeBSD__
+/*
+ * Deliver an interrupt to the guest for a specific MSI-X queue or
+ * event.
+ */
 static inline void
-vq_interrupt(struct virtio_softc *vs, struct vqueue_info *vq)
-#else
-static inline void
-vq_interrupt_impl(struct virtio_softc *vs, uint8_t isr, uint16_t msix_idx)
-#endif
+vi_interrupt(struct virtio_softc *vs, uint8_t isr, uint16_t msix_idx)
 {
 
-	if (pci_msix_enabled(vs->vs_pi)) {
-#ifdef __FreeBSD__
-		pci_generate_msix(vs->vs_pi, vq->vq_msix_idx);
-#else
+	if (pci_msix_enabled(vs->vs_pi))
 		pci_generate_msix(vs->vs_pi, msix_idx);
-#endif
-	} else {
+	else {
 #ifndef __FreeBSD__
 		boolean_t unlock = B_FALSE;
 
@@ -366,6 +377,17 @@ vq_interrupt_impl(struct virtio_softc *vs, uint8_t isr, uint16_t msix_idx)
 		VS_UNLOCK(vs);
 #endif
 	}
+}
+
+/*
+ * Deliver an interrupt to the guest on the given virtual queue (if
+ * possible, or a generic MSI interrupt if not using MSI-X).
+ */
+static inline void
+vq_interrupt(struct virtio_softc *vs, struct vqueue_info *vq)
+{
+
+	vi_interrupt(vs, VIRTIO_PCI_ISR_INTR, vq->vq_msix_idx);
 }
 
 static inline void
@@ -401,6 +423,18 @@ vq_interrupt(struct virtio_softc *vs, struct vqueue_info *vq)
 #endif
 
 struct iovec;
+
+/*
+ * Request description returned by vq_getchain.
+ *
+ * Writable iovecs start at iov[req.readable].
+ */
+struct vi_req {
+	int readable;		/* num of readable iovecs */
+	int writable;		/* num of writable iovecs */
+	unsigned int idx;	/* ring index */
+};
+
 void	vi_softc_linkup(struct virtio_softc *vs, struct virtio_consts *vc,
 			void *dev_softc, struct pci_devinst *pi,
 			struct vqueue_info *queues);
@@ -408,8 +442,8 @@ int	vi_intr_init(struct virtio_softc *vs, int barnum, int use_msix);
 void	vi_reset_dev(struct virtio_softc *);
 void	vi_set_io_bar(struct virtio_softc *, int);
 
-int	vq_getchain(struct vqueue_info *vq, uint16_t *pidx,
-		    struct iovec *iov, int n_iov, uint16_t *flags);
+int	vq_getchain(struct vqueue_info *vq, struct iovec *iov, int niov,
+	    struct vi_req *reqp);
 void	vq_retchains(struct vqueue_info *vq, uint16_t n_chains);
 void	vq_relchain_prepare(struct vqueue_info *vq, uint16_t idx,
 			    uint32_t iolen);

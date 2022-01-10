@@ -3,10 +3,10 @@
 .\" The contents of this file are subject to the terms of the Common Development and Distribution License (the "License").  You may not use this file except in compliance with the License.
 .\" You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE or http://www.opensolaris.org/os/licensing.  See the License for the specific language governing permissions and limitations under the License.
 .\" When distributing Covered Code, include this CDDL HEADER in each file and include the License file at usr/src/OPENSOLARIS.LICENSE.  If applicable, add the following below this CDDL HEADER, with the fields enclosed by brackets "[]" replaced with your own identifying information: Portions Copyright [yyyy] [name of copyright owner]
-.TH DDI_IO_REP_GET8 9F "Nov 1, 2005"
+.TH DDI_IO_REP_GET8 9F "August 29, 2021"
 .SH NAME
-ddi_io_rep_get8, ddi_io_rep_get16, ddi_io_rep_get32, ddi_io_rep_getb,
-ddi_io_rep_getl, ddi_io_rep_getw \- read multiple data from the mapped device
+ddi_io_rep_get8, ddi_io_rep_get16, ddi_io_rep_get32
+ \- read multiple data from the mapped device
 register in I/O space
 .SH SYNOPSIS
 .nf
@@ -22,13 +22,13 @@ register in I/O space
 .LP
 .nf
 \fBvoid\fR \fBddi_io_rep_get16\fR(\fBddi_acc_handle_t\fR \fIhandle\fR, \fBuint16_t *\fR\fIhost_addr\fR,
-     \fBuint16_t *\fR\fIdev_addr\fR,, \fBsize_t\fR \fIrepcount\fR);
+     \fBuint16_t *\fR\fIdev_addr\fR, \fBsize_t\fR \fIrepcount\fR);
 .fi
 
 .LP
 .nf
 \fBvoid\fR \fBddi_io_rep_get32\fR(\fBddi_acc_handle_t\fR \fIhandle\fR, \fBuint32_t *\fR\fIhost_addr\fR,
-     \fBuint32_t *\fR\fIdev_addr\fR,, \fBsize_t\fR \fIrepcount\fR);
+     \fBuint32_t *\fR\fIdev_addr\fR, \fBsize_t\fR \fIrepcount\fR);
 .fi
 
 .SH INTERFACE LEVEL
@@ -37,10 +37,7 @@ illumos DDI specific (illumos DDI). The \fBddi_io_rep_get8()\fR,
 \fBddi_io_rep_getl()\fR, and \fBddi_io_rep_getw()\fR functions are obsolete.
 The \fBddi_rep_get8\fR(9F) function replaces \fBddi_io_rep_get8()\fR. The
 \fBddi_rep_get16\fR(9F) function replaces \fBddi_io_rep_get16()\fR. The
-\fBddi_rep_get32\fR(9F) function replaces \fBddi_io_rep_get32()\fR. The
-\fBddi_rep_get8\fR(9F) function replaces \fBddi_io_rep_getb()\fR. The
-\fBddi_rep_get32\fR(9F) function replaces \fBddi_io_rep_getl()\fR. The
-\fBddi_rep_get16\fR(9F) function replaces \fBddi_io_rep_getw()\fR.
+\fBddi_rep_get32\fR(9F) function replaces \fBddi_io_rep_get32()\fR.
 .SH PARAMETERS
 .ne 2
 .na

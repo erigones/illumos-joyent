@@ -74,6 +74,11 @@ set mainansi_caption[5]="Select Boot ^[1mE^[mnvironment..."
 [then]
 
 \
+\ If available, load the "Platform Image Selection" option.
+\
+try-include /os/pi.rc
+
+\
 \ BOOT OPTIONS MENU
 \
 

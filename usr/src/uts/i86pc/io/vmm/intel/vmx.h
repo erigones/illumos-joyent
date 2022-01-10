@@ -39,15 +39,13 @@
  * http://www.illumos.org/license/CDDL.
  *
  * Copyright 2018 Joyent, Inc.
- * Copyright 2020 Oxide Computer Company
+ * Copyright 2021 Oxide Computer Company
  */
 
 #ifndef _VMX_H_
 #define	_VMX_H_
 
 #include "vmcs.h"
-
-struct pmap;
 
 struct vmxctx {
 	uint64_t	guest_rdi;		/* Guest state */
@@ -82,12 +80,6 @@ struct vmxctx {
 	int		host_tf;
 
 	int		inst_fail_status;
-
-	/*
-	 * The pmap needs to be deactivated in vmx_enter_guest()
-	 * so keep a copy of the 'pmap' in each vmxctx.
-	 */
-	struct pmap	*pmap;
 };
 
 struct vmxcap {
@@ -137,20 +129,27 @@ typedef enum {
 struct vmx {
 	struct vmcs	vmcs[VM_MAXCPU];	/* one vmcs per virtual cpu */
 	struct apic_page apic_page[VM_MAXCPU];	/* one apic page per vcpu */
-	char		msr_bitmap[PAGE_SIZE];
+	uint8_t		*msr_bitmap[VM_MAXCPU];	/* one MSR bitmap per vCPU */
 	struct pir_desc	pir_desc[VM_MAXCPU];
 	uint64_t	guest_msrs[VM_MAXCPU][GUEST_MSR_NUM];
 	uint64_t	host_msrs[VM_MAXCPU][GUEST_MSR_NUM];
 	uint64_t	tsc_offset_active[VM_MAXCPU];
 	vmcs_state_t	vmcs_state[VM_MAXCPU];
 	uintptr_t	vmcs_pa[VM_MAXCPU];
+	void		*apic_access_page;
 	struct vmxctx	ctx[VM_MAXCPU];
 	struct vmxcap	cap[VM_MAXCPU];
 	struct vmxstate	state[VM_MAXCPU];
 	uint64_t	eptp;
 	enum vmx_caps	vmx_caps;
 	struct vm	*vm;
-	long		eptgen[MAXCPU];		/* cached pmap->pm_eptgen */
+	/*
+	 * Track the latest vmspace generation as it is run on a given host CPU.
+	 * This allows us to react to modifications to the vmspace (such as
+	 * unmap or changed protection) which necessitate flushing any
+	 * guest-physical TLB entries tagged for this guest via 'invept'.
+	 */
+	uint64_t	eptgen[MAXCPU];
 };
 CTASSERT((offsetof(struct vmx, vmcs) & PAGE_MASK) == 0);
 CTASSERT((offsetof(struct vmx, msr_bitmap) & PAGE_MASK) == 0);

@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2000, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -2398,14 +2399,14 @@ if_configure_ipadm(datalink_id_t linkid)
 	}
 	if (ifinfo != NULL) {
 		found = B_FALSE;
-		for (ptr = ifinfo; ptr; ptr = ptr->ifi_next) {
+		for (ptr = ifinfo; ptr != NULL; ptr = ptr->ifi_next) {
 			if (strncmp(ptr->ifi_name, ifinst,
 			    sizeof (ifinst)) == 0) {
 				found = B_TRUE;
 				break;
 			}
 		}
-		free(ifinfo);
+		ipadm_free_if_info(ifinfo);
 		if (!found) {
 			return (0);
 		}

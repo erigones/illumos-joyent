@@ -38,8 +38,8 @@
  * http://www.illumos.org/license/CDDL.
  *
  * Copyright 2015 Pluribus Networks Inc.
- * Copyright 2020 Joyent, Inc.
- * Copyright 2020 Oxide Computer Company
+ * Copyright 2019 Joyent, Inc.
+ * Copyright 2021 Oxide Computer Company
  */
 
 #ifndef _VMMAPI_H_
@@ -134,7 +134,11 @@ int	vm_mmap_memseg(struct vmctx *ctx, vm_paddr_t gpa, int segid,
 
 int	vm_munmap_memseg(struct vmctx *ctx, vm_paddr_t gpa, size_t len);
 
+#ifndef __FreeBSD__
+int	vm_create(const char *name, uint64_t flags);
+#else
 int	vm_create(const char *name);
+#endif /* __FreeBSD__ */
 int	vm_get_device_fd(struct vmctx *ctx);
 struct vmctx *vm_open(const char *name);
 #ifndef __FreeBSD__
@@ -171,7 +175,11 @@ int	vm_get_register_set(struct vmctx *ctx, int vcpu, unsigned int count,
 int	vm_run(struct vmctx *ctx, int vcpu, const struct vm_entry *vm_entry,
     struct vm_exit *vm_exit);
 int	vm_suspend(struct vmctx *ctx, enum vm_suspend_how how);
+#ifndef __FreeBSD__
+int	vm_reinit(struct vmctx *ctx, uint64_t);
+#else
 int	vm_reinit(struct vmctx *ctx);
+#endif
 int	vm_apicid2vcpu(struct vmctx *ctx, int apicid);
 int	vm_inject_exception(struct vmctx *ctx, int vcpu, int vector,
     int errcode_valid, uint32_t errcode, int restart_instruction);
@@ -316,7 +324,6 @@ int vm_get_run_state(struct vmctx *ctx, int vcpu, enum vcpu_run_state *state,
     uint8_t *sipi_vector);
 int vm_set_run_state(struct vmctx *ctx, int vcpu, enum vcpu_run_state state,
     uint8_t sipi_vector);
-int	vm_arc_resv(struct vmctx *ctx, size_t);
 #endif	/* __FreeBSD__ */
 
 #ifdef	__FreeBSD__

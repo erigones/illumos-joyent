@@ -1673,3 +1673,13 @@ Bugid   Risk Synopsis
 13684	ld aborts when input object has no file name
 13487	want mapfile-based assertions about symbol properties
 13487	want mapfile-based assertions about symbol properties (fix SPARC)
+14090	ld(1) could use a normal allocator
+14090	backout: turns over big rocks, discovers big bugs
+14152	ld(1) should be more careful about empty alists
+14127	ld(1) can double free when cleaning up
+14155	ld(1) string table merging could be much faster
+14157	ld(1) string table merging should follow gABI more closely
+14207	want updated ELF relocation definitions from the psABI
+14209	partial support for new relaxable relocations
+14250	ld should resolve discarded COMDAT symbols against their mates
+14283	ldd should not complain about non-executable shared objects

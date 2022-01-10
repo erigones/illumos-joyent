@@ -114,6 +114,8 @@ usr/include/ipadm_ipmgmt.h
 usr/include/ipadm_ndpd.h
 usr/include/libipadm.h
 lib/libipadm.so
+lib/amd64/libipadm.so		i386
+lib/sparcv9/libipadm.so		sparc
 #
 # Private libsocket header file
 #
@@ -382,6 +384,22 @@ usr/include/libcmdutils.h
 usr/lib/libcmdutils.so
 usr/lib/amd64/libcmdutils.so		i386
 usr/lib/sparcv9/libcmdutils.so		sparc
+#
+# Private librename
+#
+usr/lib/librename.so
+usr/lib/amd64/librename.so		i386
+usr/include/librename.h
+#
+# Private libidspace
+#
+usr/lib/libidspace.so
+usr/lib/amd64/libidspace.so		i386
+usr/include/libidspace.h
+#
+# VXLAN
+#
+usr/include/sys/vxlan.h
 #
 # Private interfaces in libsec
 #
@@ -861,6 +879,12 @@ usr/lib/sparcv9/libdwarf.so		sparc
 usr/lib/libdwarf.so
 
 #
+# lib9p is private
+#
+usr/include/lib9p.h
+usr/lib/amd64/lib9p.so			i386
+
+#
 # We're not quite ready to ship ctfconvert and ctfmerge
 #
 usr/bin/ctfconvert
@@ -899,3 +923,10 @@ opt/onbld/man/man1onbld/sgsmsg.1onbld
 # The built link-editor demos are not delivered
 #
 opt/SUNWonld/
+
+#
+# Libraries that are built for tests whose compilation symlinks are only
+# needed at build time.
+#
+opt/os-tests/tests/cores/libdumper.so
+opt/os-tests/tests/cores/amd64/libdumper.so	i386

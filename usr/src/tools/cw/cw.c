@@ -39,7 +39,7 @@
  */
 
 /* If you modify this file, you must increment CW_VERSION */
-#define	CW_VERSION	"5.0"
+#define	CW_VERSION	"5.1"
 
 /*
  * -#		Verbose mode
@@ -237,8 +237,6 @@
  * -xtime			error
  * -xtransition			-Wtransition
  * -xunroll=n			error
- * -W0,-xdbggen=no%usedonly	-fno-eliminate-unused-debug-symbols
- *				-fno-eliminate-unused-debug-types
  * -Y<c>,<dir>			error
  * -YA,<dir>			error
  * -YI,<dir>			-nostdinc -I<dir>
@@ -253,6 +251,7 @@
 #include <getopt.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <unistd.h>
 #include <dirent.h>
@@ -588,13 +587,13 @@ discard_file_name(cw_ictx_t *ctx, const char *path)
 	return (ret);
 }
 
-static boolean_t
+static bool
 is_source_file(const char *path)
 {
 	char *ext = strrchr(path, '.');
 
 	if ((ext == NULL) || (*(ext + 1) == '\0'))
-		return (B_FALSE);
+		return (false);
 
 	ext += 1;
 
@@ -603,10 +602,10 @@ is_source_file(const char *path)
 	    (strcmp(ext, "i") == 0) ||
 	    (strcasecmp(ext, "s") == 0) ||
 	    (strcmp(ext, "cpp") == 0)) {
-		return (B_TRUE);
+		return (true);
 	}
 
-	return (B_FALSE);
+	return (false);
 }
 
 
@@ -946,13 +945,6 @@ do_gcc(cw_ictx_t *ctx)
 				 * Generate tests at the top of loops.
 				 * There is no direct gcc equivalent, ignore.
 				 */
-				break;
-			}
-			if (strcmp(arg, "-W0,-xdbggen=no%usedonly") == 0) {
-				newae(ctx->i_ae,
-				    "-fno-eliminate-unused-debug-symbols");
-				newae(ctx->i_ae,
-				    "-fno-eliminate-unused-debug-types");
 				break;
 			}
 			if (strcmp(arg, "-W2,-xwrap_int") == 0) {
@@ -1439,13 +1431,33 @@ prepctx(cw_ictx_t *ctx)
 static int
 invoke(cw_ictx_t *ctx)
 {
-	char **newargv;
+	char **newargv, *makeflags;
 	int ac;
 	struct ae *a;
 
-	if ((newargv = calloc(sizeof (*newargv), ctx->i_ae->ael_argc + 1)) ==
-	    NULL)
+	newargv = calloc(ctx->i_ae->ael_argc + 1, sizeof (*newargv));
+	if (newargv == NULL)
 		nomem();
+
+	/*
+	 * Check to see if the silent make flag is present (-s), if so, do not
+	 * echo. The MAKEFLAGS environment variable is set by dmake. By
+	 * observation it appears to place short flags without any arguments
+	 * first followed by any long form flags or flags with arguments.
+	 */
+	makeflags = getenv("MAKEFLAGS");
+	if (makeflags != NULL) {
+		size_t makeflags_len = strlen(makeflags);
+		for (size_t i = 0; i < makeflags_len; i++) {
+			if (makeflags[i] == 's') {
+				ctx->i_flags &= ~CW_F_ECHO;
+				break;
+			}
+			/* end of short flags */
+			if (makeflags[i] == ' ')
+				break;
+		}
+	}
 
 	if (ctx->i_flags & CW_F_ECHO)
 		(void) fprintf(stderr, "+ ");
@@ -1667,12 +1679,12 @@ main(int argc, char **argv)
 	cw_compiler_t shadows[10];
 	int nshadows = 0;
 	int ret = 0;
-	boolean_t do_serial = B_FALSE;
-	boolean_t do_exec = B_FALSE;
-	boolean_t vflg = B_FALSE;
-	boolean_t Cflg = B_FALSE;
-	boolean_t cflg = B_FALSE;
-	boolean_t nflg = B_FALSE;
+	bool do_serial;
+	bool do_exec;
+	bool vflg = false;
+	bool Cflg = false;
+	bool cflg = false;
+	bool nflg = false;
 	char *tmpdir;
 
 	cw_ictx_t *main_ctx;
@@ -1694,17 +1706,17 @@ main(int argc, char **argv)
 	while ((ch = getopt_long(argc, argv, "C", longopts, NULL)) != -1) {
 		switch (ch) {
 		case 'c':
-			cflg = B_TRUE;
+			cflg = true;
 			break;
 		case 'C':
-			Cflg = B_TRUE;
+			Cflg = true;
 			break;
 		case 'l':
 			if ((main_ctx->i_linker = strdup(optarg)) == NULL)
 				nomem();
 			break;
 		case 'n':
-			nflg = B_TRUE;
+			nflg = true;
 			break;
 		case 'p':
 			if (primary.c_path != NULL) {
@@ -1723,7 +1735,7 @@ main(int argc, char **argv)
 			nshadows++;
 			break;
 		case 'v':
-			vflg = B_TRUE;
+			vflg = true;
 			break;
 		default:
 			(void) fprintf(stderr, "Did you forget '--'?\n");
@@ -1736,8 +1748,8 @@ main(int argc, char **argv)
 		usage();
 	}
 
-	do_serial = (getenv("CW_SHADOW_SERIAL") == NULL) ? B_FALSE : B_TRUE;
-	do_exec = (getenv("CW_NO_EXEC") == NULL) ? B_TRUE : B_FALSE;
+	do_serial = getenv("CW_SHADOW_SERIAL") != NULL;
+	do_exec = getenv("CW_NO_EXEC") == NULL;
 
 	/* Leave room for argv[0] */
 	argc -= (optind - 1);

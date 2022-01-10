@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2020 Joyent, Inc.
+ * Copyright (c) 2019, Joyent, Inc.
  * Copyright (c) 2011, 2018 by Delphix. All rights reserved.
  * Copyright (c) 2014 by Saso Kiselkov. All rights reserved.
  * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
@@ -4544,7 +4544,6 @@ typedef enum free_memory_reason_t {
 	FMR_PAGES_PP_MAXIMUM,
 	FMR_HEAP_ARENA,
 	FMR_ZIO_ARENA,
-	FMR_VIRT_MACHINE,	/* 'VM' seems ambiguous in this context */
 } free_memory_reason_t;
 
 int64_t last_free_memory;
@@ -4559,48 +4558,6 @@ int64_t arc_pages_pp_reserve = 64;
  * Additional reserve of pages for swapfs.
  */
 int64_t arc_swapfs_reserve = 64;
-
-static volatile uint64_t arc_virt_machine_reserved;
-
-/*
- * XXX: A possible concern is that we allow arc_virt_machine_reserved to
- * get so large that we cause the arc to perform a lot of additional
- * work to keep the arc extremely small. We may want to set limits to
- * the size of arc_virt_machine_reserved and disallow reservations
- * beyond that limit.
- */
-int
-arc_virt_machine_reserve(size_t pages)
-{
-	uint64_t newv;
-
-	newv = atomic_add_64_nv(&arc_virt_machine_reserved, pages);
-
-	/*
-	 * Since arc_virt_machine_reserved effectively lowers arc_c_max
-	 * as needed for vmm memory, if this request would put the arc
-	 * under arc_c_min, we reject it.  arc_c_min should be a value that
-	 * ensures reasonable performance for non-VMM stuff, as well as keep
-	 * us from dipping below lotsfree, which could trigger the pager
-	 * (and send the system toa grinding halt while it pages).
-	 *
-	 * XXX: This is a bit hacky and might be better done w/ a mutex
-	 * instead of atomic ops.
-	 */
-	if (newv + arc_c_min > arc_c_max) {
-		atomic_add_64(&arc_virt_machine_reserved, -(int64_t)pages);
-		return (ENOMEM);
-	}
-
-	zthr_wakeup(arc_reap_zthr);
-	return (0);
-}
-
-void
-arc_virt_machine_release(size_t pages)
-{
-	atomic_add_64(&arc_virt_machine_reserved, -(int64_t)pages);
-}
 
 /*
  * Return the amount of memory that can be consumed before reclaim will be
@@ -4665,36 +4622,6 @@ arc_available_memory(void)
 		r = FMR_PAGES_PP_MAXIMUM;
 	}
 
-	/*
-	 * Check that we have enough memory for any virtual machines that
-	 * are running or starting. We add desfree to keep us out of
-	 * particularly dire circumstances.
-	 */
-	n = PAGESIZE * (availrmem - arc_virt_machine_reserved - desfree);
-	if (n < lowest) {
-		lowest = n;
-		r = FMR_VIRT_MACHINE;
-	}
-
-#if defined(__i386)
-	/*
-	 * If we're on an i386 platform, it's possible that we'll exhaust the
-	 * kernel heap space before we ever run out of available physical
-	 * memory.  Most checks of the size of the heap_area compare against
-	 * tune.t_minarmem, which is the minimum available real memory that we
-	 * can have in the system.  However, this is generally fixed at 25 pages
-	 * which is so low that it's useless.  In this comparison, we seek to
-	 * calculate the total heap-size, and reclaim if more than 3/4ths of the
-	 * heap is allocated.  (Or, in the calculation, if less than 1/4th is
-	 * free)
-	 */
-	n = (int64_t)vmem_size(heap_arena, VMEM_FREE) -
-	    (vmem_size(heap_arena, VMEM_FREE | VMEM_ALLOC) >> 2);
-	if (n < lowest) {
-		lowest = n;
-		r = FMR_HEAP_ARENA;
-	}
-#endif
 
 	/*
 	 * If zio data pages are being allocated out of a separate heap segment,
@@ -4757,12 +4684,6 @@ arc_kmem_reap_soon(void)
 		 */
 		dnlc_reduce_cache((void *)(uintptr_t)arc_reduce_dnlc_percent);
 	}
-#if defined(__i386)
-	/*
-	 * Reclaim unused memory from all kmem caches.
-	 */
-	kmem_reap();
-#endif
 #endif
 
 	for (i = 0; i < SPA_MAXBLOCKSIZE >> SPA_MINBLOCKSHIFT; i++) {
@@ -6859,10 +6780,6 @@ arc_memory_throttle(spa_t *spa, uint64_t reserve, uint64_t txg)
 #ifdef _KERNEL
 	uint64_t available_memory = ptob(freemem);
 
-#if defined(__i386)
-	available_memory =
-	    MIN(available_memory, vmem_size(heap_arena, VMEM_FREE));
-#endif
 
 	if (freemem > physmem * arc_lotsfree_percent / 100)
 		return (0);

@@ -12,7 +12,7 @@
 
 /*
  * Copyright 2015 Pluribus Networks Inc.
- * Copyright 2020 Joyent, Inc.
+ * Copyright 2019 Joyent, Inc.
  * Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
  * Copyright 2021 Oxide Computer Company
  */
@@ -45,6 +45,7 @@
 #include <sys/vmm_impl.h>
 #include <sys/vmm_drv.h>
 #include <sys/vmm_vm.h>
+#include <sys/vmm_reservoir.h>
 
 #include <vm/seg_dev.h>
 
@@ -99,15 +100,17 @@ struct vmm_hold {
 struct vmm_lease {
 	list_node_t		vml_node;
 	struct vm		*vml_vm;
+	vm_client_t		*vml_vmclient;
 	boolean_t		vml_expired;
+	boolean_t		vml_break_deferred;
 	boolean_t		(*vml_expire_func)(void *);
 	void			*vml_expire_arg;
-	list_node_t		vml_expire_node;
 	struct vmm_hold		*vml_hold;
 };
 
 static int vmm_drv_block_hook(vmm_softc_t *, boolean_t);
-static void vmm_lease_break_locked(vmm_softc_t *, vmm_lease_t *);
+static void vmm_lease_block(vmm_softc_t *);
+static void vmm_lease_unblock(vmm_softc_t *);
 static int vmm_kstat_alloc(vmm_softc_t *, minor_t, const cred_t *);
 static void vmm_kstat_init(vmm_softc_t *);
 static void vmm_kstat_fini(vmm_softc_t *);
@@ -334,44 +337,11 @@ vmm_write_lock(vmm_softc_t *sc)
 		vcpu_lock_one(sc, vcpu);
 	}
 
-	mutex_enter(&sc->vmm_lease_lock);
-	VERIFY3U(sc->vmm_lease_blocker, !=, UINT_MAX);
-	sc->vmm_lease_blocker++;
-	if (sc->vmm_lease_blocker == 1) {
-		list_t *list = &sc->vmm_lease_list;
-		vmm_lease_t *lease = list_head(list);
-
-		while (lease != NULL) {
-			boolean_t sync_break = B_FALSE;
-
-			if (!lease->vml_expired) {
-				void *arg = lease->vml_expire_arg;
-				lease->vml_expired = B_TRUE;
-				sync_break = lease->vml_expire_func(arg);
-			}
-
-			if (sync_break) {
-				vmm_lease_t *next;
-
-				/*
-				 * These leases which are synchronously broken
-				 * result in vmm_read_unlock() calls from a
-				 * different thread than the corresponding
-				 * vmm_read_lock().  This is acceptable, given
-				 * that the rwlock underpinning the whole
-				 * mechanism tolerates the behavior.  This
-				 * flexibility is _only_ afforded to VM read
-				 * lock (RW_READER) holders.
-				 */
-				next = list_next(list, lease);
-				vmm_lease_break_locked(sc, lease);
-				lease = next;
-			} else {
-				lease = list_next(list, lease);
-			}
-		}
-	}
-	mutex_exit(&sc->vmm_lease_lock);
+	/*
+	 * Block vmm_drv leases from being acquired or held while the VM write
+	 * lock is held.
+	 */
+	vmm_lease_block(sc);
 
 	rw_enter(&sc->vmm_rwlock, RW_WRITER);
 	/*
@@ -388,13 +358,8 @@ vmm_write_unlock(vmm_softc_t *sc)
 {
 	int maxcpus;
 
-	mutex_enter(&sc->vmm_lease_lock);
-	VERIFY3U(sc->vmm_lease_blocker, !=, 0);
-	sc->vmm_lease_blocker--;
-	if (sc->vmm_lease_blocker == 0) {
-		cv_broadcast(&sc->vmm_lease_cv);
-	}
-	mutex_exit(&sc->vmm_lease_lock);
+	/* Allow vmm_drv leases to be acquired once write lock is dropped */
+	vmm_lease_unblock(sc);
 
 	/*
 	 * The VM write lock _must_ be released from the same thread it was
@@ -476,12 +441,10 @@ vmmdev_do_ioctl(vmm_softc_t *sc, int cmd, intptr_t arg, int md,
 	case VM_MUNMAP_MEMSEG:
 	case VM_WRLOCK_CYCLE:
 	case VM_PMTMR_LOCATE:
-	case VM_ARC_RESV:
 		vmm_write_lock(sc);
 		lock_type = LOCK_WRITE_HOLD;
 		break;
 
-	case VM_GET_GPA_PMAP:
 	case VM_GET_MEMSEG:
 	case VM_MMAP_GETNEXT:
 	case VM_LAPIC_IRQ:
@@ -502,7 +465,9 @@ vmmdev_do_ioctl(vmm_softc_t *sc, int cmd, intptr_t arg, int md,
 		lock_type = LOCK_READ_HOLD;
 		break;
 
+	case VM_GET_GPA_PMAP:
 	case VM_IOAPIC_PINCOUNT:
+	case VM_SUSPEND:
 	default:
 		break;
 	}
@@ -552,7 +517,13 @@ vmmdev_do_ioctl(vmm_softc_t *sc, int cmd, intptr_t arg, int md,
 		error = vm_suspend(sc->vmm_vm, vmsuspend.how);
 		break;
 	}
-	case VM_REINIT:
+	case VM_REINIT: {
+		struct vm_reinit reinit;
+
+		if (ddi_copyin(datap, &reinit, sizeof (reinit), md)) {
+			error = EFAULT;
+			break;
+		}
 		if ((error = vmm_drv_block_hook(sc, B_TRUE)) != 0) {
 			/*
 			 * The VM instance should be free of driver-attached
@@ -560,9 +531,10 @@ vmmdev_do_ioctl(vmm_softc_t *sc, int cmd, intptr_t arg, int md,
 			 */
 			break;
 		}
-		error = vm_reinit(sc->vmm_vm);
+		error = vm_reinit(sc->vmm_vm, reinit.flags);
 		(void) vmm_drv_block_hook(sc, B_FALSE);
 		break;
+	}
 	case VM_STAT_DESC: {
 		struct vm_stat_desc statdesc;
 
@@ -1156,18 +1128,11 @@ vmmdev_do_ioctl(vmm_softc_t *sc, int cmd, intptr_t arg, int md,
 		break;
 	}
 	case VM_GET_GPA_PMAP: {
-		struct vm_gpa_pte gpapte;
-
-		if (ddi_copyin(datap, &gpapte, sizeof (gpapte), md)) {
-			error = EFAULT;
-			break;
-		}
-#ifdef __FreeBSD__
-		/* XXXJOY: add function? */
-		pmap_get_mapping(vmspace_pmap(vm_get_vmspace(sc->vmm_vm)),
-		    gpapte.gpa, gpapte.pte, &gpapte.ptenum);
-#endif
-		error = 0;
+		/*
+		 * Until there is a necessity to leak EPT/RVI PTE values to
+		 * userspace, this will remain unimplemented
+		 */
+		error = EINVAL;
 		break;
 	}
 	case VM_GET_HPET_CAPABILITIES: {
@@ -1412,9 +1377,7 @@ vmmdev_do_ioctl(vmm_softc_t *sc, int cmd, intptr_t arg, int md,
 		 */
 		break;
 	}
-	case VM_ARC_RESV:
-		error = vm_arc_resv(sc->vmm_vm, (uint64_t)arg);
-		break;
+
 	default:
 		error = ENOTTY;
 		break;
@@ -1509,13 +1472,22 @@ vmm_hma_release(void)
 }
 
 static int
-vmmdev_do_vm_create(char *name, cred_t *cr)
+vmmdev_do_vm_create(const struct vm_create_req *req, cred_t *cr)
 {
 	vmm_softc_t	*sc = NULL;
 	minor_t		minor;
 	int		error = ENOMEM;
+	size_t		len;
+	const char	*name = req->name;
 
-	if (strnlen(name, VM_MAX_NAMELEN) >= VM_MAX_NAMELEN) {
+	len = strnlen(name, VM_MAX_NAMELEN);
+	if (len == 0) {
+		return (EINVAL);
+	}
+	if (len >= VM_MAX_NAMELEN) {
+		return (ENAMETOOLONG);
+	}
+	if (strchr(name, '/') != NULL) {
 		return (EINVAL);
 	}
 
@@ -1558,7 +1530,7 @@ vmmdev_do_vm_create(char *name, cred_t *cr)
 		goto fail;
 	}
 
-	error = vm_create(name, &sc->vmm_vm);
+	error = vm_create(req->name, req->flags, &sc->vmm_vm);
 	if (error == 0) {
 		/* Complete VM intialization and report success. */
 		(void) strlcpy(sc->vmm_name, name, sizeof (sc->vmm_name));
@@ -1708,9 +1680,11 @@ vmm_drv_lease_sign(vmm_hold_t *hold, boolean_t (*expiref)(void *), void *arg)
 	lease->vml_expire_func = expiref;
 	lease->vml_expire_arg = arg;
 	lease->vml_expired = B_FALSE;
+	lease->vml_break_deferred = B_FALSE;
 	lease->vml_hold = hold;
 	/* cache the VM pointer for one less pointer chase */
 	lease->vml_vm = sc->vmm_vm;
+	lease->vml_vmclient = vmspace_client_alloc(vm_get_vmspace(sc->vmm_vm));
 
 	mutex_enter(&sc->vmm_lease_lock);
 	while (sc->vmm_lease_blocker != 0) {
@@ -1730,7 +1704,106 @@ vmm_lease_break_locked(vmm_softc_t *sc, vmm_lease_t *lease)
 
 	list_remove(&sc->vmm_lease_list, lease);
 	vmm_read_unlock(sc);
+	vmc_destroy(lease->vml_vmclient);
 	kmem_free(lease, sizeof (*lease));
+}
+
+static void
+vmm_lease_block(vmm_softc_t *sc)
+{
+	mutex_enter(&sc->vmm_lease_lock);
+	VERIFY3U(sc->vmm_lease_blocker, !=, UINT_MAX);
+	sc->vmm_lease_blocker++;
+	if (sc->vmm_lease_blocker == 1) {
+		list_t *list = &sc->vmm_lease_list;
+		vmm_lease_t *lease = list_head(list);
+
+		while (lease != NULL) {
+			void *arg = lease->vml_expire_arg;
+			boolean_t (*expiref)(void *) = lease->vml_expire_func;
+			boolean_t sync_break = B_FALSE;
+
+			/*
+			 * Since the lease expiration notification may
+			 * need to take locks which would deadlock with
+			 * vmm_lease_lock, drop it across the call.
+			 *
+			 * We are the only one allowed to manipulate
+			 * vmm_lease_list right now, so it is safe to
+			 * continue iterating through it after
+			 * reacquiring the lock.
+			 */
+			lease->vml_expired = B_TRUE;
+			mutex_exit(&sc->vmm_lease_lock);
+			sync_break = expiref(arg);
+			mutex_enter(&sc->vmm_lease_lock);
+
+			if (sync_break) {
+				vmm_lease_t *next;
+
+				/*
+				 * These leases which are synchronously broken
+				 * result in vmm_read_unlock() calls from a
+				 * different thread than the corresponding
+				 * vmm_read_lock().  This is acceptable, given
+				 * that the rwlock underpinning the whole
+				 * mechanism tolerates the behavior.  This
+				 * flexibility is _only_ afforded to VM read
+				 * lock (RW_READER) holders.
+				 */
+				next = list_next(list, lease);
+				vmm_lease_break_locked(sc, lease);
+				lease = next;
+			} else {
+				lease = list_next(list, lease);
+			}
+		}
+
+		/* Process leases which were not broken synchronously. */
+		while (!list_is_empty(list)) {
+			/*
+			 * Although the nested loops are quadratic, the number
+			 * of leases is small.
+			 */
+			lease = list_head(list);
+			while (lease != NULL) {
+				vmm_lease_t *next = list_next(list, lease);
+				if (lease->vml_break_deferred) {
+					vmm_lease_break_locked(sc, lease);
+				}
+				lease = next;
+			}
+			if (list_is_empty(list)) {
+				break;
+			}
+			cv_wait(&sc->vmm_lease_cv, &sc->vmm_lease_lock);
+		}
+		/* Wake anyone else waiting for the lease list to be empty  */
+		cv_broadcast(&sc->vmm_lease_cv);
+	} else {
+		list_t *list = &sc->vmm_lease_list;
+
+		/*
+		 * Some other thread beat us to the duty of lease cleanup.
+		 * Wait until that is complete.
+		 */
+		while (!list_is_empty(list)) {
+			cv_wait(&sc->vmm_lease_cv, &sc->vmm_lease_lock);
+		}
+	}
+	mutex_exit(&sc->vmm_lease_lock);
+}
+
+static void
+vmm_lease_unblock(vmm_softc_t *sc)
+{
+	mutex_enter(&sc->vmm_lease_lock);
+	VERIFY3U(sc->vmm_lease_blocker, !=, 0);
+	sc->vmm_lease_blocker--;
+	if (sc->vmm_lease_blocker == 0) {
+		cv_broadcast(&sc->vmm_lease_cv);
+	}
+	mutex_exit(&sc->vmm_lease_lock);
 }
 
 void
@@ -1739,9 +1812,19 @@ vmm_drv_lease_break(vmm_hold_t *hold, vmm_lease_t *lease)
 	vmm_softc_t *sc = hold->vmh_sc;
 
 	VERIFY3P(hold, ==, lease->vml_hold);
+	VERIFY(!lease->vml_break_deferred);
 
 	mutex_enter(&sc->vmm_lease_lock);
-	vmm_lease_break_locked(sc, lease);
+	if (sc->vmm_lease_blocker == 0) {
+		vmm_lease_break_locked(sc, lease);
+	} else {
+		/*
+		 * Defer the lease-breaking to whichever thread is currently
+		 * cleaning up all leases as part of a vmm_lease_block() call.
+		 */
+		lease->vml_break_deferred = B_TRUE;
+		cv_broadcast(&sc->vmm_lease_cv);
+	}
 	mutex_exit(&sc->vmm_lease_lock);
 }
 
@@ -1754,9 +1837,30 @@ vmm_drv_lease_expired(vmm_lease_t *lease)
 void *
 vmm_drv_gpa2kva(vmm_lease_t *lease, uintptr_t gpa, size_t sz)
 {
-	ASSERT(lease != NULL);
+	vm_page_t *vmp;
+	void *res = NULL;
 
-	return (vmspace_find_kva(vm_get_vmspace(lease->vml_vm), gpa, sz));
+	ASSERT(lease != NULL);
+	ASSERT3U(sz, ==, PAGESIZE);
+	ASSERT0(gpa & PAGEOFFSET);
+
+	vmp = vmc_hold(lease->vml_vmclient, gpa, PROT_READ | PROT_WRITE);
+	/*
+	 * Break the rules for now and just extract the pointer.  This is
+	 * nominally safe, since holding a driver lease on the VM read-locks it.
+	 *
+	 * A pointer which would otherwise be at risk of being a use-after-free
+	 * vector is made safe since actions such as vmspace_unmap() require
+	 * acquisition of the VM write-lock, (causing all driver leases to be
+	 * broken) allowing the consumers to cease their access prior to
+	 * modification of the vmspace.
+	 */
+	if (vmp != NULL) {
+		res = vmp_get_writable(vmp);
+		vmp_release(vmp);
+	}
+
+	return (res);
 }
 
 int
@@ -1912,8 +2016,8 @@ vmm_do_vm_destroy_locked(vmm_softc_t *sc, boolean_t clean_zsd,
 		list_insert_tail(&vmm_destroy_list, sc);
 		sc->vmm_flags |= VMM_DESTROY;
 	} else {
-		vm_destroy(sc->vmm_vm);
 		vmm_kstat_fini(sc);
+		vm_destroy(sc->vmm_vm);
 		ddi_soft_state_free(vmm_statep, minor);
 		id_free(vmm_minors, minor);
 		*hma_release = B_TRUE;
@@ -1941,7 +2045,7 @@ vmm_do_vm_destroy(vmm_softc_t *sc, boolean_t clean_zsd)
 
 /* ARGSUSED */
 static int
-vmmdev_do_vm_destroy(const char *name, cred_t *cr)
+vmmdev_do_vm_destroy(const struct vm_destroy_req *req, cred_t *cr)
 {
 	boolean_t	hma_release = B_FALSE;
 	vmm_softc_t	*sc;
@@ -1952,7 +2056,7 @@ vmmdev_do_vm_destroy(const char *name, cred_t *cr)
 
 	mutex_enter(&vmm_mtx);
 
-	if ((sc = vmm_lookup(name)) == NULL) {
+	if ((sc = vmm_lookup(req->name)) == NULL) {
 		mutex_exit(&vmm_mtx);
 		return (ENOENT);
 	}
@@ -2104,6 +2208,14 @@ vmm_open(dev_t *devp, int flag, int otyp, cred_t *credp)
 	minor_t		minor;
 	vmm_softc_t	*sc;
 
+	/*
+	 * Forbid running bhyve in a 32-bit process until it has been tested and
+	 * verified to be safe.
+	 */
+	if (curproc->p_model != DATAMODEL_LP64) {
+		return (EFBIG);
+	}
+
 	minor = getminor(*devp);
 	if (minor == VMM_CTL_MINOR) {
 		/*
@@ -2156,6 +2268,7 @@ vmm_close(dev_t dev, int flag, int otyp, cred_t *credp)
 	 */
 	if (sc->vmm_flags & VMM_DESTROY) {
 		list_remove(&vmm_destroy_list, sc);
+		vmm_kstat_fini(sc);
 		vm_destroy(sc->vmm_vm);
 		ddi_soft_state_free(vmm_statep, minor);
 		id_free(vmm_minors, minor);
@@ -2189,10 +2302,51 @@ vmm_is_supported(intptr_t arg)
 	}
 
 	if (r != 0 && arg != (intptr_t)NULL) {
-		if (copyoutstr(msg, (char *)arg, strlen(msg), NULL) != 0)
+		if (copyoutstr(msg, (char *)arg, strlen(msg) + 1, NULL) != 0)
 			return (EFAULT);
 	}
 	return (r);
+}
+
+static int
+vmm_ctl_ioctl(int cmd, intptr_t arg, int md, cred_t *cr, int *rvalp)
+{
+	void *argp = (void *)arg;
+
+	switch (cmd) {
+	case VMM_CREATE_VM: {
+		struct vm_create_req req;
+
+		if ((md & FWRITE) == 0) {
+			return (EPERM);
+		}
+		if (ddi_copyin(argp, &req, sizeof (req), md) != 0) {
+			return (EFAULT);
+		}
+		return (vmmdev_do_vm_create(&req, cr));
+	}
+	case VMM_DESTROY_VM: {
+		struct vm_destroy_req req;
+
+		if ((md & FWRITE) == 0) {
+			return (EPERM);
+		}
+		if (ddi_copyin(argp, &req, sizeof (req), md) != 0) {
+			return (EFAULT);
+		}
+		return (vmmdev_do_vm_destroy(&req, cr));
+	}
+	case VMM_VM_SUPPORTED:
+		return (vmm_is_supported(arg));
+	case VMM_RESV_QUERY:
+	case VMM_RESV_ADD:
+	case VMM_RESV_REMOVE:
+		return (vmmr_ioctl(cmd, arg, md, cr, rvalp));
+	default:
+		break;
+	}
+	/* No other actions are legal on ctl device */
+	return (ENOTTY);
 }
 
 static int
@@ -2202,6 +2356,14 @@ vmm_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
 	vmm_softc_t	*sc;
 	minor_t		minor;
 
+	/*
+	 * Forbid running bhyve in a 32-bit process until it has been tested and
+	 * verified to be safe.
+	 */
+	if (curproc->p_model != DATAMODEL_LP64) {
+		return (EFBIG);
+	}
+
 	/* The structs in bhyve ioctls assume a 64-bit datamodel */
 	if (ddi_model_convert_from(mode & FMODELS) != DDI_MODEL_NONE) {
 		return (ENOTSUP);
@@ -2210,36 +2372,7 @@ vmm_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
 	minor = getminor(dev);
 
 	if (minor == VMM_CTL_MINOR) {
-		void *argp = (void *)arg;
-		char name[VM_MAX_NAMELEN] = { 0 };
-		size_t len = 0;
-
-		if ((mode & FKIOCTL) != 0) {
-			len = strlcpy(name, argp, sizeof (name));
-		} else {
-			if (copyinstr(argp, name, sizeof (name), &len) != 0) {
-				return (EFAULT);
-			}
-		}
-		if (len >= VM_MAX_NAMELEN) {
-			return (ENAMETOOLONG);
-		}
-
-		switch (cmd) {
-		case VMM_CREATE_VM:
-			if ((mode & FWRITE) == 0)
-				return (EPERM);
-			return (vmmdev_do_vm_create(name, credp));
-		case VMM_DESTROY_VM:
-			if ((mode & FWRITE) == 0)
-				return (EPERM);
-			return (vmmdev_do_vm_destroy(name, credp));
-		case VMM_VM_SUPPORTED:
-			return (vmm_is_supported(arg));
-		default:
-			/* No other actions are legal on ctl device */
-			return (ENOTTY);
-		}
+		return (vmm_ctl_ioctl(cmd, arg, mode, credp, rvalp));
 	}
 
 	sc = ddi_get_soft_state(vmm_statep, minor);
@@ -2257,10 +2390,7 @@ vmm_segmap(dev_t dev, off_t off, struct as *as, caddr_t *addrp, off_t len,
 {
 	vmm_softc_t *sc;
 	const minor_t minor = getminor(dev);
-	struct vm *vm;
 	int err;
-	vm_object_t vmo = NULL;
-	struct vmspace *vms;
 
 	if (minor == VMM_CTL_MINOR) {
 		return (ENODEV);
@@ -2281,31 +2411,23 @@ vmm_segmap(dev_t dev, off_t off, struct as *as, caddr_t *addrp, off_t len,
 	/* Grab read lock on the VM to prevent any changes to the memory map */
 	vmm_read_lock(sc);
 
-	vm = sc->vmm_vm;
-	vms = vm_get_vmspace(vm);
 	if (off >= VM_DEVMEM_START) {
 		int segid;
-		off_t map_off = 0;
+		off_t segoff;
 
 		/* Mapping a devmem "device" */
-		if (!vmmdev_devmem_segid(sc, off, len, &segid, &map_off)) {
+		if (!vmmdev_devmem_segid(sc, off, len, &segid, &segoff)) {
 			err = ENODEV;
-			goto out;
+		} else {
+			err = vm_segmap_obj(sc->vmm_vm, segid, segoff, len, as,
+			    addrp, prot, maxprot, flags);
 		}
-		err = vm_get_memseg(vm, segid, NULL, NULL, &vmo);
-		if (err != 0) {
-			goto out;
-		}
-		err = vm_segmap_obj(vmo, map_off, len, as, addrp, prot, maxprot,
-		    flags);
 	} else {
 		/* Mapping a part of the guest physical space */
-		err = vm_segmap_space(vms, off, as, addrp, len, prot, maxprot,
-		    flags);
+		err = vm_segmap_space(sc->vmm_vm, off, as, addrp, len, prot,
+		    maxprot, flags);
 	}
 
-
-out:
 	vmm_read_unlock(sc);
 	return (err);
 }
@@ -2425,7 +2547,6 @@ vmm_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	}
 
 	vmm_sol_glue_init();
-	vmm_arena_init();
 
 	/*
 	 * Perform temporary HMA registration to determine if the system
@@ -2465,7 +2586,6 @@ fail:
 	if (reg != NULL) {
 		hma_unregister(reg);
 	}
-	vmm_arena_fini();
 	vmm_sol_glue_cleanup();
 	mutex_exit(&vmmdev_mtx);
 	return (DDI_FAILURE);
@@ -2497,6 +2617,11 @@ vmm_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 	}
 	mutex_exit(&vmm_mtx);
 
+	if (!vmmr_is_empty()) {
+		mutex_exit(&vmmdev_mtx);
+		return (DDI_FAILURE);
+	}
+
 	VERIFY(vmmdev_sdev_hdl != (sdev_plugin_hdl_t)NULL);
 	if (sdev_plugin_unregister(vmmdev_sdev_hdl) != 0) {
 		mutex_exit(&vmmdev_mtx);
@@ -2510,7 +2635,6 @@ vmm_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 
 	VERIFY0(vmm_mod_unload());
 	VERIFY3U(vmmdev_hma_reg, ==, NULL);
-	vmm_arena_fini();
 	vmm_sol_glue_cleanup();
 
 	mutex_exit(&vmmdev_mtx);
@@ -2582,11 +2706,13 @@ _init(void)
 	}
 
 	vmm_zsd_init();
+	vmmr_init();
 
 	error = mod_install(&modlinkage);
 	if (error) {
 		ddi_soft_state_fini(&vmm_statep);
 		vmm_zsd_fini();
+		vmmr_fini();
 	}
 
 	return (error);
@@ -2603,6 +2729,7 @@ _fini(void)
 	}
 
 	vmm_zsd_fini();
+	vmmr_fini();
 
 	ddi_soft_state_fini(&vmm_statep);
 

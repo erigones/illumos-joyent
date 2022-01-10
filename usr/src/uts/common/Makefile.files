@@ -25,10 +25,11 @@
 # Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
 # Copyright 2018 Nexenta Systems, Inc.
 # Copyright 2016 Garrett D'Amore <garrett@damore.org>
-# Copyright 2020 Joyent, Inc.
+# Copyright 2021 Joyent, Inc.
 # Copyright 2016 OmniTI Computer Consulting, Inc.  All rights reserved.
 # Copyright 2016 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
 # Copyright 2020 RackTop Systems, Inc.
+# Copyright 2021 Oxide Computer Company
 #
 
 #
@@ -130,7 +131,9 @@ GENUNIX_OBJS +=	\
 		class.o		\
 		clock.o		\
 		clock_highres.o	\
+		clock_process.o	\
 		clock_realtime.o\
+		clock_thread.o	\
 		close.o		\
 		compress.o	\
 		condvar.o	\
@@ -1079,7 +1082,7 @@ RTLS_OBJS +=	rtls.o
 #
 AOUTEXEC_OBJS +=aout.o
 
-ELFEXEC_OBJS +=	elf.o elf_notes.o old_notes.o
+ELFEXEC_OBJS +=	elf.o elf_notes.o old_notes.o core_shstrtab.o
 
 INTPEXEC_OBJS +=intp.o
 
@@ -1940,8 +1943,7 @@ ZYD_OBJS += zyd.o zyd_usb.o zyd_hw.o zyd_fw.o
 
 MXFE_OBJS += mxfe.o
 
-MPTSAS_OBJS += mptsas.o mptsas_impl.o mptsas_init.o \
-		mptsas_raid.o mptsas_smhba.o
+MPTSAS_OBJS += mptsas.o mptsas_impl.o mptsas_init.o mptsas_raid.o mptsas_smhba.o
 
 SFE_OBJS += sfe.o sfe_util.o
 
@@ -2176,11 +2178,6 @@ MEGA_SAS_OBJS = megaraid_sas.o
 MR_SAS_OBJS = ld_pd_map.o mr_sas.o mr_sas_tbolt.o mr_sas_list.o
 
 #
-#	DR_SAS module
-#
-DR_SAS_OBJS = dr_sas.o
-
-#
 #	CPQARY3 module
 #
 CPQARY3_OBJS =	cpqary3.o cpqary3_noe.o cpqary3_talk2ctlr.o	\
@@ -2342,3 +2339,10 @@ BNX_OBJS += \
 #
 MLXCX_OBJS +=	mlxcx.o mlxcx_dma.o mlxcx_cmd.o mlxcx_intr.o mlxcx_gld.o \
 		mlxcx_ring.o mlxcx_sensor.o
+
+#
+# ena(7D)
+#
+ENA_OBJS +=	ena.o ena_admin.o ena_dma.o ena_gld.o ena_hw.o ena_intr.o \
+		ena_stats.o ena_tx.o ena_rx.o
+

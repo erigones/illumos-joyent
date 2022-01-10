@@ -24,6 +24,7 @@
  * Copyright 2017 Joyent, Inc.
  * Copyright 2016 Nexenta Systems, Inc.
  * Copyright 2020 Peter Tribble.
+ * Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
  */
 
 #include <stdio.h>
@@ -208,6 +209,7 @@ static ofmt_cb_t print_overlay_cb, print_overlay_fma_cb, print_overlay_targ_cb;
 
 typedef void cmdfunc_t(int, char **, const char *);
 
+static cmdfunc_t do_help;
 static cmdfunc_t do_show_link, do_show_wifi, do_show_phys;
 static cmdfunc_t do_create_aggr, do_delete_aggr, do_add_aggr, do_remove_aggr;
 static cmdfunc_t do_modify_aggr, do_show_aggr, do_up_aggr;
@@ -281,6 +283,7 @@ typedef struct	cmd {
 } cmd_t;
 
 static cmd_t	cmds[] = {
+	{ "help",		do_help,		NULL		},
 	{ "rename-link",	do_rename_link,
 	    "    rename-link      [-z zonename] <oldlink> <newlink>"	},
 	{ "show-link",		do_show_link,
@@ -1553,7 +1556,7 @@ static dladm_errlist_t errlist;
 #define	DLADM_IS_ETHERSTUB(id)	(id == DATALINK_INVALID_LINKID)
 
 static void
-usage(void)
+usage_text(void)
 {
 	int	i;
 	cmd_t	*cmdp;
@@ -1564,12 +1567,24 @@ usage(void)
 		if (cmdp->c_usage != NULL)
 			(void) fprintf(stderr, "%s\n", gettext(cmdp->c_usage));
 	}
+}
+
+static void
+usage(void)
+{
+	usage_text();
 
 	/* close dladm handle if it was opened */
 	if (handle != NULL)
 		dladm_close(handle);
 
 	exit(EXIT_FAILURE);
+}
+
+static void
+do_help(int argc __unused, char *argv[] __unused, const char *use __unused)
+{
+	usage_text();
 }
 
 int
@@ -1585,10 +1600,15 @@ main(int argc, char *argv[])
 #endif
 	(void) textdomain(TEXT_DOMAIN);
 
-	progname = argv[0];
+	if ((progname = strrchr(argv[0], '/')) == NULL)
+		progname = argv[0];
+	else
+		progname++;
 
-	if (argc < 2)
-		usage();
+	if (argc < 2) {
+		argv[1] = "show-link";
+		argc = 2;
+	}
 
 	for (i = 0; i < sizeof (cmds) / sizeof (cmds[0]); i++) {
 		cmdp = &cmds[i];
@@ -2915,6 +2935,10 @@ print_link(show_state_t *state, datalink_id_t linkid, link_fields_buf_t *lbuf)
 		goto done;
 	}
 
+	(void) snprintf(lbuf->link_name, sizeof (lbuf->link_name),
+	    "%s", link);
+	(void) dladm_class2str(class, lbuf->link_class);
+
 	if (state->ls_flags == DLADM_OPT_ACTIVE) {
 		dladm_attr_t	dlattr;
 
@@ -2956,12 +2980,7 @@ link_mtu:
 				goto done;
 			mtu = dlattr.da_max_sdu;
 		}
-	}
 
-	(void) snprintf(lbuf->link_name, sizeof (lbuf->link_name),
-	    "%s", link);
-	(void) dladm_class2str(class, lbuf->link_class);
-	if (state->ls_flags == DLADM_OPT_ACTIVE) {
 		(void) snprintf(lbuf->link_mtu, sizeof (lbuf->link_mtu),
 		    "%u", mtu);
 		(void) get_linkstate(link, B_TRUE, lbuf->link_state);
@@ -3112,7 +3131,7 @@ print_xaggr_cb(ofmt_arg_t *ofarg, char *buf, uint_t bufsize)
 	boolean_t		is_port = (l->laggr_lport >= 0);
 	char			tmpbuf[DLADM_STRSIZE];
 	const char		*objname;
-	dladm_aggr_port_attr_t	*portp;
+	dladm_aggr_port_attr_t	*portp = NULL;
 	dladm_phys_attr_t	dpa;
 
 	if (is_port) {
@@ -3298,7 +3317,7 @@ print_aggr_stats_cb(ofmt_arg_t *ofarg, char *buf, uint_t bufsize)
 	boolean_t		is_port = (l->laggr_lport >= 0);
 	dladm_aggr_port_attr_t	*portp;
 	dladm_status_t		*stat, status;
-	pktsum_t		*diff_stats;
+	pktsum_t		*diff_stats = NULL;
 
 	stat = l->laggr_status;
 	*stat = DLADM_STATUS_OK;
@@ -3313,6 +3332,10 @@ print_aggr_stats_cb(ofmt_arg_t *ofarg, char *buf, uint_t bufsize)
 			goto err;
 		}
 		diff_stats = l->laggr_diffstats;
+		if (diff_stats == NULL) {
+			status = DLADM_STATUS_BADVAL;
+			goto err;
+		}
 	}
 
 	switch (ofarg->ofmt_id) {
@@ -7319,7 +7342,7 @@ get_secobj_val(char *obj_name, uint8_t *obj_val, uint_t *obj_lenp,
     dladm_secobj_class_t class, FILE *filep)
 {
 	int		rval;
-	uint_t		len, len2;
+	uint_t		len = 0, len2;
 	char		buf[DLADM_SECOBJ_VAL_MAX], buf2[DLADM_SECOBJ_VAL_MAX];
 
 	if (filep == NULL) {
@@ -8768,8 +8791,8 @@ do_show_bridge(int argc, char **argv, const char *use)
 	/* -t: TRILL nickname table related data */
 	char		*default_trill_fields = "nick,flags,link,nexthop";
 	char		*default_str;
-	char		*all_str;
-	ofmt_field_t	*field_arr;
+	char		*all_str = NULL;
+	ofmt_field_t	*field_arr = NULL;
 	ofmt_handle_t	ofmt;
 	ofmt_status_t	oferr;
 	uint_t		ofmtflags = 0;
@@ -8892,6 +8915,9 @@ do_show_bridge(int argc, char **argv, const char *use)
 		default_str = all_str = default_trill_fields;
 		field_arr = bridge_trill_fields;
 		break;
+
+	default:
+		die("unknown operations mode: %d", op_mode);
 	}
 
 	if (fields_str == NULL)
@@ -9892,7 +9918,7 @@ do_create_overlay(int argc, char *argv[], const char *use)
 	char			name[MAXLINKNAMELEN];
 	dladm_status_t		status;
 	uint32_t		flags = DLADM_OPT_ACTIVE | DLADM_OPT_PERSIST;
-	uint64_t		vid;
+	uint64_t		vid = 0;
 	boolean_t		havevid = B_FALSE;
 	char			propstr[DLADM_STRSIZE];
 	dladm_arg_list_t	*proplist = NULL;
@@ -10503,7 +10529,7 @@ do_modify_overlay(int argc, char *argv[], const char *use)
 	int			opt, ocnt = 0;
 	boolean_t		flush, set, delete;
 	struct ether_addr	e;
-	char			*dest;
+	char			*dest = NULL;
 	datalink_id_t		linkid = DATALINK_ALL_LINKID;
 	dladm_status_t		status;
 

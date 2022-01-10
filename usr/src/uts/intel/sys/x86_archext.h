@@ -526,9 +526,21 @@ extern "C" {
 #define	IA32_VMX_PROCBASED2_VPID	(1UL << 5)
 
 #define	MSR_IA32_VMX_EPT_VPID_CAP	0x48c
-#define	IA32_VMX_EPT_VPID_INVEPT	(1UL << 20)
-#define	IA32_VMX_EPT_VPID_INVEPT_SINGLE	(1UL << 25)
-#define	IA32_VMX_EPT_VPID_INVEPT_ALL	(1UL << 26)
+#define	IA32_VMX_EPT_VPID_EXEC_ONLY		(1UL << 0)
+#define	IA32_VMX_EPT_VPID_PWL4			(1UL << 6)
+#define	IA32_VMX_EPT_VPID_TYPE_UC		(1UL << 8)
+#define	IA32_VMX_EPT_VPID_TYPE_WB		(1UL << 14)
+#define	IA32_VMX_EPT_VPID_MAP_2M		(1UL << 16)
+#define	IA32_VMX_EPT_VPID_MAP_1G		(1UL << 17)
+#define	IA32_VMX_EPT_VPID_HW_AD			(1UL << 21)
+#define	IA32_VMX_EPT_VPID_INVEPT		(1UL << 20)
+#define	IA32_VMX_EPT_VPID_INVEPT_SINGLE		(1UL << 25)
+#define	IA32_VMX_EPT_VPID_INVEPT_ALL		(1UL << 26)
+#define	IA32_VMX_EPT_VPID_INVVPID		(1UL << 32)
+#define	IA32_VMX_EPT_VPID_INVVPID_ADDR		(1UL << 40)
+#define	IA32_VMX_EPT_VPID_INVVPID_SINGLE	(1UL << 41)
+#define	IA32_VMX_EPT_VPID_INVVPID_ALL		(1UL << 42)
+#define	IA32_VMX_EPT_VPID_INVVPID_RETAIN	(1UL << 43)
 
 /*
  * Intel TSX Control MSRs
@@ -979,6 +991,17 @@ extern "C" {
 #define	X86_CHIPREV_HYGON_18_DN_A1 \
 	_X86_CHIPREV_MKREV(X86_VENDOR_HYGON, 0x18, 0x0001)
 
+#define	X86_CHIPREV_AMD_19_GN_A0 \
+	_X86_CHIPREV_MKREV(X86_VENDOR_AMD, 0x19, 0x0000)
+#define	X86_CHIPREV_AMD_19_GN_B0 \
+	_X86_CHIPREV_MKREV(X86_VENDOR_AMD, 0x19, 0x0001)
+#define	X86_CHIPREV_AMD_19_GN_B1 \
+	_X86_CHIPREV_MKREV(X86_VENDOR_AMD, 0x19, 0x0002)
+#define	X86_CHIPREV_AMD_19_VMR_B0 \
+	_X86_CHIPREV_MKREV(X86_VENDOR_AMD, 0x19, 0x0003)
+#define	X86_CHIPREV_AMD_19_VMR_B1 \
+	_X86_CHIPREV_MKREV(X86_VENDOR_AMD, 0x19, 0x0004)
+
 /*
  * Various socket/package types, extended as the need to distinguish
  * a new type arises.  The top 8 byte identfies the vendor and the
@@ -1260,8 +1283,6 @@ extern uint32_t cpuid_getchiprev(struct cpu *);
 extern const char *cpuid_getchiprevstr(struct cpu *);
 extern uint32_t cpuid_getsockettype(struct cpu *);
 extern const char *cpuid_getsocketstr(struct cpu *);
-
-extern int cpuid_have_cr8access(struct cpu *);
 
 extern int cpuid_opteron_erratum(struct cpu *, uint_t);
 

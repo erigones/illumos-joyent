@@ -22,7 +22,7 @@
 /*
  * Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2014 Nexenta Systems, Inc. All rights reserved.
- * Copyright 2019 Joyent, Inc.
+ * Copyright 2021 Joyent, Inc.
  * Copyright (c) 2016 by Delphix. All rights reserved.
  */
 
@@ -292,13 +292,27 @@ zerror(zlog_t *zlogp, boolean_t use_strerror, const char *fmt, ...)
 
 /*
  * Append src to dest, modifying dest in the process. Prefix src with
- * a space character if dest is a non-empty string.
+ * a space character if dest is a non-empty string. Assumes dest is already
+ * properly \0-terminated OR overruns destsize.
  */
 static void
-strnappend(char *dest, size_t n, const char *src)
+strnappend(char *dest, size_t destsize, const char *src)
 {
-	(void) snprintf(dest, n, "%s%s%s", dest,
-	    dest[0] == '\0' ? "" : " ", src);
+	size_t startpoint = strnlen(dest, destsize);
+
+	if (startpoint >= destsize - 1) {
+		/* We've run out of room.  Record something?! */
+		return;
+	}
+
+	if (startpoint > 0) {
+		/* Add the space per the function's intro comment. */
+		dest[startpoint] = ' ';
+		startpoint++;
+	}
+
+	/* Arguably we should check here too... */
+	(void) strlcpy(dest + startpoint, src, destsize - startpoint);
 }
 
 /*
@@ -1278,8 +1292,8 @@ zone_bootup(zlog_t *zlogp, const char *bootargs, int zstate, boolean_t debug)
 	dladm_status_t status;
 	char errmsg[DLADM_STRSIZE];
 	int err;
-	boolean_t restart_init;
 	boolean_t app_svc_dep;
+	boolean_t restart_init, restart_init0, restart_initreboot;
 
 	if (brand_prestatechg(zlogp, zstate, Z_BOOT, debug) != 0)
 		return (-1);
@@ -1331,8 +1345,10 @@ zone_bootup(zlog_t *zlogp, const char *bootargs, int zstate, boolean_t debug)
 		goto bad;
 	}
 
-	/* See if we should restart init if it dies. */
+	/* See if this zone's brand should restart init if it dies. */
 	restart_init = restartinit(bh);
+	restart_init0 = brand_restartinit0(bh);
+	restart_initreboot = brand_restartinitreboot(bh);
 
 	/*
 	 * See if we need to setup contract dependencies between the zone's
@@ -1411,6 +1427,17 @@ zone_bootup(zlog_t *zlogp, const char *bootargs, int zstate, boolean_t debug)
 	if (!restart_init && zone_setattr(zoneid, ZONE_ATTR_INITNORESTART,
 	    NULL, 0) == -1) {
 		zerror(zlogp, B_TRUE, "could not set zone init-no-restart");
+		goto bad;
+	}
+	if (restart_init0 && zone_setattr(zoneid, ZONE_ATTR_INITRESTART0,
+	    NULL, 0) == -1) {
+		zerror(zlogp, B_TRUE,
+		    "could not set zone init-restart-on-exit-0");
+		goto bad;
+	}
+	if (restart_initreboot && zone_setattr(zoneid, ZONE_ATTR_INITREBOOT,
+	    NULL, 0) == -1) {
+		zerror(zlogp, B_TRUE, "could not set zone reboot-on-init-exit");
 		goto bad;
 	}
 

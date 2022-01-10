@@ -40,7 +40,7 @@
  *
  * Copyright 2015 Pluribus Networks Inc.
  * Copyright 2018 Joyent, Inc.
- * Copyright 2020 Oxide Computer Company
+ * Copyright 2021 Oxide Computer Company
  */
 
 #include <sys/cdefs.h>
@@ -165,6 +165,7 @@ enum {
 	VIE_OP_TYPE_MOV,
 	VIE_OP_TYPE_MOVSX,
 	VIE_OP_TYPE_MOVZX,
+	VIE_OP_TYPE_MOV_CR,
 	VIE_OP_TYPE_AND,
 	VIE_OP_TYPE_OR,
 	VIE_OP_TYPE_SUB,
@@ -189,7 +190,8 @@ enum {
 #define	VIE_OP_F_IMM8		(1 << 1)  /* 8-bit immediate operand */
 #define	VIE_OP_F_MOFFSET	(1 << 2)  /* 16/32/64-bit immediate moffset */
 #define	VIE_OP_F_NO_MODRM	(1 << 3)
-#define	VIE_OP_F_NO_GLA_VERIFICATION (1 << 4)
+#define	VIE_OP_F_NO_GLA_VERIFICATION	(1 << 4)
+#define	VIE_OP_F_REG_REG	(1 << 5)  /* special-case for mov-cr */
 
 static const struct vie_op three_byte_opcodes_0f38[256] = {
 	[0xF7] = {
@@ -203,6 +205,16 @@ static const struct vie_op two_byte_opcodes[256] = {
 		.op_byte = 0x06,
 		.op_type = VIE_OP_TYPE_CLTS,
 		.op_flags = VIE_OP_F_NO_MODRM | VIE_OP_F_NO_GLA_VERIFICATION
+	},
+	[0x20] = {
+		.op_byte = 0x20,
+		.op_type = VIE_OP_TYPE_MOV_CR,
+		.op_flags = VIE_OP_F_REG_REG | VIE_OP_F_NO_GLA_VERIFICATION
+	},
+	[0x22] = {
+		.op_byte = 0x22,
+		.op_type = VIE_OP_TYPE_MOV_CR,
+		.op_flags = VIE_OP_F_REG_REG | VIE_OP_F_NO_GLA_VERIFICATION
 	},
 	[0xAE] = {
 		.op_byte = 0xAE,
@@ -361,6 +373,27 @@ static const struct vie_op one_byte_opcodes[256] = {
 
 #define	GB				(1024 * 1024 * 1024)
 
+
+/*
+ * Paging defines, previously pulled in from machine/pmap.h
+ */
+#define	PG_V	(1 << 0) /* Present */
+#define	PG_RW	(1 << 1) /* Read/Write */
+#define	PG_U	(1 << 2) /* User/Supervisor */
+#define	PG_A	(1 << 5) /* Accessed */
+#define	PG_M	(1 << 6) /* Dirty */
+#define	PG_PS	(1 << 7) /* Largepage */
+
+/*
+ * Paging except defines, previously pulled in from machine/pmap.h
+ */
+#define	PGEX_P		(1 << 0) /* Non-present/Protection */
+#define	PGEX_W		(1 << 1) /* Read/Write */
+#define	PGEX_U		(1 << 2) /* User/Supervisor */
+#define	PGEX_RSV	(1 << 3) /* (Non-)Reserved */
+#define	PGEX_I		(1 << 4) /* Instruction */
+
+
 static enum vm_reg_name gpr_map[16] = {
 	VM_REG_GUEST_RAX,
 	VM_REG_GUEST_RCX,
@@ -378,6 +411,25 @@ static enum vm_reg_name gpr_map[16] = {
 	VM_REG_GUEST_R13,
 	VM_REG_GUEST_R14,
 	VM_REG_GUEST_R15
+};
+
+static enum vm_reg_name cr_map[16] = {
+	VM_REG_GUEST_CR0,
+	VM_REG_LAST,
+	VM_REG_GUEST_CR2,
+	VM_REG_GUEST_CR3,
+	VM_REG_GUEST_CR4,
+	VM_REG_LAST,
+	VM_REG_LAST,
+	VM_REG_LAST,
+	VM_REG_LAST,
+	VM_REG_LAST,
+	VM_REG_LAST,
+	VM_REG_LAST,
+	VM_REG_LAST,
+	VM_REG_LAST,
+	VM_REG_LAST,
+	VM_REG_LAST
 };
 
 static uint64_t size2mask[] = {
@@ -655,6 +707,112 @@ getandflags(int opsize, uint64_t x, uint64_t y)
 		return (getandflags32(x, y));
 	else
 		return (getandflags64(x, y));
+}
+
+static int
+vie_emulate_mov_cr(struct vie *vie, struct vm *vm, int vcpuid)
+{
+	uint64_t val;
+	int err;
+	enum vm_reg_name gpr = gpr_map[vie->rm];
+	enum vm_reg_name cr = cr_map[vie->reg];
+
+	uint_t size = 4;
+	if (vie->paging.cpu_mode == CPU_MODE_64BIT) {
+		size = 8;
+	}
+
+	switch (vie->op.op_byte) {
+	case 0x20:
+		/*
+		 * MOV control register (ModRM:reg) to reg (ModRM:r/m)
+		 * 20/r:	mov r32, CR0-CR7
+		 * 20/r:	mov r64, CR0-CR7
+		 * REX.R + 20/0:	mov r64, CR8
+		 */
+		if (vie->paging.cpl != 0) {
+			vm_inject_gp(vm, vcpuid);
+			vie->num_processed = 0;
+			return (0);
+		}
+		err = vm_get_register(vm, vcpuid, cr, &val);
+		if (err != 0) {
+			/* #UD for access to non-existent CRs */
+			vm_inject_ud(vm, vcpuid);
+			vie->num_processed = 0;
+			return (0);
+		}
+		err = vie_update_register(vm, vcpuid, gpr, val, size);
+		break;
+	case 0x22: {
+		/*
+		 * MOV reg (ModRM:r/m) to control register (ModRM:reg)
+		 * 22/r:	mov CR0-CR7, r32
+		 * 22/r:	mov CR0-CR7, r64
+		 * REX.R + 22/0:	mov CR8, r64
+		 */
+		uint64_t old, diff;
+
+		if (vie->paging.cpl != 0) {
+			vm_inject_gp(vm, vcpuid);
+			vie->num_processed = 0;
+			return (0);
+		}
+		err = vm_get_register(vm, vcpuid, cr, &old);
+		if (err != 0) {
+			/* #UD for access to non-existent CRs */
+			vm_inject_ud(vm, vcpuid);
+			vie->num_processed = 0;
+			return (0);
+		}
+		err = vm_get_register(vm, vcpuid, gpr, &val);
+		VERIFY0(err);
+		val &= size2mask[size];
+		diff = old ^ val;
+
+		switch (cr) {
+		case VM_REG_GUEST_CR0:
+			if ((diff & CR0_PG) != 0) {
+				uint64_t efer;
+
+				err = vm_get_register(vm, vcpuid,
+				    VM_REG_GUEST_EFER, &efer);
+				VERIFY0(err);
+
+				/* Keep the long-mode state in EFER in sync */
+				if ((val & CR0_PG) != 0 &&
+				    (efer & EFER_LME) != 0) {
+					efer |= EFER_LMA;
+				}
+				if ((val & CR0_PG) == 0 &&
+				    (efer & EFER_LME) != 0) {
+					efer &= ~EFER_LMA;
+				}
+
+				err = vm_set_register(vm, vcpuid,
+				    VM_REG_GUEST_EFER, efer);
+				VERIFY0(err);
+			}
+			/* TODO: enforce more of the #GP checks */
+			err = vm_set_register(vm, vcpuid, cr, val);
+			VERIFY0(err);
+			break;
+		case VM_REG_GUEST_CR2:
+		case VM_REG_GUEST_CR3:
+		case VM_REG_GUEST_CR4:
+			/* TODO: enforce more of the #GP checks */
+			err = vm_set_register(vm, vcpuid, cr, val);
+			break;
+		default:
+			/* The cr_map mapping should prevent this */
+			panic("invalid cr %d", cr);
+		}
+		break;
+	}
+	default:
+		return (EINVAL);
+	}
+	return (err);
 }
 
 static int
@@ -2311,6 +2469,9 @@ vie_emulate_other(struct vie *vie, struct vm *vm, int vcpuid)
 	case VIE_OP_TYPE_CLTS:
 		error = vie_emulate_clts(vie, vm, vcpuid);
 		break;
+	case VIE_OP_TYPE_MOV_CR:
+		error = vie_emulate_mov_cr(vie, vm, vcpuid);
+		break;
 	default:
 		error = EINVAL;
 		break;
@@ -2735,43 +2896,48 @@ pf_error_code(int usermode, int prot, int rsvd, uint64_t pte)
 }
 
 static void
-ptp_release(void **cookie)
+ptp_release(vm_page_t **vmp)
 {
-	if (*cookie != NULL) {
-		vm_gpa_release(*cookie);
-		*cookie = NULL;
+	if (*vmp != NULL) {
+		vmp_release(*vmp);
+		*vmp = NULL;
 	}
 }
 
 static void *
-ptp_hold(struct vm *vm, int vcpu, vm_paddr_t ptpphys, size_t len, void **cookie)
+ptp_hold(struct vm *vm, int vcpu, uintptr_t gpa, size_t len, vm_page_t **vmp)
 {
-	void *ptr;
+	vm_client_t *vmc = vm_get_vmclient(vm, vcpu);
+	const uintptr_t hold_gpa = gpa & PAGEMASK;
 
-	ptp_release(cookie);
-	ptr = vm_gpa_hold(vm, vcpu, ptpphys, len,  PROT_READ | PROT_WRITE,
-	    cookie);
+	/* Hold must not cross a page boundary */
+	VERIFY3U(gpa + len, <=, hold_gpa + PAGESIZE);
 
-	return (ptr);
+	if (*vmp != NULL) {
+		vmp_release(*vmp);
+	}
+
+	*vmp = vmc_hold(vmc, hold_gpa, PROT_READ | PROT_WRITE);
+	if (*vmp == NULL) {
+		return (NULL);
+	}
+
+	return ((caddr_t)vmp_get_writable(*vmp) + (gpa - hold_gpa));
 }
 
 static int
 _vm_gla2gpa(struct vm *vm, int vcpuid, struct vm_guest_paging *paging,
     uint64_t gla, int prot, uint64_t *gpa, int *guest_fault, bool check_only)
 {
-	int nlevels, pfcode, retval, usermode, writable;
+	int nlevels, pfcode;
 	int ptpshift = 0, ptpindex = 0;
 	uint64_t ptpphys;
 	uint64_t *ptpbase = NULL, pte = 0, pgsize = 0;
-	uint32_t *ptpbase32, pte32;
-	void *cookie;
+	vm_page_t *cookie = NULL;
+	const bool usermode = paging->cpl == 3;
+	const bool writable = (prot & PROT_WRITE) != 0;
 
 	*guest_fault = 0;
-
-	usermode = (paging->cpl == 3 ? 1 : 0);
-	writable = prot & PROT_WRITE;
-	cookie = NULL;
-	retval = 0;
 restart:
 	ptpphys = paging->cr3;		/* root of the page tables */
 	ptp_release(&cookie);
@@ -2783,15 +2949,18 @@ restart:
 		 */
 		if (!check_only)
 			vm_inject_gp(vm, vcpuid);
-		goto fault;
+		*guest_fault = 1;
+		return (0);
 	}
 
 	if (paging->paging_mode == PAGING_MODE_FLAT) {
 		*gpa = gla;
-		goto done;
+		return (0);
 	}
 
 	if (paging->paging_mode == PAGING_MODE_32) {
+		uint32_t *ptpbase32, pte32;
+
 		nlevels = 2;
 		while (--nlevels >= 0) {
 			/* Zero out the lower 12 bits. */
@@ -2800,8 +2969,9 @@ restart:
 			ptpbase32 = ptp_hold(vm, vcpuid, ptpphys, PAGE_SIZE,
 			    &cookie);
 
-			if (ptpbase32 == NULL)
-				goto error;
+			if (ptpbase32 == NULL) {
+				return (EFAULT);
+			}
 
 			ptpshift = PAGE_SHIFT + nlevels * 10;
 			ptpindex = (gla >> ptpshift) & 0x3FF;
@@ -2817,7 +2987,10 @@ restart:
 					    0, pte32);
 					vm_inject_pf(vm, vcpuid, pfcode, gla);
 				}
-				goto fault;
+
+				ptp_release(&cookie);
+				*guest_fault = 1;
+				return (0);
 			}
 
 			/*
@@ -2852,7 +3025,8 @@ restart:
 		/* Zero out the lower 'ptpshift' bits */
 		pte32 >>= ptpshift; pte32 <<= ptpshift;
 		*gpa = pte32 | (gla & (pgsize - 1));
-		goto done;
+		ptp_release(&cookie);
+		return (0);
 	}
 
 	if (paging->paging_mode == PAGING_MODE_PAE) {
@@ -2861,8 +3035,9 @@ restart:
 
 		ptpbase = ptp_hold(vm, vcpuid, ptpphys, sizeof (*ptpbase) * 4,
 		    &cookie);
-		if (ptpbase == NULL)
-			goto error;
+		if (ptpbase == NULL) {
+			return (EFAULT);
+		}
 
 		ptpindex = (gla >> 30) & 0x3;
 
@@ -2873,21 +3048,27 @@ restart:
 				pfcode = pf_error_code(usermode, prot, 0, pte);
 				vm_inject_pf(vm, vcpuid, pfcode, gla);
 			}
-			goto fault;
+
+			ptp_release(&cookie);
+			*guest_fault = 1;
+			return (0);
 		}
 
 		ptpphys = pte;
 
 		nlevels = 2;
-	} else
+	} else {
 		nlevels = 4;
+	}
+
 	while (--nlevels >= 0) {
 		/* Zero out the lower 12 bits and the upper 12 bits */
-		ptpphys >>= 12; ptpphys <<= 24; ptpphys >>= 12;
+		ptpphys &= 0x000ffffffffff000UL;
 
 		ptpbase = ptp_hold(vm, vcpuid, ptpphys, PAGE_SIZE, &cookie);
-		if (ptpbase == NULL)
-			goto error;
+		if (ptpbase == NULL) {
+			return (EFAULT);
+		}
 
 		ptpshift = PAGE_SHIFT + nlevels * 9;
 		ptpindex = (gla >> ptpshift) & 0x1FF;
@@ -2902,7 +3083,10 @@ restart:
 				pfcode = pf_error_code(usermode, prot, 0, pte);
 				vm_inject_pf(vm, vcpuid, pfcode, gla);
 			}
-			goto fault;
+
+			ptp_release(&cookie);
+			*guest_fault = 1;
+			return (0);
 		}
 
 		/* Set the accessed bit in the page table entry */
@@ -2920,7 +3104,10 @@ restart:
 					    1, pte);
 					vm_inject_pf(vm, vcpuid, pfcode, gla);
 				}
-				goto fault;
+
+				ptp_release(&cookie);
+				*guest_fault = 1;
+				return (0);
 			}
 			break;
 		}
@@ -2933,21 +3120,12 @@ restart:
 		if (atomic_cmpset_64(&ptpbase[ptpindex], pte, pte | PG_M) == 0)
 			goto restart;
 	}
+	ptp_release(&cookie);
 
 	/* Zero out the lower 'ptpshift' bits and the upper 12 bits */
 	pte >>= ptpshift; pte <<= (ptpshift + 12); pte >>= 12;
 	*gpa = pte | (gla & (pgsize - 1));
-done:
-	ptp_release(&cookie);
-	KASSERT(retval == 0 || retval == EFAULT, ("%s: unexpected retval %d",
-	    __func__, retval));
-	return (retval);
-error:
-	retval = EFAULT;
-	goto done;
-fault:
-	*guest_fault = 1;
-	goto done;
+	return (0);
 }
 
 int
@@ -3229,11 +3407,17 @@ static int
 decode_modrm(struct vie *vie, enum vm_cpu_mode cpu_mode)
 {
 	uint8_t x;
+	/*
+	 * Handling mov-to/from-cr is special since it is not issuing
+	 * mmio/pio requests and can be done in real mode.  We must bypass some
+	 * of the other existing decoding restrictions for it.
+	 */
+	const bool is_movcr = ((vie->op.op_flags & VIE_OP_F_REG_REG) != 0);
 
 	if (vie->op.op_flags & VIE_OP_F_NO_MODRM)
 		return (0);
 
-	if (cpu_mode == CPU_MODE_REAL)
+	if (cpu_mode == CPU_MODE_REAL && !is_movcr)
 		return (-1);
 
 	if (vie_peek(vie, &x))
@@ -3248,7 +3432,7 @@ decode_modrm(struct vie *vie, enum vm_cpu_mode cpu_mode)
 	 * fault. There has to be a memory access involved to cause the
 	 * EPT fault.
 	 */
-	if (vie->mod == VIE_MOD_DIRECT)
+	if (vie->mod == VIE_MOD_DIRECT && !is_movcr)
 		return (-1);
 
 	if ((vie->mod == VIE_MOD_INDIRECT && vie->rm == VIE_RM_DISP32) ||

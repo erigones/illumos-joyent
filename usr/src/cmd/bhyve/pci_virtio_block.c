@@ -3,7 +3,7 @@
  *
  * Copyright (c) 2011 NetApp, Inc.
  * All rights reserved.
- * Copyright 2020 Joyent, Inc.
+ * Copyright 2020-2021 Joyent, Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -292,11 +292,11 @@ pci_vtblk_proc(struct pci_vtblk_softc *sc, struct vqueue_info *vq)
 	int err;
 	ssize_t iolen;
 	int writeop, type;
+	struct vi_req req;
 	struct iovec iov[BLOCKIF_IOV_MAX + 2];
-	uint16_t idx, flags[BLOCKIF_IOV_MAX + 2];
 	struct virtio_blk_discard_write_zeroes *discard;
 
-	n = vq_getchain(vq, &idx, iov, BLOCKIF_IOV_MAX + 2, flags);
+	n = vq_getchain(vq, iov, BLOCKIF_IOV_MAX + 2, &req);
 
 	/*
 	 * The first descriptor will be the read-only fixed header,
@@ -308,16 +308,16 @@ pci_vtblk_proc(struct pci_vtblk_softc *sc, struct vqueue_info *vq)
 	 */
 	assert(n >= 2 && n <= BLOCKIF_IOV_MAX + 2);
 
-	io = &sc->vbsc_ios[idx];
-	assert((flags[0] & VRING_DESC_F_WRITE) == 0);
+	io = &sc->vbsc_ios[req.idx];
+	assert(req.readable != 0);
 	assert(iov[0].iov_len == sizeof(struct virtio_blk_hdr));
 	vbh = (struct virtio_blk_hdr *)iov[0].iov_base;
 	memcpy(&io->io_req.br_iov, &iov[1], sizeof(struct iovec) * (n - 2));
 	io->io_req.br_iovcnt = n - 2;
 	io->io_req.br_offset = vbh->vbh_sector * VTBLK_BSIZE;
 	io->io_status = (uint8_t *)iov[--n].iov_base;
+	assert(req.writable != 0);
 	assert(iov[n].iov_len == 1);
-	assert(flags[n] & VRING_DESC_F_WRITE);
 
 	/*
 	 * XXX
@@ -326,16 +326,17 @@ pci_vtblk_proc(struct pci_vtblk_softc *sc, struct vqueue_info *vq)
 	 */
 	type = vbh->vbh_type & ~VBH_FLAG_BARRIER;
 	writeop = (type == VBH_OP_WRITE || type == VBH_OP_DISCARD);
+	/*
+	 * - Write op implies read-only descriptor
+	 * - Read/ident op implies write-only descriptor
+	 *
+	 * By taking away either the read-only fixed header or the write-only
+	 * status iovec, the following condition should hold true.
+	 */
+	assert(n == (writeop ? req.readable : req.writable));
 
 	iolen = 0;
 	for (i = 1; i < n; i++) {
-		/*
-		 * - write op implies read-only descriptor,
-		 * - read/ident op implies write-only descriptor,
-		 * therefore test the inverse of the descriptor bit
-		 * to the op.
-		 */
-		assert(((flags[i] & VRING_DESC_F_WRITE) == 0) == writeop);
 		iolen += iov[i].iov_len;
 	}
 	io->io_req.br_resid = iolen;
@@ -419,33 +420,17 @@ pci_vtblk_notify(void *vsc, struct vqueue_info *vq)
 		pci_vtblk_proc(sc, vq);
 }
 
-#ifndef __FreeBSD__
-/*
- * See section 4.1.5.4 of VirtIO 1.1 spec.
- * https://docs.oasis-open.org/virtio/virtio/v1.1/csprd01/virtio-v1.1-csprd01.html
- */
 static void
-pci_vtblk_resize(int fd, enum ev_type type, void *vsc)
+pci_vtblk_resized(struct blockif_ctxt *bctxt, void *arg, size_t new_size)
 {
-	struct pci_vtblk_softc *sc = vsc;
-	struct virtio_softc *vs = &sc->vbsc_vs;
-	size_t newsize;
-	(void) fd;
-	(void) type;
+	struct pci_vtblk_softc *sc;
 
-	if (blockif_check_size(sc->bc, &newsize) < 0) {
-		return;
-	}
+	sc = arg;
 
-	sc->vbsc_cfg.vbc_capacity = newsize / DEV_BSIZE; /* 512-byte units */
-
-	/*
-	 * NO_VECTOR (0xffff) > MAX_MSIX_TABLE_ENTRIES (2048), so the NO_VECTOR
-	 * check happens, just later.
-	 */
-	vq_interrupt_impl(vs, VTCFG_ISR_CONF_CHANGED, vs->vs_msix_cfg_idx);
+	sc->vbsc_cfg.vbc_capacity = new_size / VTBLK_BSIZE; /* 512-byte units */
+	vi_interrupt(&sc->vbsc_vs, VIRTIO_PCI_ISR_CONFIG,
+	    sc->vbsc_vs.vs_msix_cfg_idx);
 }
-#endif
 
 static int
 pci_vtblk_init(struct vmctx *ctx, struct pci_devinst *pi, nvlist_t *nvl)
@@ -568,43 +553,7 @@ pci_vtblk_init(struct vmctx *ctx, struct pci_devinst *pi, nvlist_t *nvl)
 		return (1);
 	}
 	vi_set_io_bar(&sc->vbsc_vs, 0);
-
-#ifndef __FreeBSD__
-	/*
-	 * This is a complete hack - every 5 seconds it fstat()s the backing
-	 * store to see if it is a different size than it was before.  If so, it
-	 * sends a config interrupt to the guest telling it to take a fresh look
-	 * at the config.  Presuming the guest does as told, the new size is
-	 * seen.
-	 *
-	 * Polling for size changes so frequently for something that almost
-	 * never happens is wasteful.  An alternative mechanism should be found.
-	 * Other mevents only allow you to poll for a file being ready for I/O.
-	 * We also have an inotify implementation, but it suffers from similar
-	 * limitations.
-	 *
-	 * It would be swell if spec_size_invalidate() (called by
-	 * zvol_size_changed()) would issue a sysevent.  However, the sysevent
-	 * is not visible in the zone because it lacks privileges, so a helper
-	 * would be needed.  If we are only thinking of Triton's use, vminfod
-	 * could be part of the plan.  vminfod would see the size invalidation
-	 * then could use bhyvectl to nudge the appropriate instance.  A
-	 * different approach may have the vmm module listening for that
-	 * sysevent and making an upcall to the bhyve program to tell it that
-	 * things have changed.  I don't know if there are examples of in-kernel
-	 * sysevent consumers.
-	 *
-	 * Note that changing the volsize already triggers a sysevent in most
-	 * cases.  This sysevent comes from the refreservation being changed as
-	 * a side effect of volsize being changed and does not happen under all
-	 * volsize changes.  Also, this sysevent is specific to zvols and if we
-	 * rely on it, other devices that back virtual disks would not benefit
-	 * from a solution that relies on the refreservation change.
-	 */
-	/* Changed to 1 minute instead of 5s */
-	(void) mevent_add(60000, EVF_TIMER, pci_vtblk_resize, sc);
-#endif
-
+	blockif_register_resize_callback(sc->bc, pci_vtblk_resized, sc);
 	return (0);
 }
 
