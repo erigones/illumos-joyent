@@ -173,7 +173,6 @@
 #define	VIRTIO_DEV_CONSOLE	0x1003
 #define	VIRTIO_DEV_RANDOM	0x1005
 #define	VIRTIO_DEV_SCSI		0x1008
-
 #define	VIRTIO_DEV_9P		0x1009
 #define VIRTIO_DEV_INPUT	0x1052
 
@@ -409,18 +408,6 @@ vq_kick_disable(struct vqueue_info *vq)
 
 	vq->vq_used->flags |= VRING_USED_F_NO_NOTIFY;
 }
-
-#ifndef __FreeBSD__
-/*
- * Deliver an interrupt to guest on the given virtual queue
- * (if possible, or a generic MSI interrupt if not using MSI-X).
- */
-static inline void
-vq_interrupt(struct virtio_softc *vs, struct vqueue_info *vq)
-{
-	vq_interrupt_impl(vs, VTCFG_ISR_QUEUES, (vq)->vq_msix_idx);
-}
-#endif
 
 struct iovec;
 
