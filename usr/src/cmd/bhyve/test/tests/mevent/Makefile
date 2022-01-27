@@ -11,18 +11,31 @@
 
 #
 # Copyright 2018 Joyent, Inc.
+# Copyright 2022 Oxide Computer Company
 #
 
-include ../Makefile.com
+TESTSUBDIR =	mevent
+PROG = \
+		lists_delete \
+		read_disable \
+		read_pause \
+		read_requeue
 
-SRCS =		bhyvetest
-SCRIPTS =	$(SRCS:%=$(ROOTBIN)/%)
+SUPOBJS =	mevent.o testlib.o
 
-SCRIPTS :=	FILEMODE = 0555
-CLOBBERFILES =	$(SCRIPTS)
+include ../../Makefile.com
 
-install: $(SCRIPTS)
+CMDS =		$(PROG:%=$(TESTDIR)/%)
+$(CMDS) :=	FILEMODE = 0555
 
-lint:
+all: $(PROG)
 
-include ../Makefile.targ
+install: $(TESTDIR) $(CMDS)
+
+$(CMDS): $(PROG)
+
+include ../../Makefile.targ
+
+%: %.o $(SUPOBJS)
+	$(LINK.c) -o $@ $< $(SUPOBJS) $(LDLIBS)
+	$(POST_PROCESS)

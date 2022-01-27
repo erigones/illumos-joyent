@@ -20,6 +20,7 @@ SUBDIRS =		\
 	mapfiles	\
 	relocs		\
 	resolution	\
+	sections	\
 	string-merge	\
 	tls
 

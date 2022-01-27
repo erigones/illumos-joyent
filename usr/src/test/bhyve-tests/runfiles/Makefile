@@ -10,21 +10,29 @@
 #
 
 #
-# Copyright 2018 Joyent, Inc.
+# Copyright 2022 Oxide Computer Company
 #
 
-TSTDIR =	mevent
-EXETESTS = \
-		lists.delete.exe \
-		read.disable.exe \
-		read.pause.exe \
-		read.requeue.exe \
+include $(SRC)/Makefile.master
 
-SHTESTS =
-SUPOBJS =	mevent.o testlib.o
+SRCS = default.run
 
-include ../../Makefile.com
+ROOTOPTPKG = $(ROOT)/opt/bhyve-tests
+RUNFILES = $(ROOTOPTPKG)/runfiles
 
-install: $(ROOTTESTS)
+OUTPUTS = $(SRCS:%=$(RUNFILES)/%)
+$(OUTPUTS) := FILEMODE = 0444
 
-include ../../Makefile.targ
+all: $(SRCS)
+
+install: $(OUTPUTS)
+
+clean lint clobber:
+
+$(OUTPUTS): $(RUNFILES) $(SRCS)
+
+$(RUNFILES):
+	$(INS.dir)
+
+$(RUNFILES)/%: %
+	$(INS.file)

@@ -12,7 +12,7 @@
 
 /*
  * Copyright 2019 Joyent, Inc.
- * Copyright 2021 Oxide Computer Company
+ * Copyright 2022 Oxide Computer Company
  * Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
  */
 
@@ -208,9 +208,9 @@ struct vm_page {
 	int		vmp_prot;
 };
 
-#define	VMC_IS_ACTIVE(vmc)	(((vmc)->vmc_state & VCS_ACTIVE) != 0)
-
 static vmspace_mapping_t *vm_mapping_find(vmspace_t *, uintptr_t, size_t);
+static void vmspace_hold_enter(vmspace_t *);
+static void vmspace_hold_exit(vmspace_t *, bool);
 static void vmc_space_hold(vm_client_t *);
 static void vmc_space_release(vm_client_t *, bool);
 static void vmc_space_invalidate(vm_client_t *, uintptr_t, size_t, uint64_t);
@@ -291,6 +291,43 @@ uint64_t
 vmspace_resident_count(vmspace_t *vms)
 {
 	return (vms->vms_pages_mapped);
+}
+
+void
+vmspace_track_dirty(vmspace_t *vms, uint64_t gpa, size_t len, uint8_t *bitmap)
+{
+	/*
+	 * Accumulate dirty bits into the given bit vector.  Note that this
+	 * races both against hardware writes from running vCPUs and
+	 * reflections from userspace.
+	 *
+	 * Called from a userspace-visible ioctl, this depends on the VM
+	 * instance being read-locked to prevent vmspace_map/vmspace_unmap
+	 * operations from changing the page tables during the walk.
+	 */
+	for (size_t offset = 0; offset < len; offset += PAGESIZE) {
+		bool bit = false;
+		uint64_t *entry = vmm_gpt_lookup(vms->vms_gpt, gpa + offset);
+		if (entry != NULL)
+			bit = vmm_gpt_reset_dirty(vms->vms_gpt, entry, false);
+		uint64_t pfn_offset = offset >> PAGESHIFT;
+		size_t bit_offset = pfn_offset / 8;
+		size_t bit_index = pfn_offset % 8;
+		bitmap[bit_offset] |= (bit << bit_index);
+	}
+
+	/*
+	 * Now invalidate those bits and shoot down address spaces that
+	 * may have them cached.
+	 */
+	vmspace_hold_enter(vms);
+	vms->vms_pt_gen++;
+	for (vm_client_t *vmc = list_head(&vms->vms_clients);
+	    vmc != NULL;
+	    vmc = list_next(&vms->vms_clients, vmc)) {
+		vmc_space_invalidate(vmc, gpa, len, vms->vms_pt_gen);
+	}
+	vmspace_hold_exit(vms, true);
 }
 
 static pfn_t
@@ -706,12 +743,10 @@ vmspace_lookup_map(vmspace_t *vms, uintptr_t gpa, int req_prot, pfn_t *pfnp,
 		vmspace_mapping_t *vmsm;
 		vm_object_t *vmo;
 
-		/*
-		 * Because of the prior leaf check, we should be confident that
-		 * _some_ mapping covers this GPA
-		 */
 		vmsm = vm_mapping_find(vms, gpa, PAGESIZE);
-		VERIFY(vmsm != NULL);
+		if (vmsm == NULL) {
+			return (FC_NOMAP);
+		}
 
 		if ((req_prot & vmsm->vmsm_prot) != req_prot) {
 			return (FC_PROT);
@@ -828,6 +863,7 @@ vmc_activate(vm_client_t *vmc)
 	mutex_enter(&vmc->vmc_lock);
 	VERIFY0(vmc->vmc_state & VCS_ACTIVE);
 	if ((vmc->vmc_state & VCS_ORPHANED) != 0) {
+		mutex_exit(&vmc->vmc_lock);
 		return (ENXIO);
 	}
 	while ((vmc->vmc_state & VCS_HOLD) != 0) {
@@ -941,6 +977,7 @@ vmc_space_release(vm_client_t *vmc, bool kick_on_cpu)
 	 * VMC_HOLD must be done atomically here.
 	 */
 	atomic_and_uint(&vmc->vmc_state, ~VCS_HOLD);
+	cv_broadcast(&vmc->vmc_cv);
 	mutex_exit(&vmc->vmc_lock);
 }
 
