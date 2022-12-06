@@ -1625,7 +1625,7 @@ Bugid   Risk Synopsis
 --------------------------------------------------------------------------------
 
 --------------
-Illumos
+illumos
 --------------
 Bugid   Risk Synopsis
 ================================================================================
@@ -1686,3 +1686,9 @@ Bugid   Risk Synopsis
 14308	discard SHF_EXCLUDE sections when linking kernel modules
 14319	ld shouldn't warn about SHF_EXCLUDE unknown sections
 14401	elfdump should understand LLVM section types
+4795	/usr/bin/ld manpage and help should indicate '-soname' not '--soname'
+14090	ld(1) could use a normal allocator
+14722	ld should keep group members in separate output sections
+14770	ld(1) should be 64bit only
+14901	remove remaining a.out support from sgs
+14822	Need new word of hardware capabilities

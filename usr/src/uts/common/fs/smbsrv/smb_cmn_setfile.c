@@ -20,7 +20,8 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2020 Tintri by DDN, Inc.  All rights reserved.
+ * Copyright 2022 RackTop Systems, Inc.
  */
 
 /*
@@ -62,9 +63,19 @@ smb_set_basic_info(smb_request_t *sr, smb_setinfo_t *si)
 	    &crtime, &atime, &mtime, &ctime, &attributes) != 0)
 		return (NT_STATUS_INFO_LENGTH_MISMATCH);
 
-	if ((attributes & FILE_ATTRIBUTE_DIRECTORY) &&
-	    (!smb_node_is_dir(node)))
-		return (NT_STATUS_INVALID_PARAMETER);
+	/*
+	 * MS-FSA 2.1.5.14.2 FileBasicInformation
+	 * Return STATUS_INVALID_PARAMETER if:
+	 * FILE_ATTRIBUTE_TEMPORARY on a directory,
+	 * FILE_ATTRIBUTE_DIRECTORY on a non-directory.
+	 */
+	if (smb_node_is_dir(node)) {
+		if ((attributes & FILE_ATTRIBUTE_TEMPORARY) != 0)
+			return (NT_STATUS_INVALID_PARAMETER);
+	} else {
+		if ((attributes & FILE_ATTRIBUTE_DIRECTORY) != 0)
+			return (NT_STATUS_INVALID_PARAMETER);
+	}
 
 	bzero(attr, sizeof (*attr));
 	if (atime != 0 && atime != (uint64_t)-1) {
@@ -122,7 +133,7 @@ smb_set_eof_info(smb_request_t *sr, smb_setinfo_t *si)
 	if (status == NT_STATUS_OPLOCK_BREAK_IN_PROGRESS) {
 		if (sr->session->dialect >= SMB_VERS_2_BASE)
 			(void) smb2sr_go_async(sr);
-		(void) smb_oplock_wait_break(node, 0);
+		(void) smb_oplock_wait_break(sr, node, 0);
 		status = 0;
 	}
 	if (status != 0)
@@ -164,7 +175,7 @@ smb_set_alloc_info(smb_request_t *sr, smb_setinfo_t *si)
 	if (status == NT_STATUS_OPLOCK_BREAK_IN_PROGRESS) {
 		if (sr->session->dialect >= SMB_VERS_2_BASE)
 			(void) smb2sr_go_async(sr);
-		(void) smb_oplock_wait_break(node, 0);
+		(void) smb_oplock_wait_break(sr, node, 0);
 		status = 0;
 	}
 	if (status != 0)
@@ -245,7 +256,7 @@ smb_set_disposition_info(smb_request_t *sr, smb_setinfo_t *si)
 	if (status == NT_STATUS_OPLOCK_BREAK_IN_PROGRESS) {
 		if (sr->session->dialect >= SMB_VERS_2_BASE)
 			(void) smb2sr_go_async(sr);
-		(void) smb_oplock_wait_break(node, 0);
+		(void) smb_oplock_wait_break(sr, node, 0);
 		status = 0;
 	}
 	if (status != 0)

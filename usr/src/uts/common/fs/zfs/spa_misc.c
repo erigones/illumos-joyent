@@ -29,6 +29,7 @@
  * Copyright 2019 Joyent, Inc.
  * Copyright (c) 2017, Intel Corporation.
  * Copyright 2020 Joyent, Inc.
+ * Copyright 2022 Oxide Computer Company
  */
 
 #include <sys/zfs_context.h>
@@ -1384,7 +1385,7 @@ spa_vdev_state_exit(spa_t *spa, vdev_t *vd, int error)
 
 	/*
 	 * If anything changed, wait for it to sync.  This ensures that,
-	 * from the system administrator's perspective, zpool(1M) commands
+	 * from the system administrator's perspective, zpool(8) commands
 	 * are synchronous.  This is important for things like zpool offline:
 	 * when the command completes, you expect no further I/O from ZFS.
 	 */
@@ -2597,4 +2598,45 @@ spa_suspend_async_destroy(spa_t *spa)
 		return (B_TRUE);
 
 	return (B_FALSE);
+}
+
+/*
+ * Generate a LUN expansion event.  This routine does not use
+ * ddi_log_sysevent() because that would require a dev_info_t, and we may not
+ * have one available.
+ */
+void
+zfs_post_dle_sysevent(const char *physpath)
+{
+#ifdef _KERNEL
+	sysevent_t *ev = sysevent_alloc(EC_DEV_STATUS, ESC_DEV_DLE,
+	    SUNW_KERN_PUB "zfs", SE_SLEEP);
+	sysevent_attr_list_t *attr = NULL;
+	sysevent_id_t eid;
+
+	VERIFY(ev != NULL);
+
+	/*
+	 * The only attribute is the /devices path of the expanding device:
+	 */
+	sysevent_value_t value = {
+		.value_type = SE_DATA_TYPE_STRING,
+		.value = {
+			.sv_string = (char *)physpath,
+		},
+	};
+	if (sysevent_add_attr(&attr, DEV_PHYS_PATH, &value, SE_SLEEP) != 0) {
+		sysevent_free(ev);
+		return;
+	}
+
+	if (sysevent_attach_attributes(ev, attr) != 0) {
+		sysevent_free_attr(attr);
+		sysevent_free(ev);
+		return;
+	}
+
+	(void) log_sysevent(ev, SE_SLEEP, &eid);
+	sysevent_free(ev);
+#endif
 }

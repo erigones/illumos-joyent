@@ -13,7 +13,7 @@
 # Copyright 2014 Pluribus Networks Inc.
 # Copyright 2020 Joyent, Inc.
 # Copyright 2020 Oxide Computer Company
-# Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2022 OmniOS Community Edition (OmniOSce) Association.
 #
 
 PROG =		bhyve
@@ -105,8 +105,6 @@ SRCS =	acpi.c			\
 
 OBJS = $(SRCS:.c=.o)
 
-CLOBBERFILES =	$(ROOTUSRSBINPROG) $(ZHYVE)
-
 ZHYVE_DIR =	$(ROOT)/usr/lib/brand/bhyve
 ZHYVE_PROG =	zhyve
 ZHYVE =		$(ZHYVE_DIR)/$(ZHYVE_PROG)
@@ -115,7 +113,8 @@ MEVENT_TEST_PROG = mevent_test
 MEVENT_TEST_SRCS = mevent.c mevent_test.c
 MEVENT_TEST_OBJS = $(MEVENT_TEST_SRCS:.c=.o)
 
-CLEANFILES =	$(PROG) $(ZHYVE_PROG) $(MEVENT_TEST_PROG) $(MEVENT_TEST_OBJS)
+CLEANFILES =	$(OBJS) $(MEVENT_TEST_OBJS)
+CLOBBERFILES =	$(PROG) $(MEVENT_TEST_PROG) $(ZHYVE_PROG)
 
 CFLAGS +=	$(CCVERBOSE)
 CFLAGS +=	-_gcc=-Wimplicit-function-declaration -_gcc=-Wno-parentheses
@@ -126,10 +125,9 @@ CPPFLAGS =	-I$(COMPAT)/bhyve -I$(CONTRIB)/bhyve \
 		-I$(SRC)/lib/lib9p/common \
 		-I$(SRC)/uts/common/io/e1000api \
 		$(CPPFLAGS.master) \
-		-I$(ROOT)/usr/platform/i86pc/include \
-		-I$(SRC)/uts/i86pc/io/vmm \
+		-I$(SRC)/uts/intel/io/vmm \
 		-I$(SRC)/uts/common \
-		-I$(SRC)/uts/i86pc \
+		-I$(SRC)/uts/intel \
 		-I$(SRC)/lib/libdladm/common \
 		-DWITHOUT_CAPSICUM
 
@@ -148,25 +146,29 @@ pci_xhci.o := CERRWARN += -_gcc11=-Wno-address-of-packed-member
 
 SMOFF += all_func_returns,leaks,no_if_block
 
+rfb.o := SMOFF=
+
 # Force c99 for everything
 CSTD=		$(CSTD_GNU99)
 
 $(PROG) := LDLIBS += \
 	-l9p \
-	-lsocket \
-	-lnsl \
-	-ldlpi \
+	-lcmdutils \
 	-ldladm \
+	-ldlpi \
+	-lidspace \
 	-lmd \
+	-lnsl \
 	-lnvpair \
-	-lproc \
+	-lsocket \
 	-lsunw_crypto \
+	-lumem \
 	-luuid \
 	-lvmmapi \
 	-lz
 NATIVE_LIBS += libz.so libsunw_crypto.so
 $(ZHYVE_PROG) := LDLIBS += -lnvpair
-$(MEVENT_TEST_PROG) := LDLIBS += -lsocket -lproc
+$(MEVENT_TEST_PROG) := LDLIBS += -lsocket
 $(PROG) := LDFLAGS += $(ZASLR)
 
 .KEEP_STATE:
@@ -183,7 +185,7 @@ $(MEVENT_TEST_PROG): $(MEVENT_TEST_OBJS)
 install: all $(ZHYVE) $(ROOTUSRSBINPROG) $(SUBDIRS)
 
 clean: $(SUBDIRS)
-	$(RM) $(OBJS) $(CLEANFILES)
+	$(RM) $(CLEANFILES)
 
 clobber: clean $(SUBDIRS)
 	$(RM) $(CLOBBERFILES)
@@ -198,6 +200,6 @@ include ../Makefile.targ
 $(ZHYVE_DIR)/%: %
 	$(INS.file)
 
-%.o: $(SRC)/uts/i86pc/io/vmm/%.c
+%.o: $(SRC)/uts/intel/io/vmm/%.c
 	$(COMPILE.c) $<
 	$(POST_PROCESS_O)

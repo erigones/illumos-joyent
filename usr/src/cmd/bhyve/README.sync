@@ -1,17 +1,22 @@
 Git commit hashes in this file refer to the official FreeBSD distributed
 public Git repository at https://git.freebsd.org/src.git
 
-The bhyve kernel module and its associated userland consumers have been updated
-to the latest upstream FreeBSD sources as of:
+The bhyve userland code in this directory, and its associated libraries and
+parts of the kernel module have been updated to the latest upstream FreeBSD
+sources as of:
 
-	commit 5ac4ac85ca20ce1f00c84502a65a3291bf416c18
-	Author: John Baldwin <jhb@FreeBSD.org>
-	Date:   Wed Sep 15 09:03:17 2021 -0700
+    commit fa46f3704b7618f9d9493c126df781faf59040a8
+    Author: John Baldwin <jhb@FreeBSD.org>
+    Date:   Wed Aug 17 10:01:16 2022 -0700
 
-	    Remove an always-true check.
-	    This fixes a -Wtype-limits error from GCC 9.
+        bhyve e1000: Skip packets with a small header.
 
 Divergence Notes:
+
+The kernel component of bhyve has diverged from the FreeBSD sources and
+will continue to evolve away from the initial compatibility interfaces towards
+native illumos ones. The vmmapi library abstracts those interfaces wherever
+possible so that the bhyve userspace can remain close to upstream.
 
 The source code for the following components is present and included in
 syncs from FreeBSD, but currently disabled. See the comments in 'Makefile'

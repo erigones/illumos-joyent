@@ -54,8 +54,6 @@
 #include <c2/audit.h>
 #include <sys/modctl.h>
 #include <sys/aio_impl.h>
-#include <sys/tnf.h>
-#include <sys/tnf_probe.h>
 #include <sys/copyops.h>
 #include <sys/priv.h>
 #include <sys/msacct.h>
@@ -285,7 +283,7 @@ pre_syscall()
 	}
 
 	/*
-	 * From the proc(4) manual page:
+	 * From the proc(5) manual page:
 	 * When entry to a system call is being traced, the traced process
 	 * stops after having begun the call to the system but before the
 	 * system call arguments have been fetched from the process.
@@ -368,16 +366,6 @@ pre_syscall()
 			repost = 1;
 		}
 	}
-
-#ifndef NPROBE
-	/* Kernel probe */
-	if (tnf_tracing_active) {
-		TNF_PROBE_1(syscall_start, "syscall thread", /* CSTYLED */,
-			tnf_sysnum,	sysnum,		t->t_sysnum);
-		t->t_post_sys = 1;	/* make sure post_syscall runs */
-		repost = 1;
-	}
-#endif /* NPROBE */
 
 #ifdef SYSCALLTRACE
 	if (syscalltrace) {
@@ -549,7 +537,7 @@ post_syscall(long rval1, long rval2)
 	}
 
 	/*
-	 * From the proc(4) manual page:
+	 * From the proc(5) manual page:
 	 * When exit from a system call is being traced, the traced process
 	 * stops on completion of the system call just prior to checking for
 	 * signals and returning to user level.  At this point all return
@@ -699,17 +687,6 @@ sig_check:
 	}
 
 	lwp->lwp_errno = 0;		/* clear error for next time */
-
-#ifndef NPROBE
-	/* Kernel probe */
-	if (tnf_tracing_active) {
-		TNF_PROBE_3(syscall_end, "syscall thread", /* CSTYLED */,
-		    tnf_long,	rval1,		rval1,
-		    tnf_long,	rval2,		rval2,
-		    tnf_long,	errno,		(long)error);
-		repost = 1;
-	}
-#endif /* NPROBE */
 
 	/*
 	 * Set state to LWP_USER here so preempt won't give us a kernel

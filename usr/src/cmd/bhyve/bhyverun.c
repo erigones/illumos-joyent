@@ -39,7 +39,8 @@
  *
  * Copyright 2015 Pluribus Networks Inc.
  * Copyright 2018 Joyent, Inc.
- * Copyright 2021 Oxide Computer Company
+ * Copyright 2022 Oxide Computer Company
+ * Copyright 2022 OmniOS Community Edition (OmniOSce) Association.
  */
 
 #include <sys/cdefs.h>
@@ -205,8 +206,10 @@ static cpuset_t cpumask;
 
 static void vm_loop(struct vmctx *ctx, int vcpu, uint64_t rip);
 
-static struct vm_exit vmexit[VM_MAXCPU];
-static struct vm_entry vmentry[VM_MAXCPU];
+static struct vm_exit *vmexit;
+#ifndef __FreeBSD__
+static struct vm_entry *vmentry;
+#endif
 
 struct bhyvestats {
 	uint64_t	vmexit_bogus;
@@ -226,10 +229,10 @@ struct mt_vmm_info {
 	struct vmctx	*mt_ctx;
 	int		mt_vcpu;
 	uint64_t	mt_startrip;
-} mt_vmm_info[VM_MAXCPU];
+} *mt_vmm_info;
 
 #ifdef	__FreeBSD__
-static cpuset_t *vcpumap[VM_MAXCPU] = { NULL };
+static cpuset_t **vcpumap;
 #endif
 
 static void
@@ -240,19 +243,22 @@ usage(int code)
 #ifdef	__FreeBSD__
 		"Usage: %s [-AaCDeHhPSuWwxY]\n"
 #else
-		"Usage: %s [-AaCDdeHhPSuWwxY]\n"
+		"Usage: %s [-aCDdeHhPSuWwxY]\n"
 #endif
 		"       %*s [-c [[cpus=]numcpus][,sockets=n][,cores=n][,threads=n]]\n"
 #ifdef	__FreeBSD__
-		"       %*s [-G port] [-k file] [-l lpc] [-m mem] [-o var=value]\n"
+		"       %*s [-G port] [-k config_file] [-l lpc] [-m mem] [-o var=value]\n"
 		"       %*s [-p vcpu:hostcpu] [-r file] [-s pci] [-U uuid] vmname\n"
 
+		"       -A: create ACPI tables\n"
 #else
-		"       %*s [-k <file>] [-l <lpc>] [-m mem] [-o <var>=<value>]\n"
+		"       %*s [-k <config_file>] [-l <lpc>] [-m mem] [-o <var>=<value>]\n"
 		"       %*s [-s <pci>] [-U uuid] vmname\n"
 #endif
-		"       -A: create ACPI tables\n"
 		"       -a: local apic is in xAPIC mode (deprecated)\n"
+#ifndef __FreeBSD__
+		"       -B type,key=value,...: set SMBIOS information\n"
+#endif
 		"       -C: include guest memory in core file\n"
 		"       -c: number of cpus and/or topology specification\n"
 		"       -D: destroy on power-off\n"
@@ -263,6 +269,7 @@ usage(int code)
 		"       -H: vmexit from the guest on hlt\n"
 		"       -h: help\n"
 		"       -k: key=value flat config file\n"
+		"       -K: PS2 keyboard layout\n"
 		"       -l: LPC device configuration\n"
 		"       -m: memory size\n"
 		"       -o: set config 'var' to 'value'\n"
@@ -295,7 +302,7 @@ usage(int code)
 static int
 topology_parse(const char *opt)
 {
-	char *cp, *str;
+	char *cp, *str, *tofree;
 
 	if (*opt == '\0') {
 		set_config_value("sockets", "1");
@@ -305,7 +312,7 @@ topology_parse(const char *opt)
 		return (0);
 	}
 
-	str = strdup(opt);
+	tofree = str = strdup(opt);
 	if (str == NULL)
 		errx(4, "Failed to allocate memory");
 
@@ -327,11 +334,11 @@ topology_parse(const char *opt)
 		else
 			set_config_value("cpus", cp);
 	}
-	free(str);
+	free(tofree);
 	return (0);
 
 out:
-	free(str);
+	free(tofree);
 	return (-1);
 }
 
@@ -453,9 +460,8 @@ pincpu_parse(const char *opt)
 		return (-1);
 	}
 
-	if (vcpu < 0 || vcpu >= VM_MAXCPU) {
-		fprintf(stderr, "vcpu '%d' outside valid range from 0 to %d\n",
-		    vcpu, VM_MAXCPU - 1);
+	if (vcpu < 0) {
+		fprintf(stderr, "invalid vcpu '%d'\n", vcpu);
 		return (-1);
 	}
 
@@ -532,6 +538,7 @@ build_vcpumaps(void)
 	const char *value;
 	int vcpu;
 
+	vcpumap = calloc(guest_ncpus, sizeof(*vcpumap));
 	for (vcpu = 0; vcpu < guest_ncpus; vcpu++) {
 		snprintf(key, sizeof(key), "vcpu.%d.cpuset", vcpu);
 		value = get_config_value(key);
@@ -836,6 +843,18 @@ vmexit_run_state(struct vmctx *ctx, struct vm_exit *vme, int *pvcpu)
 	fprintf(stderr, "unexpected run-state VM exit");
 	return (VMEXIT_ABORT);
 }
+
+static int
+vmexit_paging(struct vmctx *ctx, struct vm_exit *vmexit, int *pvcpu)
+{
+	fprintf(stderr, "vm exit[%d]\n", *pvcpu);
+	fprintf(stderr, "\treason\t\tPAGING\n");
+	fprintf(stderr, "\trip\t\t0x%016lx\n", vmexit->rip);
+	fprintf(stderr, "\tgpa\t\t0x%016lx\n", vmexit->u.paging.gpa);
+	fprintf(stderr, "\tfault_type\t\t%d\n", vmexit->u.paging.fault_type);
+
+	return (VMEXIT_ABORT);
+}
 #endif /* __FreeBSD__ */
 
 #ifdef __FreeBSD__
@@ -1109,6 +1128,8 @@ static vmexit_handler_t handler[VM_EXITCODE_MAX] = {
 	[VM_EXITCODE_SPINUP_AP] = vmexit_spinup_ap,
 #else
 	[VM_EXITCODE_RUN_STATE] = vmexit_run_state,
+	[VM_EXITCODE_PAGING] = vmexit_paging,
+	[VM_EXITCODE_HLT] = vmexit_hlt,
 #endif
 	[VM_EXITCODE_SUSPENDED] = vmexit_suspend,
 	[VM_EXITCODE_TASK_SWITCH] = vmexit_task_switch,
@@ -1178,23 +1199,28 @@ vm_loop(struct vmctx *ctx, int vcpu, uint64_t startrip)
 static int
 num_vcpus_allowed(struct vmctx *ctx)
 {
+	uint16_t sockets, cores, threads, maxcpus;
 #ifdef __FreeBSD__
 	int tmp, error;
-
-	error = vm_get_capability(ctx, BSP, VM_CAP_UNRESTRICTED_GUEST, &tmp);
 
 	/*
 	 * The guest is allowed to spinup more than one processor only if the
 	 * UNRESTRICTED_GUEST capability is available.
 	 */
-	if (error == 0)
-		return (VM_MAXCPU);
-	else
+	error = vm_get_capability(ctx, BSP, VM_CAP_UNRESTRICTED_GUEST, &tmp);
+	if (error != 0)
 		return (1);
 #else
+	int error;
 	/* Unrestricted Guest is always enabled on illumos */
-	return (VM_MAXCPU);
+
 #endif /* __FreeBSD__ */
+
+	error = vm_get_topology(ctx, &sockets, &cores, &threads, &maxcpus);
+	if (error == 0)
+		return (maxcpus);
+	else
+		return (1);
 }
 
 void
@@ -1202,6 +1228,7 @@ fbsdrun_set_capabilities(struct vmctx *ctx, int cpu)
 {
 	int err, tmp;
 
+#ifdef	__FreeBSD__
 	if (get_config_bool_default("x86.vmexit_on_hlt", false)) {
 		err = vm_get_capability(ctx, cpu, VM_CAP_HALT_EXIT, &tmp);
 		if (err < 0) {
@@ -1212,6 +1239,19 @@ fbsdrun_set_capabilities(struct vmctx *ctx, int cpu)
 		if (cpu == BSP)
 			handler[VM_EXITCODE_HLT] = vmexit_hlt;
 	}
+#else
+	/*
+	 * We insist that vmexit-on-hlt is available on the host CPU, and enable
+	 * it by default.  Configuration of that feature is done with both of
+	 * those facts in mind.
+	 */
+	tmp = (int)get_config_bool_default("x86.vmexit_on_hlt", true);
+	err = vm_set_capability(ctx, cpu, VM_CAP_HALT_EXIT, tmp);
+	if (err < 0) {
+		fprintf(stderr, "VM exit on HLT not supported\n");
+		exit(4);
+	}
+#endif /* __FreeBSD__ */
 
 	if (get_config_bool_default("x86.vmexit_on_pause", false)) {
 		/*
@@ -1251,7 +1291,7 @@ do_open(const char *vmname)
 	bool reinit, romboot;
 #ifndef WITHOUT_CAPSICUM
 	cap_rights_t rights;
-	const cap_ioctl_t *cmds;	
+	const cap_ioctl_t *cmds;
 	size_t ncmds;
 #endif
 
@@ -1301,7 +1341,7 @@ do_open(const char *vmname)
 
 #ifndef WITHOUT_CAPSICUM
 	cap_rights_init(&rights, CAP_IOCTL, CAP_MMAP_RW);
-	if (caph_rights_limit(vm_get_device_fd(ctx), &rights) == -1) 
+	if (caph_rights_limit(vm_get_device_fd(ctx), &rights) == -1)
 		errx(EX_OSERR, "Unable to apply rights for sandbox");
 	vm_get_ioctls(&ncmds);
 	cmds = vm_get_ioctls(NULL);
@@ -1311,7 +1351,7 @@ do_open(const char *vmname)
 		errx(EX_OSERR, "Unable to apply rights for sandbox");
 	free((cap_ioctl_t *)cmds);
 #endif
- 
+
 	if (reinit) {
 #ifndef __FreeBSD__
 		error = vm_reinit(ctx, 0);
@@ -1444,10 +1484,10 @@ main(int argc, char *argv[])
 	progname = basename(argv[0]);
 
 #ifdef	__FreeBSD__
-	optstr = "aehuwxACDHIPSWYk:o:p:G:c:s:m:l:U:";
+	optstr = "aehuwxACDHIPSWYk:o:p:G:c:s:m:l:K:U:";
 #else
 	/* +d, +B, -p */
-	optstr = "adehuwxACDHIPSWYk:o:G:c:s:m:l:B:U:";
+	optstr = "adehuwxACDHIPSWYk:o:G:c:s:m:l:B:K:U:";
 #endif
 	while ((c = getopt(argc, argv, optstr)) != -1) {
 		switch (c) {
@@ -1455,7 +1495,17 @@ main(int argc, char *argv[])
 			set_config_bool("x86.x2apic", false);
 			break;
 		case 'A':
+#ifdef __FreeBSD__
+			/*
+			 * This option is ignored on illumos since the
+			 * generated ACPI tables are not used; the bootroms
+			 * have their own. The option is retained for backwards
+			 * compatibility but does nothing. Note that the
+			 * acpi_tables configuration is still accepted via
+			 * -o if somebody really wants to generate these tables.
+			 */
 			set_config_bool("acpi_tables", true);
+#endif
 			break;
 		case 'D':
 			set_config_bool("destroy_on_poweroff", true);
@@ -1493,6 +1543,9 @@ main(int argc, char *argv[])
 			break;
 		case 'k':
 			parse_simple_config_file(optarg);
+			break;
+		case 'K':
+			set_config_value("keyboard.layout", optarg);
 			break;
 		case 'l':
 			if (strncmp(optarg, "help", strlen(optarg)) == 0) {
@@ -1558,7 +1611,7 @@ main(int argc, char *argv[])
 			set_config_bool("x86.mptable", false);
 			break;
 		case 'h':
-			usage(0);			
+			usage(0);
 		default:
 			usage(1);
 		}
@@ -1637,7 +1690,7 @@ main(int argc, char *argv[])
 		exit(4);
 	}
 
-	init_mem();
+	init_mem(guest_ncpus);
 	init_inout();
 #ifdef	__FreeBSD__
 	kernemu_dev_init();
@@ -1651,6 +1704,13 @@ main(int argc, char *argv[])
 	sci_init(ctx);
 #ifndef	__FreeBSD__
 	pmtmr_init(ctx);
+#endif
+
+	/* Allocate per-VCPU resources. */
+	vmexit = calloc(guest_ncpus, sizeof(*vmexit));
+	mt_vmm_info = calloc(guest_ncpus, sizeof(*mt_vmm_info));
+#ifndef	__FreeBSD__
+	vmentry = calloc(guest_ncpus, sizeof(*vmentry));
 #endif
 
 	/*
@@ -1681,8 +1741,6 @@ main(int argc, char *argv[])
 	}
 #endif
 
-	vga_init(1);
-
 	if (lpc_bootrom()) {
 #ifdef __FreeBSD__
 		if (vm_set_capability(ctx, BSP, VM_CAP_UNRESTRICTED_GUEST, 1)) {
@@ -1711,11 +1769,9 @@ main(int argc, char *argv[])
 		}
 	}
 
-#ifndef __FreeBSD__
-	smbios_apply();
-#endif
 	error = smbios_build(ctx);
-	assert(error == 0);
+	if (error != 0)
+		exit(4);
 
 	if (get_config_bool("acpi_tables")) {
 		error = acpi_build(ctx, guest_ncpus);

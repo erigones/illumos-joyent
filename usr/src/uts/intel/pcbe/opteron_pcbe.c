@@ -66,7 +66,7 @@
 /*
  * Portions Copyright 2009 Advanced Micro Devices, Inc.
  * Copyright 2019 Joyent, Inc.
- * Copyright 2021 Oxide Computer Company
+ * Copyright 2022 Oxide Computer Company
  */
 
 /*
@@ -602,11 +602,11 @@ opt_pcbe_init(void)
 	 */
 
 	if (amd_family == 0xf) {
-		uint32_t rev;
+		x86_chiprev_t rev;
 
 		rev = cpuid_getchiprev(CPU);
 
-		if (X86_CHIPREV_ATLEAST(rev, X86_CHIPREV_AMD_F_REV_F))
+		if (chiprev_at_least(rev, X86_CHIPREV_AMD_LEGACY_F_REV_F))
 			amd_pcbe_cpuref = amd_fam_f_NPT_bkdg;
 		else
 			amd_pcbe_cpuref = amd_fam_f_rev_ae_bkdg;
@@ -631,7 +631,8 @@ opt_pcbe_init(void)
 		amd_events = opteron_pcbe_f17h_zen2_events;
 		amd_generic_events = family_17h_zen2_papi_events;
 	} else if (amd_family == 0x19 && (amd_model <= 0xf ||
-	    (amd_model >= 0x20 && amd_model <= 0x2f))) {
+	    (amd_model >= 0x20 && amd_model <= 0x2f) ||
+	    (amd_model >= 0x50 && amd_model <= 0x5f))) {
 		amd_pcbe_cpuref = amd_fam_19h_zen3_reg;
 		amd_events = opteron_pcbe_f19h_zen3_events;
 		amd_generic_events = family_19h_zen3_papi_events;

@@ -187,7 +187,7 @@ CFLAGS		+= $(CC_XARCH)
 CFLAGS		+= $(COPTIMIZE)
 CFLAGS		+= $(EXTRA_CFLAGS)
 CFLAGS		+= $(XAOPT)
-CFLAGS		+= $(INLINES) -D_ASM_INLINES
+CFLAGS		+= -D_ASM_INLINES
 CFLAGS		+= $(CCMODE)
 CFLAGS		+= $(SPACEFLAG)
 CFLAGS		+= $(CERRWARN)
@@ -376,7 +376,6 @@ DRV_KMODS	+= trapstat
 DRV_KMODS	+= rmc_comm
 DRV_KMODS	+= rmcadm
 DRV_KMODS	+= rmclomv
-DRV_KMODS	+= sf
 DRV_KMODS	+= nxge
 DRV_KMODS	+= mem_cache
 

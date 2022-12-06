@@ -28,7 +28,7 @@
  * $FreeBSD$
  */
 
-#ifndef _HDA_EMUL_H_ 
+#ifndef _HDA_EMUL_H_
 #define _HDA_EMUL_H_
 
 #include <stdio.h>
@@ -70,7 +70,7 @@ struct hda_codec_inst {
 };
 
 struct hda_codec_class {
-	char *name;
+	const char *name;
 	int (*init)(struct hda_codec_inst *hci, const char *play,
 		const char *rec);
 	int (*reset)(struct hda_codec_inst *hci);

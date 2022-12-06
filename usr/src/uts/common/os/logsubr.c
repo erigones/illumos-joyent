@@ -24,6 +24,7 @@
  * Copyright (c) 2013 Gary Mills
  * Copyright (c) 1998, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2022 Joyent, Inc.
+ * Copyright 2022 MNX Cloud, Inc.
  */
 
 #include <sys/types.h>
@@ -199,7 +200,7 @@ log_init(void)
 
 	/*
 	 * Create a backlog queue to consume console messages during periods
-	 * when there is no console reader (e.g. before syslogd(1M) starts).
+	 * when there is no console reader (e.g. before syslogd(8) starts).
 	 */
 	log_backlogq = log_consq = log_makeq(0, LOG_HIWAT, NULL);
 
@@ -261,7 +262,7 @@ log_init(void)
 #ifdef	LEGACY_BANNER
 	printf("\rSunOS Release %s Version %s %u-bit\n",
 	    utsname.release, utsname.version, NBBY * (uint_t)sizeof (void *));
-	printf("Copyright 2010-2022 Joyent, Inc.\n");
+	printf("Copyright 2022 MNX Cloud, Inc.\n");
 	printf("Copyright 2016-2022 Danube Cloud\n");
 #else
 	bootbanner_print(log_bootbanner_print, KM_SLEEP);
@@ -682,7 +683,7 @@ log_sendmsg(mblk_t *mp, zoneid_t zoneid)
 				if (lp->log_q == log_consq) {
 					console_printf(log_overflow_msg,
 					    lp->log_minor,
-					    " -- is syslogd(1M) running?");
+					    " -- is syslogd(8) running?");
 				} else {
 					printf(log_overflow_msg,
 					    lp->log_minor, "");

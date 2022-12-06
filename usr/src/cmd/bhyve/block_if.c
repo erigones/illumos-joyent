@@ -45,9 +45,9 @@ __FBSDID("$FreeBSD$");
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 #include <sys/disk.h>
+#ifndef __FreeBSD__
 #include <sys/limits.h>
 #include <sys/uio.h>
-#ifndef __FreeBSD__
 #include <sys/dkio.h>
 #endif
 
@@ -143,7 +143,7 @@ struct blockif_ctxt {
 	struct mevent		*bc_resize_event;
 
 	/* Request elements and free/pending/busy queues */
-	TAILQ_HEAD(, blockif_elem) bc_freeq;       
+	TAILQ_HEAD(, blockif_elem) bc_freeq;
 	TAILQ_HEAD(, blockif_elem) bc_pendq;
 	TAILQ_HEAD(, blockif_elem) bc_busyq;
 	struct blockif_elem	bc_reqs[BLOCKIF_MAXREQ];
@@ -246,6 +246,29 @@ blockif_complete(struct blockif_ctxt *bc, struct blockif_elem *be)
 	TAILQ_INSERT_TAIL(&bc->bc_freeq, be, be_link);
 }
 
+static int
+blockif_flush_bc(struct blockif_ctxt *bc)
+{
+#ifdef	__FreeBSD__
+	if (bc->bc_ischr) {
+		if (ioctl(bc->bc_fd, DIOCGFLUSH))
+			return (errno);
+	} else if (fsync(bc->bc_fd))
+		return (errno);
+#else
+	/*
+	 * This fsync() should be adequate to flush the cache of a file
+	 * or device.  In VFS, the VOP_SYNC operation is converted to
+	 * the appropriate ioctl in both sdev (for real devices) and
+	 * zfs (for zvols).
+	 */
+	if (fsync(bc->bc_fd))
+		return (errno);
+#endif
+
+	return (0);
+}
+
 static void
 blockif_proc(struct blockif_ctxt *bc, struct blockif_elem *be, uint8_t *buf)
 {
@@ -255,6 +278,9 @@ blockif_proc(struct blockif_ctxt *bc, struct blockif_elem *be, uint8_t *buf)
 #endif
 	ssize_t clen, len, off, boff, voff;
 	int i, err;
+#ifdef	__FreeBSD__
+	struct spacectl_range range;
+#endif
 
 	br = be->be_req;
 	if (br->br_iovcnt <= 1)
@@ -338,22 +364,7 @@ blockif_proc(struct blockif_ctxt *bc, struct blockif_elem *be, uint8_t *buf)
 		}
 		break;
 	case BOP_FLUSH:
-#ifdef	__FreeBSD__
-		if (bc->bc_ischr) {
-			if (ioctl(bc->bc_fd, DIOCGFLUSH))
-				err = errno;
-		} else if (fsync(bc->bc_fd))
-			err = errno;
-#else
-		/*
-		 * This fsync() should be adequate to flush the cache of a file
-		 * or device.  In VFS, the VOP_SYNC operation is converted to
-		 * the appropriate ioctl in both sdev (for real devices) and
-		 * zfs (for zvols).
-		 */
-		if (fsync(bc->bc_fd))
-			err = errno;
-#endif
+		err = blockif_flush_bc(bc);
 		break;
 	case BOP_DELETE:
 		if (!bc->bc_candelete)
@@ -425,6 +436,12 @@ blockif_proc(struct blockif_ctxt *bc, struct blockif_elem *be, uint8_t *buf)
 	(*br->br_callback)(br, err);
 }
 
+static inline bool
+blockif_empty(const struct blockif_ctxt *bc)
+{
+	return (TAILQ_EMPTY(&bc->bc_pendq) && TAILQ_EMPTY(&bc->bc_busyq));
+}
+
 static void *
 blockif_thr(void *arg)
 {
@@ -451,6 +468,7 @@ blockif_thr(void *arg)
 		/* Check ctxt status here to see if exit requested */
 		if (bc->bc_closing)
 			break;
+
 		pthread_cond_wait(&bc->bc_cond, &bc->bc_mtx);
 	}
 	pthread_mutex_unlock(&bc->bc_mtx);
@@ -544,7 +562,7 @@ blockif_open(nvlist_t *nvl, const char *ident)
 
 #ifndef WITHOUT_CAPSICUM
 	cap_rights_t rights;
-	cap_ioctl_t cmds[] = { DIOCGFLUSH, DIOCGDELETE };
+	cap_ioctl_t cmds[] = { DIOCGFLUSH, DIOCGDELETE, DIOCGMEDIASIZE };
 #endif
 
 	pthread_once(&blockif_once, blockif_init);
@@ -614,7 +632,7 @@ blockif_open(nvlist_t *nvl, const char *ident)
 
 #ifndef WITHOUT_CAPSICUM
 	cap_rights_init(&rights, CAP_FSYNC, CAP_IOCTL, CAP_READ, CAP_SEEK,
-	    CAP_WRITE, CAP_FSTAT, CAP_EVENT);
+	    CAP_WRITE, CAP_FSTAT, CAP_EVENT, CAP_FPATHCONF);
 	if (ro)
 		cap_rights_clear(&rights, CAP_FSYNC, CAP_WRITE);
 
@@ -657,9 +675,10 @@ blockif_open(nvlist_t *nvl, const char *ident)
 		struct dk_minfo_ext dkmext;
 		int wce_val;
 
-		/* Look for a more accurate physical blocksize */
+		/* Look for a more accurate physical block/media size */
 		if (ioctl(fd, DKIOCGMEDIAINFOEXT, &dkmext) == 0) {
 			psectsz = dkmext.dki_pbsize;
+			size = dkmext.dki_lbsize * dkmext.dki_capacity;
 		}
 		/* See if a configurable write cache is present and working */
 		if (ioctl(fd, DKIOCGETWCE, &wce_val) == 0) {
@@ -807,14 +826,34 @@ blockif_resized(int fd, enum ev_type type, void *arg)
 {
 	struct blockif_ctxt *bc;
 	struct stat sb;
+	off_t mediasize;
 
 	if (fstat(fd, &sb) != 0)
 		return;
 
+#ifdef __FreeBSD__
+	if (S_ISCHR(sb.st_mode)) {
+		if (ioctl(fd, DIOCGMEDIASIZE, &mediasize) < 0) {
+			EPRINTLN("blockif_resized: get mediasize failed: %s",
+			    strerror(errno));
+			return;
+		}
+	} else
+		mediasize = sb.st_size;
+#else
+	mediasize = sb.st_size;
+	if (S_ISCHR(sb.st_mode)) {
+		struct dk_minfo dkm;
+
+		if (ioctl(fd, DKIOCGMEDIAINFO, &dkm) == 0)
+			mediasize = dkm.dki_lbsize * dkm.dki_capacity;
+	}
+#endif
+
 	bc = arg;
 	pthread_mutex_lock(&bc->bc_mtx);
-	if (sb.st_size != bc->bc_size) {
-		bc->bc_size = sb.st_size;
+	if (mediasize != bc->bc_size) {
+		bc->bc_size = mediasize;
 		bc->bc_resize_cb(bc, bc->bc_resize_cb_arg, bc->bc_size);
 	}
 	pthread_mutex_unlock(&bc->bc_mtx);
@@ -894,7 +933,6 @@ blockif_request(struct blockif_ctxt *bc, struct blockif_req *breq,
 int
 blockif_read(struct blockif_ctxt *bc, struct blockif_req *breq)
 {
-
 	assert(bc->bc_magic == BLOCKIF_SIG);
 	return (blockif_request(bc, breq, BOP_READ));
 }
@@ -902,7 +940,6 @@ blockif_read(struct blockif_ctxt *bc, struct blockif_req *breq)
 int
 blockif_write(struct blockif_ctxt *bc, struct blockif_req *breq)
 {
-
 	assert(bc->bc_magic == BLOCKIF_SIG);
 	return (blockif_request(bc, breq, BOP_WRITE));
 }
@@ -910,7 +947,6 @@ blockif_write(struct blockif_ctxt *bc, struct blockif_req *breq)
 int
 blockif_flush(struct blockif_ctxt *bc, struct blockif_req *breq)
 {
-
 	assert(bc->bc_magic == BLOCKIF_SIG);
 	return (blockif_request(bc, breq, BOP_FLUSH));
 }
@@ -918,7 +954,6 @@ blockif_flush(struct blockif_ctxt *bc, struct blockif_req *breq)
 int
 blockif_delete(struct blockif_ctxt *bc, struct blockif_req *breq)
 {
-
 	assert(bc->bc_magic == BLOCKIF_SIG);
 	return (blockif_request(bc, breq, BOP_DELETE));
 }
@@ -1086,7 +1121,6 @@ blockif_chs(struct blockif_ctxt *bc, uint16_t *c, uint8_t *h, uint8_t *s)
 off_t
 blockif_size(struct blockif_ctxt *bc)
 {
-
 	assert(bc->bc_magic == BLOCKIF_SIG);
 	return (bc->bc_size);
 }
@@ -1094,7 +1128,6 @@ blockif_size(struct blockif_ctxt *bc)
 int
 blockif_sectsz(struct blockif_ctxt *bc)
 {
-
 	assert(bc->bc_magic == BLOCKIF_SIG);
 	return (bc->bc_sectsz);
 }
@@ -1102,7 +1135,6 @@ blockif_sectsz(struct blockif_ctxt *bc)
 void
 blockif_psectsz(struct blockif_ctxt *bc, int *size, int *off)
 {
-
 	assert(bc->bc_magic == BLOCKIF_SIG);
 	*size = bc->bc_psectsz;
 	*off = bc->bc_psectoff;
@@ -1111,7 +1143,6 @@ blockif_psectsz(struct blockif_ctxt *bc, int *size, int *off)
 int
 blockif_queuesz(struct blockif_ctxt *bc)
 {
-
 	assert(bc->bc_magic == BLOCKIF_SIG);
 	return (BLOCKIF_MAXREQ - 1);
 }
@@ -1119,7 +1150,6 @@ blockif_queuesz(struct blockif_ctxt *bc)
 int
 blockif_is_ro(struct blockif_ctxt *bc)
 {
-
 	assert(bc->bc_magic == BLOCKIF_SIG);
 	return (bc->bc_rdonly);
 }
@@ -1127,7 +1157,6 @@ blockif_is_ro(struct blockif_ctxt *bc)
 int
 blockif_candelete(struct blockif_ctxt *bc)
 {
-
 	assert(bc->bc_magic == BLOCKIF_SIG);
 	return (bc->bc_candelete);
 }

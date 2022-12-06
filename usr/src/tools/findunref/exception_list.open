@@ -85,7 +85,6 @@
 # Ignore internal packages, scripts, and tools that are intentionally not
 # built or used during a nightly.
 #
-./usr/src/cmd/sgs/rtld.4.x
 ./usr/src/prototypes
 ./usr/src/cmd/pools/poold/com/sun/solaris/*/*/package.html
 ./usr/src/uts/intel/io/acpica/cmp_ca.sh
@@ -193,8 +192,8 @@
 ./usr/src/uts/common/fs/smbclnt/netsmb/THIRDPARTYLICENSE.boris_popov.descrip
 ./usr/src/uts/common/io/e1000api/THIRDPARTYLICENSE
 ./usr/src/uts/common/io/e1000api/THIRDPARTYLICENSE.descrip
-./usr/src/uts/i86pc/io/viona/THIRDPARTYLICENSE
-./usr/src/uts/i86pc/io/viona/THIRDPARTYLICENSE.descrip
+./usr/src/uts/intel/io/viona/THIRDPARTYLICENSE
+./usr/src/uts/intel/io/viona/THIRDPARTYLICENSE.descrip
 
 # This is covered by license_in_headers in nfs4_prot.x
 ./usr/src/head/rpcsvc/THIRDPARTYLICENSE.nfs4_prot

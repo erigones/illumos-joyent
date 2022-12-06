@@ -628,7 +628,7 @@ pci_vtscsi_requestq_notify(void *vsc, struct vqueue_info *vq)
 }
 
 static int
-pci_vtscsi_init_queue(struct pci_vtscsi_softc *sc, 
+pci_vtscsi_init_queue(struct pci_vtscsi_softc *sc,
     struct pci_vtscsi_queue *queue, int num)
 {
 	struct pci_vtscsi_worker *worker;
@@ -700,6 +700,8 @@ pci_vtscsi_init(struct vmctx *ctx, struct pci_devinst *pi, nvlist_t *nvl)
 		return (1);
 	}
 
+	pthread_mutex_init(&sc->vss_mtx, NULL);
+
 	vi_softc_linkup(&sc->vss_vs, &vtscsi_vi_consts, sc, pi, sc->vss_vq);
 	sc->vss_vs.vs_mtx = &sc->vss_mtx;
 
@@ -733,7 +735,7 @@ pci_vtscsi_init(struct vmctx *ctx, struct pci_devinst *pi, nvlist_t *nvl)
 }
 
 
-struct pci_devemu pci_de_vscsi = {
+static const struct pci_devemu pci_de_vscsi = {
 	.pe_emu =	"virtio-scsi",
 	.pe_init =	pci_vtscsi_init,
 	.pe_legacy_config = pci_vtscsi_legacy_config,

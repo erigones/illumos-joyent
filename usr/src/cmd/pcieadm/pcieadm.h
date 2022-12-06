@@ -10,14 +10,14 @@
  */
 
 /*
- * Copyright 2021 Oxide Computer Company
+ * Copyright 2022 Oxide Computer Company
  */
 
 #ifndef _PCIEADM_H
 #define	_PCIEADM_H
 
 /*
- * Common definitions for pcieadm(1M).
+ * Common definitions for pcieadm(8).
  */
 
 #include <libdevinfo.h>
@@ -98,11 +98,6 @@ extern void pcieadm_show_devs_usage(FILE *);
  * lowering privs as that unfortunately makes ROPs more easy to execute.
  */
 extern void pcieadm_init_privs(pcieadm_t *);
-
-/*
- * XXX Maybe not here:
- */
-#define	BITX(u, h, l)   (((u) >> (l)) & ((1LU << ((h) - (l) + 1LU)) - 1LU))
 
 #ifdef __cplusplus
 }

@@ -24,8 +24,8 @@
 # Copyright (c) 2012 by Delphix. All rights reserved.
 # Copyright 2020 Joyent, Inc.
 # Copyright (c) 2013 Gary Mills
-# Copyright 2014 Garrett D'Amore <garrett@damore.org>
 # Copyright (c) 2015 Gary Mills
+# Copyright 2022 Garrett D'Amore
 # Copyright 2016 Toomas Soome <tsoome@me.com>
 # Copyright 2018 Nexenta Systems, Inc.
 # Copyright (c) 2016, Chris Fraire <cfraire@me.com>.
@@ -226,9 +226,6 @@ SUBDIRS +=				\
 	libtecla	\
 	libtermcap	\
 	libthread	\
-	libtnf		\
-	libtnfctl	\
-	libtnfprobe	\
 	libtsnet	\
 	libtsol		\
 	libumem		\
@@ -258,7 +255,6 @@ SUBDIRS +=				\
 	mpapi		\
 	mpss		\
 	nametoaddr	\
-	ncad_addr	\
 	nsswitch	\
 	pam_modules	\
 	passwdutil	\
@@ -471,9 +467,6 @@ HDRSUBDIRS=				\
 	libsysevent	\
 	libtecla	\
 	libtermcap	\
-	libtnf		\
-	libtnfctl	\
-	libtnfprobe	\
 	libtsnet	\
 	libtsol		\
 	libumem		\
@@ -608,7 +601,7 @@ libcontract:	libnvpair
 libcmdutils:	libavl libnvpair
 libcpc:		libpctx
 libcrypt:	libgen
-libctf:		libdwarf
+libctf:		libavl libdwarf
 libdemangle:	libcustr
 libdevice:	libnvpair
 libdevid:	libdevinfo
@@ -688,7 +681,6 @@ libsun_ima:	libdevinfo libsysevent
 libsysevent:	libsecdb
 libtecla:	libcurses
 libtermcap:	libcurses
-libtnfctl:	../cmd/sgs/libelf
 libtsalarm:	libpcp
 libtsnet:	libtsol libsecdb
 libtsol:	libsecdb

@@ -21,6 +21,7 @@
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2020 Tintri by DDN, Inc. All rights reserved.
+ * Copyright 2022 RackTop Systems, Inc.
  */
 /*
  * SMB Node State Machine
@@ -492,6 +493,18 @@ smb_node_release(smb_node_t *node)
 
 			mutex_exit(&node->n_mutex);
 
+			/*
+			 * Out of caution, make sure FEM hooks
+			 * used by oplocks are also gone.
+			 */
+			mutex_enter(&node->n_oplock.ol_mutex);
+			ASSERT(node->n_oplock.ol_fem == B_FALSE);
+			if (node->n_oplock.ol_fem == B_TRUE) {
+				smb_fem_oplock_uninstall(node);
+				node->n_oplock.ol_fem = B_FALSE;
+			}
+			mutex_exit(&node->n_oplock.ol_mutex);
+
 			smb_llist_enter(node->n_hash_bucket, RW_WRITER);
 			smb_llist_remove(node->n_hash_bucket, node);
 			smb_llist_exit(node->n_hash_bucket);
@@ -960,6 +973,32 @@ smb_node_notify_change(smb_node_t *node, uint_t action, const char *name)
 	 * expensive to do that, and support for recursive
 	 * notify is optional anyway, so don't bother.
 	 */
+}
+
+/*
+ * Change notify modified differs for stream vs regular file.
+ * Changes to a stream give a notification on the "unnamed" node,
+ * which is the parent object of the stream.
+ */
+void
+smb_node_notify_modified(smb_node_t *node)
+{
+	smb_node_t *u_node;
+
+	u_node = SMB_IS_STREAM(node);
+	if (u_node != NULL) {
+		/* This is a named stream */
+		if (u_node->n_dnode != NULL) {
+			smb_node_notify_change(u_node->n_dnode,
+			    FILE_ACTION_MODIFIED_STREAM, u_node->od_name);
+		}
+	} else {
+		/* regular file or directory */
+		if (node->n_dnode != NULL) {
+			smb_node_notify_change(node->n_dnode,
+			    FILE_ACTION_MODIFIED, node->od_name);
+		}
+	}
 }
 
 /*
@@ -1469,17 +1508,6 @@ smb_node_file_is_readonly(smb_node_t *node)
  * normal time stamp updates, such as updating the mtime after a
  * write, and ctime after an attribute change.
  *
- * Dos Attributes are stored persistently, but with a twist:
- * In Windows, when you set the "read-only" bit on some file,
- * existing writable handles to that file continue to have
- * write access.  (because access check happens at open)
- * If we were to set the read-only bit directly, we would
- * cause errors in subsequent writes on any of our open
- * (and writable) file handles.  So here too, we have to
- * simulate the Windows behavior.  We keep the read-only
- * bit "pending" in the smb_node (so it will be visible in
- * any new opens of the file) and apply it on close.
- *
  * File allocation size is also simulated, and not persistent.
  * When the file allocation size is set it is first rounded up
  * to block size. If the file size is smaller than the allocation
@@ -1492,7 +1520,6 @@ smb_node_setattr(smb_request_t *sr, smb_node_t *node,
 	int rc;
 	uint_t times_mask;
 	smb_attr_t tmp_attr;
-	smb_node_t *unnamed_node;
 
 	SMB_NODE_VALID(node);
 
@@ -1613,22 +1640,15 @@ smb_node_setattr(smb_request_t *sr, smb_node_t *node,
 	}
 
 	rc = smb_fsop_setattr(sr, cr, node, attr);
-	if (rc != 0)
-		return (rc);
 
-	if (node->n_dnode != NULL) {
-		smb_node_notify_change(node->n_dnode,
-		    FILE_ACTION_MODIFIED, node->od_name);
-	}
+	/*
+	 * Only generate change notify events for client requests.
+	 * Internal operations use sr=NULL
+	 */
+	if (rc == 0 && sr != NULL)
+		smb_node_notify_modified(node);
 
-	if ((unnamed_node = SMB_IS_STREAM(node)) != NULL) {
-		ASSERT(unnamed_node->n_magic == SMB_NODE_MAGIC);
-		ASSERT(unnamed_node->n_state != SMB_NODE_STATE_DESTROYING);
-		smb_node_notify_change(node->n_dnode,
-		    FILE_ACTION_MODIFIED_STREAM, node->od_name);
-	}
-
-	return (0);
+	return (rc);
 }
 
 /*
@@ -1636,11 +1656,6 @@ smb_node_setattr(smb_request_t *sr, smb_node_t *node,
  *
  * Get attributes from the file system and apply any smb-specific
  * overrides for size, dos attributes and timestamps
- *
- * When node->n_pending_readonly is set on a node, pretend that
- * we've already set this node readonly at the filesystem level.
- * We can't actually do that until all writable handles are closed
- * or those writable handles would suddenly loose their access.
  *
  * Returns: errno
  */

@@ -49,7 +49,7 @@ gpavl_loaded(Ofl_desc *ofl, Group_desc *gdp)
 	 * Create a groups avl tree if required.
 	 */
 	if ((avlt = ofl->ofl_groups) == NULL) {
-		if ((avlt = libld_calloc(sizeof (avl_tree_t), 1)) == NULL)
+		if ((avlt = libld_calloc(1, sizeof (avl_tree_t))) == NULL)
 			return (S_ERROR);
 		avl_create(avlt, isdavl_compare, sizeof (Isd_node),
 		    SGSOFFSETOF(Isd_node, isd_avl));
@@ -73,7 +73,7 @@ gpavl_loaded(Ofl_desc *ofl, Group_desc *gdp)
 	/*
 	 * This is a new group - so keep it.
 	 */
-	if ((isdp = libld_calloc(sizeof (Isd_node), 1)) == NULL)
+	if ((isdp = libld_calloc(1, sizeof (Isd_node))) == NULL)
 		return (S_ERROR);
 
 	isdp->isd_name = isd.isd_name;
@@ -256,9 +256,9 @@ ld_group_process(Is_desc *gisc, Ofl_desc *ofl)
 	 * group, mark each section as COMDAT.
 	 */
 	for (ndx = 1; ndx < gd.gd_cnt; ndx++) {
-		Word	gndx;
+		Word	gndx = gd.gd_data[ndx];
 
-		if ((gndx = gd.gd_data[ndx]) >= gifl->ifl_shnum) {
+		if ((gndx == 0) || (gndx >= gifl->ifl_shnum)) {
 			ld_eprintf(ofl, ERR_FATAL,
 			    MSG_INTL(MSG_GRP_INVALNDX), gifl->ifl_name,
 			    EC_WORD(gisc->is_scnndx), gisc->is_name, ndx, gndx);

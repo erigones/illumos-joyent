@@ -119,8 +119,7 @@ dir  path=usr/lib/mdb/kvm group=sys
 dir  path=usr/lib/mdb/kvm/$(ARCH64) group=sys
 file path=usr/lib/mdb/kvm/$(ARCH64)/zfs.so group=sys mode=0555
 dir  path=usr/lib/mdb/proc group=sys
-$(sparc_ONLY)dir path=usr/lib/mdb/proc/$(ARCH64) group=sys
-$(i386_ONLY)dir path=usr/lib/mdb/proc/$(ARCH64)
+dir  path=usr/lib/mdb/proc/$(ARCH64)
 file path=usr/lib/mdb/proc/$(ARCH64)/libzpool.so group=sys mode=0555
 file path=usr/lib/mdb/proc/libzpool.so group=sys mode=0555
 dir  path=usr/lib/sysevent
@@ -128,8 +127,6 @@ dir  path=usr/lib/sysevent/modules
 file path=usr/lib/sysevent/modules/zfs_mod.so group=sys
 dir  path=usr/lib/zfs
 file path=usr/lib/zfs/availdevs mode=0555
-file path=usr/lib/zfs/pyzfs.py mode=0555
-file path=usr/lib/zfs/pyzfs.pyc mode=0555
 dir  path=usr/sbin
 $(i386_ONLY)dir path=usr/sbin/$(ARCH32)
 dir  path=usr/sbin/$(ARCH64)
@@ -137,14 +134,14 @@ file path=usr/sbin/zdb mode=0555
 link path=usr/sbin/zfs target=../../sbin/zfs
 link path=usr/sbin/zpool target=../../sbin/zpool
 file path=usr/sbin/zstreamdump mode=0555
-dir  path=usr/share/man/man1m
-file path=usr/share/man/man1m/zdb.1m
-file path=usr/share/man/man1m/zfs-program.1m
-file path=usr/share/man/man1m/zfs.1m
-file path=usr/share/man/man1m/zpool.1m
-file path=usr/share/man/man1m/zstreamdump.1m
-file path=usr/share/man/man1m/ztest.1m
-file path=usr/share/man/man5/zpool-features.5
+file path=usr/share/man/man7/zpool-features.7
+dir  path=usr/share/man/man8
+file path=usr/share/man/man8/zdb.8
+file path=usr/share/man/man8/zfs-program.8
+file path=usr/share/man/man8/zfs.8
+file path=usr/share/man/man8/zpool.8
+file path=usr/share/man/man8/zstreamdump.8
+file path=usr/share/man/man8/ztest.8
 driver name=zfs perms="* 0600 root sys" perms="zfs 0666 root sys"
 legacy pkg=SUNWzfskr desc="ZFS kernel root components" name="ZFS Kernel (Root)"
 legacy pkg=SUNWzfsr desc="ZFS root components" name="ZFS (Root)"
@@ -155,9 +152,5 @@ license usr/src/uts/common/fs/zfs/THIRDPARTYLICENSE.cityhash \
     license=usr/src/uts/common/fs/zfs/THIRDPARTYLICENSE.cityhash
 license usr/src/uts/common/fs/zfs/THIRDPARTYLICENSE.lz4 \
     license=usr/src/uts/common/fs/zfs/THIRDPARTYLICENSE.lz4
-$(python3_ONLY)depend type=conditional \
-    fmri=system/library/python/zfs$(PYTHON3_PKGVERS) \
+depend type=conditional fmri=system/library/python/zfs$(PYTHON3_PKGVERS) \
     predicate=runtime/python$(PYTHON3_PKGVERS)
-$(python2_ONLY)depend type=conditional \
-    fmri=system/library/python/zfs$(PYTHON_PKGVERS) \
-    predicate=runtime/python$(PYTHON_PKGVERS)

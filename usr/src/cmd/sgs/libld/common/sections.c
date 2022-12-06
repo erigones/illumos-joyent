@@ -24,6 +24,7 @@
  *	  All Rights Reserved
  *
  * Copyright (c) 1989, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2022 Oxide Computer Company
  */
 
 /*
@@ -636,7 +637,7 @@ new_section(Ofl_desc *ofl, Word shtype, const char *shname, Xword entcnt,
 	/*
 	 * Allocate and initialize the Elf_Data structure.
 	 */
-	if ((data = libld_calloc(sizeof (Elf_Data), 1)) == NULL)
+	if ((data = libld_calloc(1, sizeof (Elf_Data))) == NULL)
 		return (S_ERROR);
 	data->d_type = sec_info->d_type;
 	data->d_size = size;
@@ -646,7 +647,7 @@ new_section(Ofl_desc *ofl, Word shtype, const char *shname, Xword entcnt,
 	/*
 	 * Allocate and initialize the Shdr structure.
 	 */
-	if ((shdr = libld_calloc(sizeof (Shdr), 1)) == NULL)
+	if ((shdr = libld_calloc(1, sizeof (Shdr))) == NULL)
 		return (S_ERROR);
 	shdr->sh_type = shtype;
 	shdr->sh_size = size;
@@ -700,7 +701,7 @@ new_section_from_template(Ofl_desc *ofl, Is_desc *tmpl_isp, size_t size,
 	/*
 	 * Allocate and initialize the Elf_Data structure.
 	 */
-	if ((data = libld_calloc(sizeof (Elf_Data), 1)) == NULL)
+	if ((data = libld_calloc(1, sizeof (Elf_Data))) == NULL)
 		return (S_ERROR);
 	data->d_type = tmpl_isp->is_indata->d_type;
 	data->d_size = size;
@@ -842,7 +843,7 @@ make_array(Ofl_desc *ofl, Word shtype, const char *sectname, APlist *alp)
 	    S_ERROR)
 		return (S_ERROR);
 
-	if ((data->d_buf = libld_calloc(sizeof (Addr), entcount)) == NULL)
+	if ((data->d_buf = libld_calloc(entcount, sizeof (Addr))) == NULL)
 		return (S_ERROR);
 
 	if (ld_place_section(ofl, isec, NULL, ld_targ.t_id.id_array, NULL) ==
@@ -1494,6 +1495,14 @@ is_cap_redundant(Objcapset *ocapset, Objcapset *scapset)
 	 * could be considered to be less important than lower ones.  However,
 	 * this is the only reasonable non-subjective definition.
 	 */
+	omsk = ocapset->oc_hw_3.cm_val;
+	smsk = scapset->oc_hw_3.cm_val;
+	if ((omsk > smsk) || (omsk && (omsk == smsk)))
+		return (1);
+	if (omsk < smsk)
+		return (0);
+
+
 	omsk = ocapset->oc_hw_2.cm_val;
 	smsk = scapset->oc_hw_2.cm_val;
 	if ((omsk > smsk) || (omsk && (omsk == smsk)))
@@ -1650,6 +1659,7 @@ make_cap(Ofl_desc *ofl, Word shtype, const char *shname, int ident)
 	 */
 	capstr_value(ofl->ofl_lml, CA_SUNW_PLAT, &ocapset->oc_plat, &title);
 	capstr_value(ofl->ofl_lml, CA_SUNW_MACH, &ocapset->oc_mach, &title);
+	capmask_value(ofl->ofl_lml, CA_SUNW_HW_3, &ocapset->oc_hw_3, &title);
 	capmask_value(ofl->ofl_lml, CA_SUNW_HW_2, &ocapset->oc_hw_2, &title);
 	capmask_value(ofl->ofl_lml, CA_SUNW_HW_1, &ocapset->oc_hw_1, &title);
 	capmask_value(ofl->ofl_lml, CA_SUNW_SF_1, &ocapset->oc_sf_1, &title);
@@ -1659,6 +1669,8 @@ make_cap(Ofl_desc *ofl, Word shtype, const char *shname, int ident)
 	 */
 	size += alist_nitems(ocapset->oc_plat.cl_val);
 	size += alist_nitems(ocapset->oc_mach.cl_val);
+	if (ocapset->oc_hw_3.cm_val)
+		size++;
 	if (ocapset->oc_hw_2.cm_val)
 		size++;
 	if (ocapset->oc_hw_1.cm_val)
@@ -1750,6 +1762,10 @@ make_cap(Ofl_desc *ofl, Word shtype, const char *shname, int ident)
 			CAP_UPDATE(cap, capndx, CA_SUNW_MACH, 0);
 		}
 	}
+	if (ocapset->oc_hw_3.cm_val) {
+		ofl->ofl_flags |= FLG_OF_PTCAP;
+		CAP_UPDATE(cap, capndx, CA_SUNW_HW_3, ocapset->oc_hw_3.cm_val);
+	}
 	if (ocapset->oc_hw_2.cm_val) {
 		ofl->ofl_flags |= FLG_OF_PTCAP;
 		CAP_UPDATE(cap, capndx, CA_SUNW_HW_2, ocapset->oc_hw_2.cm_val);
@@ -1829,6 +1845,10 @@ make_cap(Ofl_desc *ofl, Word shtype, const char *shname, int ident)
 					CAP_UPDATE(cap, capndx,
 					    CA_SUNW_MACH, 0);
 				}
+			}
+			if (scapset->oc_hw_3.cm_val) {
+				CAP_UPDATE(cap, capndx, CA_SUNW_HW_3,
+				    scapset->oc_hw_3.cm_val);
 			}
 			if (scapset->oc_hw_2.cm_val) {
 				CAP_UPDATE(cap, capndx, CA_SUNW_HW_2,
@@ -2198,7 +2218,7 @@ make_dynsort(Ofl_desc *ofl)
 		if (new_section(ofl, SHT_SUNW_symsort,
 		    MSG_ORIG(MSG_SCN_DYNSYMSORT), ofl->ofl_dynsymsortcnt,
 		    &isec, &shdr, &data) == S_ERROR)
-		return (S_ERROR);
+			return (S_ERROR);
 
 		if ((ofl->ofl_osdynsymsort = ld_place_section(ofl, isec, NULL,
 		    ld_targ.t_id.id_dynsort, NULL)) == (Os_desc *)S_ERROR)
@@ -2210,7 +2230,7 @@ make_dynsort(Ofl_desc *ofl)
 		if (new_section(ofl, SHT_SUNW_tlssort,
 		    MSG_ORIG(MSG_SCN_DYNTLSSORT),
 		    ofl->ofl_dyntlssortcnt, &isec, &shdr, &data) == S_ERROR)
-		return (S_ERROR);
+			return (S_ERROR);
 
 		if ((ofl->ofl_osdyntlssort = ld_place_section(ofl, isec, NULL,
 		    ld_targ.t_id.id_dynsort, NULL)) == (Os_desc *)S_ERROR)

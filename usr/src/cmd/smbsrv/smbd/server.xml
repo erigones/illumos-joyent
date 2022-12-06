@@ -25,7 +25,7 @@ Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
 Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
 Copyright 2016 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
 Copyright 2020 Tintri by DDN, Inc. All rights reserved.
-Copyright 2020 RackTop Systems.
+Copyright 2022 RackTop Systems, Inc.
 
 NOTE:  This service manifest is not editable; its contents will
 be overwritten by package or patch operations, including
@@ -227,6 +227,8 @@ file.
 			value='0' override='true'/>
 		<propval name='print_enable' type='boolean'
 			value='false' override='true'/>
+		<propval name='short_names' type='boolean'
+			value='false' override='true'/>
 		<propval name='traverse_mounts' type='boolean'
 			value='true' override='true'/>
 		<propval name='max_protocol' type='astring'
@@ -280,7 +282,7 @@ file.
 			<loctext xml:lang='C'> smbd daemon</loctext>
 		</common_name>
 		<documentation>
-			<manpage title='smbd' section='1M'
+			<manpage title='smbd' section='8'
 				manpath='/usr/share/man' />
 		</documentation>
 	</template>

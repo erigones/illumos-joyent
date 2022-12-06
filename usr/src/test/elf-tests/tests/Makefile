@@ -16,6 +16,8 @@
 
 SUBDIRS =		\
 	assert-deflib	\
+	capabilities	\
+	groups		\
 	linker-sets	\
 	mapfiles	\
 	relocs		\

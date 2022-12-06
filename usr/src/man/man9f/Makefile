@@ -11,10 +11,12 @@
 
 #
 # Copyright 2017, Richard Lowe
-# Copyright 2014 Garrett D'Amore <garrett@damore>
 # Copyright 2019 Joyent, Inc.
 # Copyright 2020-2021 Tintri by DDN, Inc. All rights reserved.
 # Copyright 2016 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
+# Copyright 2022 RackTop Systems, Inc.
+# Copyright 2022 Oxide Computer Company
+# Copyright 2022 Garrett D'Amore
 #
 
 include		$(SRC)/Makefile.master
@@ -53,6 +55,9 @@ MANFILES=	ASSERT.9f				\
 		bioreset.9f				\
 		biosize.9f				\
 		biowait.9f				\
+		bitdel64.9f				\
+		bitset64.9f				\
+		bitx64.9f				\
 		bp_copyin.9f				\
 		bp_copyout.9f				\
 		bp_mapin.9f				\
@@ -186,7 +191,6 @@ MANFILES=	ASSERT.9f				\
 		ddi_get_parent.9f			\
 		ddi_get_pid.9f				\
 		ddi_get_time.9f				\
-		ddi_getiminor.9f			\
 		ddi_in_panic.9f				\
 		ddi_intr_add_handler.9f			\
 		ddi_intr_add_softint.9f			\
@@ -692,6 +696,12 @@ MANLINKS=	AVL_NEXT.9f					\
 		avl_remove.9f					\
 		avl_swap.9f					\
 		bcanputnext.9f					\
+		bitset8.9f					\
+		bitset16.9f					\
+		bitset32.9f					\
+		bitx8.9f					\
+		bitx16.9f					\
+		bitx32.9f					\
 		crdup.9f					\
 		crfree.9f					\
 		crget.9f					\
@@ -986,8 +996,10 @@ MANLINKS=	AVL_NEXT.9f					\
 		mac_prop_info_set_default_uint8.9f		\
 		mac_prop_info_set_perm.9f			\
 		mac_prop_info_set_range_uint32.9f		\
+		mac_ring_rx.9f					\
 		mac_transceiver_info_set_present.9f		\
 		mac_transceiver_info_set_usable.9f		\
+		mac_tx_ring_update.9f				\
 		mac_unregister.9f				\
 		makecom_g0.9f					\
 		makecom_g0_s.9f					\
@@ -1161,6 +1173,7 @@ MANLINKS=	AVL_NEXT.9f					\
 		scsi_hba_iportmap_iport_remove.9f		\
 		scsi_hba_pkt_free.9f				\
 		scsi_hba_tgtmap_destroy.9f			\
+		scsi_hba_tgtmap_scan_luns.9f			\
 		scsi_hba_tgtmap_set_begin.9f			\
 		scsi_hba_tgtmap_set_add.9f			\
 		scsi_hba_tgtmap_set_end.9f			\
@@ -1413,6 +1426,13 @@ avl_remove.9f				:= LINKSRC = avl.9f
 avl_swap.9f				:= LINKSRC = avl.9f
 AVL_NEXT.9f				:= LINKSRC = avl.9f
 AVL_PREV.9f				:= LINKSRC = avl.9f
+
+bitset8.9f				:= LINKSRC = bitset64.9f
+bitset16.9f				:= LINKSRC = bitset64.9f
+bitset32.9f				:= LINKSRC = bitset64.9f
+bitx8.9f				:= LINKSRC = bitx64.9f
+bitx16.9f				:= LINKSRC = bitx64.9f
+bitx32.9f				:= LINKSRC = bitx64.9f
 
 dev_err.9f				:= LINKSRC = cmn_err.9f
 vcmn_err.9f				:= LINKSRC = cmn_err.9f
@@ -1806,8 +1826,12 @@ mac_prop_info_set_default_uint64.9f	:= LINKSRC = mac_prop_info.9f
 mac_prop_info_set_perm.9f		:= LINKSRC = mac_prop_info.9f
 mac_prop_info_set_range_uint32.9f	:= LINKSRC = mac_prop_info.9f
 
+mac_ring_rx.9f				:= LINKSRC = mac_rx.9f
+
 mac_transceiver_info_set_present.9f	:= LINKSRC = mac_transceiver_info.9f
 mac_transceiver_info_set_usable.9f	:= LINKSRC = mac_transceiver_info.9f
+
+mac_tx_ring_update.9f			:= LINKSRC = mac_tx_update.9f
 
 mac_unregister.9f			:= LINKSRC = mac_register.9f
 
@@ -2024,6 +2048,7 @@ scsi_hba_iport_find.9f			:= LINKSRC = scsi_hba_iport_exist.9f
 scsi_hba_pkt_free.9f			:= LINKSRC = scsi_hba_pkt_alloc.9f
 
 scsi_hba_tgtmap_destroy.9f		:= LINKSRC = scsi_hba_tgtmap_create.9f
+scsi_hba_tgtmap_scan_luns.9f		:= LINKSRC = scsi_hba_tgtmap_create.9f
 scsi_hba_tgtmap_set_begin.9f		:= LINKSRC = scsi_hba_tgtmap_create.9f
 scsi_hba_tgtmap_set_add.9f		:= LINKSRC = scsi_hba_tgtmap_create.9f
 scsi_hba_tgtmap_set_end.9f		:= LINKSRC = scsi_hba_tgtmap_create.9f

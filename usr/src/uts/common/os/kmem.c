@@ -2251,7 +2251,7 @@ kmem_dumppr(char **pp, char *e, const char *format, ...)
 }
 
 /*
- * Called when dumpadm(1M) configures dump parameters.
+ * Called when dumpadm(8) configures dump parameters.
  */
 void
 kmem_dump_init(size_t size)
@@ -5363,7 +5363,7 @@ kmem_cache_scan(kmem_cache_t *cp)
 	}
 
 	if (kmem_cache_is_fragmented(cp, &reap)) {
-		size_t slabs_found;
+		int slabs_found;
 
 		/*
 		 * Consolidate reclaimable slabs from the end of the partial

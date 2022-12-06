@@ -23,8 +23,10 @@
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2017 Joyent, Inc.
  * Copyright 2016 Nexenta Systems, Inc.
+ * Copyright (c) 2015 Joyent, Inc. All rights reserved.
  * Copyright 2020 Peter Tribble.
  * Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
+ * Copyright 2021 RackTop Systems, Inc.
  */
 
 #include <stdio.h>
@@ -88,7 +90,7 @@
 #define	MAXLINELEN		1024
 #define	SMF_UPGRADE_FILE		"/var/svc/profile/upgrade"
 #define	SMF_UPGRADEDATALINK_FILE	"/var/svc/profile/upgrade_datalink"
-#define	SMF_DLADM_UPGRADE_MSG		" # added by dladm(1M)"
+#define	SMF_DLADM_UPGRADE_MSG		" # added by dladm(8)"
 #define	DLADM_DEFAULT_COL	80
 
 /*
@@ -234,7 +236,7 @@ static cmdfunc_t do_add_bridge, do_remove_bridge, do_show_bridge;
 static cmdfunc_t do_create_iptun, do_modify_iptun, do_delete_iptun;
 static cmdfunc_t do_show_iptun, do_up_iptun, do_down_iptun;
 static cmdfunc_t do_create_overlay, do_delete_overlay, do_modify_overlay;
-static cmdfunc_t do_show_overlay;
+static cmdfunc_t do_show_overlay, do_up_overlay;
 
 static void	do_up_vnic_common(int, char **, const char *, boolean_t);
 
@@ -426,13 +428,14 @@ static cmd_t	cmds[] = {
 	    "    create-overlay   [-t] -e <encap> -s <search> -v <vnetid>\n"
 	    "\t\t     [ -p <prop>=<value>[,...]] <overlay>"	},
 	{ "delete-overlay",	do_delete_overlay,
-	    "    delete-overlay   <overlay>"			},
+	    "    delete-overlay   [-t] <overlay>"			},
 	{ "modify-overlay",	do_modify_overlay,
 	    "    modify-overlay   -d mac | -f | -s mac=ip:port "
 	    "<overlay>"						},
 	{ "show-overlay",	do_show_overlay,
 	    "    show-overlay     [-f | -t] [[-p] -o <field>,...] "
 	    "[<overlay>]\n"						},
+	{ "up-overlay",		do_up_overlay,		NULL		},
 	{ "show-usage",		do_show_usage,
 	    "    show-usage       [-a] [-d | -F <format>] "
 	    "[-s <DD/MM/YYYY,HH:MM:SS>]\n"
@@ -785,9 +788,9 @@ static const ofmt_field_t aggr_x_fields[] = {
 /* name,	field width,	index		callback */
 { "LINK",	12,	AGGR_X_LINK,		print_xaggr_cb},
 { "PORT",	15,	AGGR_X_PORT,		print_xaggr_cb},
-{ "SPEED",	5,	AGGR_X_SPEED,		print_xaggr_cb},
-{ "DUPLEX",	10,	AGGR_X_DUPLEX,		print_xaggr_cb},
-{ "STATE",	10,	AGGR_X_STATE,		print_xaggr_cb},
+{ "SPEED",	9,	AGGR_X_SPEED,		print_xaggr_cb},
+{ "DUPLEX",	9,	AGGR_X_DUPLEX,		print_xaggr_cb},
+{ "STATE",	9,	AGGR_X_STATE,		print_xaggr_cb},
 { "ADDRESS",	19,	AGGR_X_ADDRESS,		print_xaggr_cb},
 { "PORTSTATE",	16,	AGGR_X_PORTSTATE,	print_xaggr_cb},
 { NULL,		0,	0,			NULL}}
@@ -858,9 +861,9 @@ static const ofmt_field_t phys_fields[] = {
 	offsetof(link_fields_buf_t, link_phys_media), print_default_cb},
 { "STATE",	11,
 	offsetof(link_fields_buf_t, link_phys_state), print_default_cb},
-{ "SPEED",	7,
+{ "SPEED",	9,
 	offsetof(link_fields_buf_t, link_phys_speed), print_default_cb},
-{ "DUPLEX",	10,
+{ "DUPLEX",	9,
 	offsetof(link_fields_buf_t, link_phys_duplex), print_default_cb},
 { "DEVICE",	13,
 	offsetof(link_fields_buf_t, link_phys_device), print_default_cb},
@@ -1040,7 +1043,7 @@ typedef struct vnic_fields_buf_s
 {
 	char vnic_link[DLPI_LINKNAME_MAX];
 	char vnic_over[DLPI_LINKNAME_MAX];
-	char vnic_speed[6];
+	char vnic_speed[10];
 	char vnic_macaddr[18];
 	char vnic_macaddrtype[19];
 	char vnic_vid[6];
@@ -1052,7 +1055,7 @@ static const ofmt_field_t vnic_fields[] = {
 	offsetof(vnic_fields_buf_t, vnic_link),	print_default_cb},
 { "OVER",		11,
 	offsetof(vnic_fields_buf_t, vnic_over),	print_default_cb},
-{ "SPEED",		6,
+{ "SPEED",		9,
 	offsetof(vnic_fields_buf_t, vnic_speed), print_default_cb},
 { "MACADDRESS",		18,
 	offsetof(vnic_fields_buf_t, vnic_macaddr), print_default_cb},
@@ -1465,7 +1468,7 @@ static const struct option overlay_create_lopts[] = {
 	{ "encap",	required_argument,	NULL,	'e' },
 	{ "prop",	required_argument,	NULL,	'p' },
 	{ "search",	required_argument,	NULL,	's' },
-	{ "temporary", 	no_argument,		NULL,	't' },
+	{ "temporary",	no_argument,		NULL,	't' },
 	{ "vnetid",	required_argument,	NULL,	'v' },
 	{ NULL,		0,			NULL,	0 }
 };
@@ -2095,7 +2098,7 @@ done:
 	if (status != DLADM_STATUS_OK) {
 		if (status == DLADM_STATUS_NONOTIF) {
 			die("not all links have link up/down detection; must "
-			    "use -f (see dladm(1M))");
+			    "use -f (see dladm(8))");
 		} else {
 			die_dlerr(status, "create operation failed");
 		}
@@ -2261,7 +2264,7 @@ done:
 			    "match");
 		} else if (status == DLADM_STATUS_NONOTIF) {
 			die("not all links have link up/down detection; must "
-			    "use -f (see dladm(1M))");
+			    "use -f (see dladm(8))");
 		} else {
 			die_dlerr(status, "add operation failed");
 		}
@@ -2563,12 +2566,12 @@ do_create_vlan(int argc, char *argv[], const char *use)
 
 	case DLADM_STATUS_NOTSUP:
 		die("VLAN over '%s' may require lowered MTU; must use -f (see "
-		    "dladm(1M))", link);
+		    "dladm(8))", link);
 		break;
 
 	case DLADM_STATUS_LINKBUSY:
 		die("VLAN over '%s' may not use default_tag ID "
-		    "(see dladm(1M))", link);
+		    "(see dladm(8))", link);
 		break;
 
 	default:
@@ -4937,7 +4940,7 @@ do_create_vnic(int argc, char *argv[], const char *use)
 
 	case DLADM_STATUS_LINKBUSY:
 		die("VLAN over '%s' may not use default_tag ID "
-		    "(see dladm(1M))", devname);
+		    "(see dladm(8))", devname);
 		break;
 
 	default:
@@ -9999,23 +10002,38 @@ do_delete_overlay(int argc, char *argv[], const char *use)
 {
 	datalink_id_t	linkid = DATALINK_ALL_LINKID;
 	dladm_status_t	status;
+	uint32_t flags = DLADM_OPT_ACTIVE | DLADM_OPT_PERSIST;
+	int option;
 
-	if (argc != 2) {
-		usage();
+	opterr = 0;
+	while ((option = getopt_long(argc, argv, ":t", lopts,
+	    NULL)) != -1) {
+		switch (option) {
+		case 't':
+			flags &= ~DLADM_OPT_PERSIST;
+			break;
+		default:
+			die_opterr(optopt, option, use);
+		}
 	}
 
-	status = dladm_name2info(handle, argv[1], &linkid, NULL, NULL, NULL);
-	if (status != DLADM_STATUS_OK)
-		die_dlerr(status, "failed to delete %s", argv[1]);
+	/* get overlay name (required last argument) */
+	if (optind != (argc - 1))
+		usage();
 
-	status = dladm_overlay_delete(handle, linkid);
+	status = dladm_name2info(handle, argv[optind], &linkid,
+	    NULL, NULL, NULL);
 	if (status != DLADM_STATUS_OK)
-		die_dlerr(status, "failed to delete %s", argv[1]);
+		die_dlerr(status, "failed to delete %s", argv[optind]);
+
+	status = dladm_overlay_delete(handle, linkid, flags);
+	if (status != DLADM_STATUS_OK)
+		die_dlerr(status, "failed to delete %s", argv[optind]);
 }
 
 typedef struct showoverlay_state {
 	ofmt_handle_t		sho_ofmt;
-	const char 		*sho_linkname;
+	const char		*sho_linkname;
 	dladm_overlay_propinfo_handle_t sho_info;
 	uint8_t			sho_value[DLADM_OVERLAY_PROP_SIZEMAX];
 	uint32_t		sho_size;
@@ -10117,10 +10135,10 @@ print_overlay_value(char *outbuf, uint_t bufsize, uint_t type, const void *pbuf,
 static boolean_t
 print_overlay_cb(ofmt_arg_t *ofarg, char *buf, uint_t bufsize)
 {
-	dladm_status_t 			status;
+	dladm_status_t			status;
 	showoverlay_state_t		*sp = ofarg->ofmt_cbarg;
 	dladm_overlay_propinfo_handle_t	infop = sp->sho_info;
-	const char 			*pname;
+	const char			*pname;
 	uint_t				type, prot;
 	const void			*def;
 	uint32_t			defsize;
@@ -10312,7 +10330,7 @@ print_overlay_targ_cb(ofmt_arg_t *ofarg, char *buf, uint_t bufsize)
 			} else if (inet_ntop(AF_INET6, &point->dop_ip, ipbuf,
 			    sizeof (ipbuf)) == NULL) {
 				/*
-				 * The only failrues we should get are
+				 * The only failures we should get are
 				 * EAFNOSUPPORT and ENOSPC because of buffer
 				 * exhaustion. In either of these cases, that
 				 * means something has gone horribly wrong.
@@ -10454,7 +10472,7 @@ do_show_overlay(int argc, char *argv[], const char *use)
 	int			i, opt;
 	datalink_id_t		linkid = DATALINK_ALL_LINKID;
 	dladm_status_t		status;
-	int 			(*funcp)(dladm_handle_t, datalink_id_t, void *);
+	int			(*funcp)(dladm_handle_t, datalink_id_t, void *);
 	char			*fields_str = NULL;
 	const ofmt_field_t	*fieldsp;
 	ofmt_status_t		oferr;
@@ -10607,4 +10625,36 @@ do_modify_overlay(int argc, char *argv[], const char *use)
 			    "target cache %s", optarg, argv[optind]);
 	}
 
+}
+
+static void
+do_up_overlay(int argc, char *argv[], const char *use)
+{
+	datalink_id_t	linkid = DATALINK_ALL_LINKID;
+	dladm_status_t	status;
+
+	/*
+	 * get the id or the name of the overlay (optional last argument)
+	 */
+	if (argc == 2) {
+		status = dladm_name2info(handle, argv[1], &linkid, NULL, NULL,
+		    NULL);
+		if (status != DLADM_STATUS_OK)
+			goto done;
+	} else if (argc > 2) {
+		usage();
+	}
+
+	status = dladm_overlay_up(handle, linkid, &errlist);
+
+done:
+	if (status != DLADM_STATUS_OK) {
+		if (argc == 2) {
+			die_dlerrlist(status, &errlist,
+			    "could not bring up overlay '%s'", argv[1]);
+		} else {
+			die_dlerrlist(status, &errlist,
+			    "could not bring overlays up");
+		}
+	}
 }

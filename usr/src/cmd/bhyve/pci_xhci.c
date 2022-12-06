@@ -167,6 +167,13 @@ struct pci_xhci_dev_ep {
 #define	ep_tr		_ep_trbsctx._epu_tr
 #define	ep_sctx		_ep_trbsctx._epu_sctx
 
+	/*
+	 * Caches the value of MaxPStreams from the endpoint context
+	 * when an endpoint is initialized and is used to validate the
+	 * use of ep_ringaddr vs ep_sctx_trbs[] as well as the length
+	 * of ep_sctx_trbs[].
+	 */
+	uint32_t ep_MaxPStreams;
 	union {
 		struct pci_xhci_trb_ring _epu_trb;
 		struct pci_xhci_trb_ring *_epu_sctx_trbs;
@@ -483,9 +490,14 @@ pci_xhci_portregs_write(struct pci_xhci_softc *sc, uint64_t offset,
 		oldpls = XHCI_PS_PLS_GET(p->portsc);
 		newpls = XHCI_PS_PLS_GET(value);
 
+#ifndef __FreeBSD__
+		p->portsc &= XHCI_PS_PED | XHCI_PS_PP | XHCI_PS_PLS_MASK |
+		             XHCI_PS_SPEED_MASK | XHCI_PS_PIC_MASK;
+#else
 		p->portsc &= XHCI_PS_PED | XHCI_PS_PLS_MASK |
 		             XHCI_PS_SPEED_MASK | XHCI_PS_PIC_MASK;
-  
+#endif
+
 		if (XHCI_DEVINST_PTR(sc, port))
 			p->portsc |= XHCI_PS_CCS;
 
@@ -541,7 +553,7 @@ pci_xhci_portregs_write(struct pci_xhci_softc *sc, uint64_t offset,
 			break;
 		}
 		break;
-	case 4: 
+	case 4:
 		/* Port power management status and control register  */
 		p->portpmsc = value;
 		break;
@@ -560,7 +572,7 @@ pci_xhci_portregs_write(struct pci_xhci_softc *sc, uint64_t offset,
 	}
 }
 
-struct xhci_dev_ctx *
+static struct xhci_dev_ctx *
 pci_xhci_get_dev_ctx(struct pci_xhci_softc *sc, uint32_t slot)
 {
 	uint64_t devctx_addr;
@@ -584,7 +596,7 @@ pci_xhci_get_dev_ctx(struct pci_xhci_softc *sc, uint32_t slot)
 	return (devctx);
 }
 
-struct xhci_trb *
+static struct xhci_trb *
 pci_xhci_trb_next(struct pci_xhci_softc *sc, struct xhci_trb *curtrb,
     uint64_t *guestaddr)
 {
@@ -595,7 +607,7 @@ pci_xhci_trb_next(struct pci_xhci_softc *sc, struct xhci_trb *curtrb,
 	if (XHCI_TRB_3_TYPE_GET(curtrb->dwTrb3) == XHCI_TRB_TYPE_LINK) {
 		if (guestaddr)
 			*guestaddr = curtrb->qwTrb0 & ~0xFUL;
-		
+
 		next = XHCI_GADDR(sc, curtrb->qwTrb0 & ~0xFUL);
 	} else {
 		if (guestaddr)
@@ -669,6 +681,7 @@ pci_xhci_init_ep(struct pci_xhci_dev_emu *dev, int epid)
 		devep->ep_tr = XHCI_GADDR(dev->xsc, devep->ep_ringaddr);
 		DPRINTF(("init_ep tr DCS %x", devep->ep_ccs));
 	}
+	devep->ep_MaxPStreams = pstreams;
 
 	if (devep->ep_xfer == NULL) {
 		devep->ep_xfer = malloc(sizeof(struct usb_data_xfer));
@@ -690,9 +703,8 @@ pci_xhci_disable_ep(struct pci_xhci_dev_emu *dev, int epid)
 	ep_ctx->dwEpCtx0 = (ep_ctx->dwEpCtx0 & ~0x7) | XHCI_ST_EPCTX_DISABLED;
 
 	devep = &dev->eps[epid];
-	if (XHCI_EPCTX_0_MAXP_STREAMS_GET(ep_ctx->dwEpCtx0) > 0 &&
-	    devep->ep_sctx_trbs != NULL)
-			free(devep->ep_sctx_trbs);
+	if (devep->ep_MaxPStreams > 0)
+		free(devep->ep_sctx_trbs);
 
 	if (devep->ep_xfer != NULL) {
 		free(devep->ep_xfer);
@@ -1152,7 +1164,7 @@ pci_xhci_cmd_reset_ep(struct pci_xhci_softc *sc, uint32_t slot,
 
 	ep_ctx->dwEpCtx0 = (ep_ctx->dwEpCtx0 & ~0x7) | XHCI_ST_EPCTX_STOPPED;
 
-	if (XHCI_EPCTX_0_MAXP_STREAMS_GET(ep_ctx->dwEpCtx0) == 0)
+	if (devep->ep_MaxPStreams == 0)
 		ep_ctx->qwEpCtx2 = devep->ep_ringaddr | devep->ep_ccs;
 
 	DPRINTF(("pci_xhci: reset ep[%u] %08x %08x %016lx %08x",
@@ -1173,16 +1185,15 @@ done:
 
 static uint32_t
 pci_xhci_find_stream(struct pci_xhci_softc *sc, struct xhci_endp_ctx *ep,
-    uint32_t streamid, struct xhci_stream_ctx **osctx)
+    struct pci_xhci_dev_ep *devep, uint32_t streamid,
+    struct xhci_stream_ctx **osctx)
 {
 	struct xhci_stream_ctx *sctx;
-	uint32_t	maxpstreams;
 
-	maxpstreams = XHCI_EPCTX_0_MAXP_STREAMS_GET(ep->dwEpCtx0);
-	if (maxpstreams == 0)
+	if (devep->ep_MaxPStreams == 0)
 		return (XHCI_TRB_ERROR_TRB);
 
-	if (maxpstreams > XHCI_STREAMS_MAX)
+	if (devep->ep_MaxPStreams > XHCI_STREAMS_MAX)
 		return (XHCI_TRB_ERROR_INVALID_SID);
 
 	if (XHCI_EPCTX_0_LSA_GET(ep->dwEpCtx0) == 0) {
@@ -1191,7 +1202,7 @@ pci_xhci_find_stream(struct pci_xhci_softc *sc, struct xhci_endp_ctx *ep,
 	}
 
 	/* only support primary stream */
-	if (streamid > maxpstreams)
+	if (streamid > devep->ep_MaxPStreams)
 		return (XHCI_TRB_ERROR_STREAM_TYPE);
 
 	sctx = XHCI_GADDR(sc, ep->qwEpCtx2 & ~0xFUL) + streamid;
@@ -1253,14 +1264,15 @@ pci_xhci_cmd_set_tr(struct pci_xhci_softc *sc, uint32_t slot,
 	}
 
 	streamid = XHCI_TRB_2_STREAM_GET(trb->dwTrb2);
-	if (XHCI_EPCTX_0_MAXP_STREAMS_GET(ep_ctx->dwEpCtx0) > 0) {
+	if (devep->ep_MaxPStreams > 0) {
 		struct xhci_stream_ctx *sctx;
 
 		sctx = NULL;
-		cmderr = pci_xhci_find_stream(sc, ep_ctx, streamid, &sctx);
+		cmderr = pci_xhci_find_stream(sc, ep_ctx, devep, streamid,
+		    &sctx);
 		if (sctx != NULL) {
 			assert(devep->ep_sctx != NULL);
-			
+
 			devep->ep_sctx[streamid].qwSctx0 = trb->qwTrb0;
 			devep->ep_sctx_trbs[streamid].ringaddr =
 			    trb->qwTrb0 & ~0xF;
@@ -1379,7 +1391,7 @@ pci_xhci_complete_commands(struct pci_xhci_softc *sc)
 
 	while (1) {
 		sc->opregs.cr_p = trb;
-	
+
 		type = XHCI_TRB_3_TYPE_GET(trb->dwTrb3);
 
 		if ((trb->dwTrb3 & XHCI_TRB_3_CYCLE_BIT) !=
@@ -1474,7 +1486,7 @@ pci_xhci_complete_commands(struct pci_xhci_softc *sc)
 		}
 
 		if (type != XHCI_TRB_TYPE_LINK) {
-			/* 
+			/*
 			 * insert command completion event and assert intr
 			 */
 			evtrb.qwTrb0 = crcr;
@@ -1602,7 +1614,7 @@ pci_xhci_xfer_complete(struct pci_xhci_softc *sc, struct usb_data_xfer *xfer,
 		if (XHCI_TRB_3_TYPE_GET(trbflags) == XHCI_TRB_TYPE_EVENT_DATA) {
 			DPRINTF(("pci_xhci EVENT_DATA edtla %u", edtla));
 			evtrb.qwTrb0 = trb->qwTrb0;
-			evtrb.dwTrb2 = (edtla & 0xFFFFF) | 
+			evtrb.dwTrb2 = (edtla & 0xFFFFF) |
 			         XHCI_TRB_2_ERROR_SET(err);
 			evtrb.dwTrb3 |= XHCI_TRB_3_ED_BIT;
 			edtla = 0;
@@ -1627,7 +1639,7 @@ pci_xhci_update_ep_ring(struct pci_xhci_softc *sc, struct pci_xhci_dev_emu *dev,
     uint32_t streamid, uint64_t ringaddr, int ccs)
 {
 
-	if (XHCI_EPCTX_0_MAXP_STREAMS_GET(ep_ctx->dwEpCtx0) != 0) {
+	if (devep->ep_MaxPStreams != 0) {
 		devep->ep_sctx[streamid].qwSctx0 = (ringaddr & ~0xFUL) |
 		                                   (ccs & 0x1);
 
@@ -1954,7 +1966,7 @@ pci_xhci_device_doorbell(struct pci_xhci_softc *sc, uint32_t slot,
 	}
 
 	/* get next trb work item */
-	if (XHCI_EPCTX_0_MAXP_STREAMS_GET(ep_ctx->dwEpCtx0) != 0) {
+	if (devep->ep_MaxPStreams != 0) {
 		struct xhci_stream_ctx *sctx;
 
 		/*
@@ -1967,7 +1979,7 @@ pci_xhci_device_doorbell(struct pci_xhci_softc *sc, uint32_t slot,
 		}
 
 		sctx = NULL;
-		pci_xhci_find_stream(sc, ep_ctx, streamid, &sctx);
+		pci_xhci_find_stream(sc, ep_ctx, devep, streamid, &sctx);
 		if (sctx == NULL) {
 			DPRINTF(("pci_xhci: invalid stream %u", streamid));
 			return;
@@ -2569,7 +2581,7 @@ pci_xhci_init_port(struct pci_xhci_softc *sc, int portn)
 	if (dev) {
 		port->portsc = XHCI_PS_CCS |		/* connected */
 		               XHCI_PS_PP;		/* port power */
-		
+
 		if (dev->dev_ue->ue_usbver == 2) {
 			port->portsc |= XHCI_PS_PLS_SET(UPS_PORT_LS_POLL) |
 		               XHCI_PS_SPEED_SET(dev->dev_ue->ue_usbspeed);
@@ -2578,7 +2590,7 @@ pci_xhci_init_port(struct pci_xhci_softc *sc, int portn)
 		               XHCI_PS_PED |		/* enabled */
 		               XHCI_PS_SPEED_SET(dev->dev_ue->ue_usbspeed);
 		}
-		
+
 		DPRINTF(("Init port %d 0x%x", portn, port->portsc));
 	} else {
 		port->portsc = XHCI_PS_PLS_SET(UPS_PORT_LS_RX_DET) | XHCI_PS_PP;
@@ -2852,6 +2864,11 @@ pci_xhci_init(struct vmctx *ctx, struct pci_devinst *pi, nvlist_t *nvl)
 	struct pci_xhci_softc *sc;
 	int	error;
 
+#ifndef __FreeBSD__
+	if (get_config_bool_default("xhci.debug", false))
+		xhci_debug = 1;
+#endif
+
 	if (xhci_in_use) {
 		WPRINTF(("pci_xhci controller already defined"));
 		return (-1);
@@ -2940,7 +2957,7 @@ done:
 	return (error);
 }
 
-struct pci_devemu pci_de_xhci = {
+static const struct pci_devemu pci_de_xhci = {
 	.pe_emu =	"xhci",
 	.pe_init =	pci_xhci_init,
 	.pe_legacy_config = pci_xhci_legacy_config,

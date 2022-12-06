@@ -23,6 +23,7 @@
  * Copyright (c) 1992, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2019 Joyent, Inc.
  * Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
+ * Copyright 2022 Garrett D'Amore <garrett@damore.org>
  */
 
 #include <sys/asm_linkage.h>
@@ -365,7 +366,6 @@ fcnname/**/_info:							\
 	NO_UNLOAD_STUB(sockfs, sosendfile64,	nomod_zero);
 	NO_UNLOAD_STUB(sockfs, snf_segmap,	nomod_einval);
 	NO_UNLOAD_STUB(sockfs, sock_getfasync,	nomod_zero);
-	NO_UNLOAD_STUB(sockfs, nl7c_sendfilev,	nomod_zero);
 	NO_UNLOAD_STUB(sockfs, sotpi_sototpi,	nomod_zero);
 	NO_UNLOAD_STUB(sockfs, socket_sendmblk,	nomod_zero);
 	NO_UNLOAD_STUB(sockfs, socket_setsockopt,  nomod_zero);
@@ -860,7 +860,6 @@ fcnname/**/_info:							\
 	NO_UNLOAD_STUB(c2audit, audit_devpolicy,	nomod_zero);
 	NO_UNLOAD_STUB(c2audit, audit_setfsat_path,	nomod_zero);
 	NO_UNLOAD_STUB(c2audit, audit_cryptoadm,	nomod_zero);
-	NO_UNLOAD_STUB(c2audit, audit_kssl,		nomod_zero);
 	NO_UNLOAD_STUB(c2audit, audit_pf_policy,	nomod_zero);
 	NO_UNLOAD_STUB(c2audit, au_doormsg,		nomod_zero);
 	NO_UNLOAD_STUB(c2audit, au_uwrite,		nomod_zero);
@@ -935,19 +934,6 @@ fcnname/**/_info:							\
         MODULE(cpr,misc);
         STUB(cpr, cpr, 0);
         END_MODULE(cpr);
-#endif
-
-/*
- * Stubs for kernel probes (tnf module).  Not unloadable.
- */
-#ifndef TNF_MODULE
-	MODULE(tnf,drv);
-	NO_UNLOAD_STUB(tnf, tnf_ref32_1,	nomod_zero);
-	NO_UNLOAD_STUB(tnf, tnf_string_1,	nomod_zero);
-	NO_UNLOAD_STUB(tnf, tnf_opaque_array_1,	nomod_zero);
-	NO_UNLOAD_STUB(tnf, tnf_struct_tag_1,	nomod_zero);
-	NO_UNLOAD_STUB(tnf, tnf_allocate,	nomod_zero);
-	END_MODULE(tnf);
 #endif
 
 /*

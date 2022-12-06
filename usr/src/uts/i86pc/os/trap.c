@@ -81,8 +81,6 @@
 #include <sys/debugreg.h>
 #include <sys/modctl.h>
 #include <sys/aio_impl.h>
-#include <sys/tnf.h>
-#include <sys/tnf_probe.h>
 #include <sys/cred.h>
 #include <sys/mman.h>
 #include <sys/x86_archext.h>
@@ -284,6 +282,7 @@ instr_is_other_syscall(caddr_t pc, int which)
 	return (0);
 }
 
+#ifdef DEBUG
 static const char *
 syscall_insn_string(int syscall_insn)
 {
@@ -298,6 +297,7 @@ syscall_insn_string(int syscall_insn)
 		return ("Unknown");
 	}
 }
+#endif /* DEBUG */
 
 static int
 ldt_rewrite_syscall(struct regs *rp, proc_t *p, int syscall_insn)
@@ -542,9 +542,6 @@ trap(struct regs *rp, caddr_t addr, processorid_t cpuid)
 			mstate = LMS_TRAP;
 			break;
 		}
-		/* Kernel probe */
-		TNF_PROBE_1(thread_state, "thread", /* CSTYLED */,
-		    tnf_microstate, state, mstate);
 		mstate = new_mstate(ct, mstate);
 
 		bzero(&siginfo, sizeof (siginfo));
@@ -978,7 +975,7 @@ trap(struct regs *rp, caddr_t addr, processorid_t cpuid)
 	case T_EXTERRFLT + USER: /* x87 floating point exception pending */
 		if (tudebug && tudebugfpe)
 			showregs(type, rp, addr);
-		if (sicode = fpexterrflt(rp)) {
+		if ((sicode = fpexterrflt(rp)) != 0) {
 			siginfo.si_signo = SIGFPE;
 			siginfo.si_code  = sicode;
 			siginfo.si_addr  = (caddr_t)rp->r_pc;
@@ -1480,10 +1477,6 @@ out:	/* We can't get here from a system trap */
 	prunstop();
 	(void) new_mstate(ct, mstate);
 
-	/* Kernel probe */
-	TNF_PROBE_1(thread_state, "thread", /* CSTYLED */,
-	    tnf_microstate, state, LMS_USER);
-
 	return;
 
 cleanup:	/* system traps end up here */
@@ -1929,7 +1922,7 @@ dump_ttrace(void)
 	trap_trace_ctl_t *ttc;
 	trap_trace_rec_t *rec;
 	uintptr_t current;
-	int i, j, k;
+	int i, j;
 	int n = NCPU;
 	const char banner[] =
 	    "CPU          ADDRESS    TIMESTAMP TYPE  VC HANDLER          PC\n";
@@ -2005,6 +1998,7 @@ dump_ttrace(void)
 					stype = "syse";	/* sysenter */
 					break;
 				default:
+					stype = "";
 					break;
 				}
 				(void) snprintf(data2, sizeof (data2), fmt2,

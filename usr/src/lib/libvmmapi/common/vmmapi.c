@@ -39,7 +39,7 @@
  *
  * Copyright 2015 Pluribus Networks Inc.
  * Copyright 2019 Joyent, Inc.
- * Copyright 2021 Oxide Computer Company
+ * Copyright 2022 Oxide Computer Company
  */
 
 #include <sys/cdefs.h>
@@ -60,6 +60,9 @@ __FBSDID("$FreeBSD$");
 #include <machine/specialreg.h>
 
 #include <errno.h>
+#ifdef	__FreeBSD__
+#include <stdbool.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
@@ -69,6 +72,9 @@ __FBSDID("$FreeBSD$");
 
 #include <libutil.h>
 
+#ifdef	__FreeBSD__
+#include <vm/vm.h>
+#endif
 #include <machine/vmm.h>
 #include <machine/vmm_dev.h>
 
@@ -84,6 +90,8 @@ __FBSDID("$FreeBSD$");
 
 /* Rely on PROT_NONE for guard purposes */
 #define	MAP_GUARD		(MAP_PRIVATE | MAP_ANON | MAP_NORESERVE)
+
+#define	_Thread_local		__thread
 #endif
 
 /*
@@ -109,7 +117,27 @@ struct vmctx {
 #ifdef	__FreeBSD__
 #define	CREATE(x)  sysctlbyname("hw.vmm.create", NULL, NULL, (x), strlen((x)))
 #define	DESTROY(x) sysctlbyname("hw.vmm.destroy", NULL, NULL, (x), strlen((x)))
+#endif
 
+static int
+vm_device_open(const char *name)
+{
+	int fd, len;
+	char *vmfile;
+
+	len = strlen("/dev/vmm/") + strlen(name) + 1;
+	vmfile = malloc(len);
+	assert(vmfile != NULL);
+	snprintf(vmfile, len, "/dev/vmm/%s", name);
+
+	/* Open the device file */
+	fd = open(vmfile, O_RDWR, 0);
+
+	free(vmfile);
+	return (fd);
+}
+
+#ifdef	__FreeBSD__
 int
 vm_create(const char *name)
 {
@@ -118,19 +146,6 @@ vm_create(const char *name)
 		kldload("vmm");
 	return (CREATE(name));
 }
-
-void
-vm_destroy(struct vmctx *vm)
-{
-	assert(vm != NULL);
-
-	if (vm->fd >= 0)
-		close(vm->fd);
-	DESTROY(vm->name);
-
-	free(vm);
-}
-
 #else
 static int
 vm_do_ctl(int cmd, void *req)
@@ -165,54 +180,7 @@ vm_create(const char *name, uint64_t flags)
 
 	return (vm_do_ctl(VMM_CREATE_VM, &req));
 }
-
-void
-vm_close(struct vmctx *vm)
-{
-	assert(vm != NULL);
-	assert(vm->fd >= 0);
-
-	(void) close(vm->fd);
-
-	free(vm);
-}
-
-void
-vm_destroy(struct vmctx *vm)
-{
-	struct vm_destroy_req req;
-
-	assert(vm != NULL);
-
-	if (vm->fd >= 0) {
-		(void) close(vm->fd);
-		vm->fd = -1;
-	}
-
-	(void) strncpy(req.name, vm->name, VM_MAX_NAMELEN);
-	(void) vm_do_ctl(VMM_DESTROY_VM, &req);
-
-	free(vm);
-}
 #endif
-
-static int
-vm_device_open(const char *name)
-{
-	int fd, len;
-	char *vmfile;
-
-	len = strlen("/dev/vmm/") + strlen(name) + 1;
-	vmfile = malloc(len);
-	assert(vmfile != NULL);
-	snprintf(vmfile, len, "/dev/vmm/%s", name);
-
-	/* Open the device file */
-	fd = open(vmfile, O_RDWR, 0);
-
-	free(vmfile);
-	return (fd);
-}
 
 struct vmctx *
 vm_open(const char *name)
@@ -240,6 +208,53 @@ err:
 	return (NULL);
 }
 
+#ifdef	__FreeBSD__
+void
+vm_close(struct vmctx *vm)
+{
+	assert(vm != NULL);
+
+	close(vm->fd);
+	free(vm);
+}
+
+void
+vm_destroy(struct vmctx *vm)
+{
+	assert(vm != NULL);
+
+	if (vm->fd >= 0)
+		close(vm->fd);
+	DESTROY(vm->name);
+
+	free(vm);
+}
+#else
+void
+vm_close(struct vmctx *vm)
+{
+	assert(vm != NULL);
+	assert(vm->fd >= 0);
+
+	(void) close(vm->fd);
+
+	free(vm);
+}
+
+void
+vm_destroy(struct vmctx *vm)
+{
+	assert(vm != NULL);
+
+	if (vm->fd >= 0) {
+		(void) ioctl(vm->fd, VM_DESTROY_SELF, 0);
+		(void) close(vm->fd);
+		vm->fd = -1;
+	}
+
+	free(vm);
+}
+#endif
 
 int
 vm_parse_memsize(const char *opt, size_t *ret_memsize)
@@ -331,6 +346,19 @@ vm_mmap_memseg(struct vmctx *ctx, vm_paddr_t gpa, int segid, vm_ooffset_t off,
 	error = ioctl(ctx->fd, VM_MMAP_MEMSEG, &memmap);
 	return (error);
 }
+
+#ifdef	__FreeBSD__
+int
+vm_get_guestmem_from_ctx(struct vmctx *ctx, char **guest_baseaddr,
+    size_t *lowmem_size, size_t *highmem_size)
+{
+
+	*guest_baseaddr = ctx->baseaddr;
+	*lowmem_size = ctx->lowmem;
+	*highmem_size = ctx->highmem;
+	return (0);
+}
+#endif
 
 int
 vm_munmap_memseg(struct vmctx *ctx, vm_paddr_t gpa, size_t len)
@@ -596,6 +624,33 @@ vm_map_gpa(struct vmctx *ctx, vm_paddr_t gaddr, size_t len)
 	return (NULL);
 }
 
+#ifdef	__FreeBSD__
+vm_paddr_t
+vm_rev_map_gpa(struct vmctx *ctx, void *addr)
+{
+	vm_paddr_t offaddr;
+
+	offaddr = (char *)addr - ctx->baseaddr;
+
+	if (ctx->lowmem > 0)
+		if (offaddr <= ctx->lowmem)
+			return (offaddr);
+
+	if (ctx->highmem > 0)
+		if (offaddr >= 4*GB && offaddr < 4*GB + ctx->highmem)
+			return (offaddr);
+
+	return ((vm_paddr_t)-1);
+}
+
+const char *
+vm_get_name(struct vmctx *ctx)
+{
+
+	return (ctx->name);
+}
+#endif /* __FreeBSD__ */
+
 size_t
 vm_get_lowmem_size(struct vmctx *ctx)
 {
@@ -802,6 +857,21 @@ vm_get_register_set(struct vmctx *ctx, int vcpu, unsigned int count,
 	return (error);
 }
 
+#ifdef	__FreeBSD__
+int
+vm_run(struct vmctx *ctx, int vcpu, struct vm_exit *vmexit)
+{
+	int error;
+	struct vm_run vmrun;
+
+	bzero(&vmrun, sizeof(vmrun));
+	vmrun.cpuid = vcpu;
+
+	error = ioctl(ctx->fd, VM_RUN, &vmrun);
+	bcopy(&vmrun.vm_exit, vmexit, sizeof(struct vm_exit));
+	return (error);
+}
+#else
 int
 vm_run(struct vmctx *ctx, int vcpu, const struct vm_entry *vm_entry,
     struct vm_exit *vm_exit)
@@ -814,6 +884,7 @@ vm_run(struct vmctx *ctx, int vcpu, const struct vm_entry *vm_entry,
 
 	return (ioctl(ctx->fd, VM_RUN, &entry));
 }
+#endif
 
 int
 vm_suspend(struct vmctx *ctx, enum vm_suspend_how how)
@@ -825,7 +896,14 @@ vm_suspend(struct vmctx *ctx, enum vm_suspend_how how)
 	return (ioctl(ctx->fd, VM_SUSPEND, &vmsuspend));
 }
 
-#ifndef __FreeBSD__
+#ifdef __FreeBSD__
+int
+vm_reinit(struct vmctx *ctx)
+{
+
+	return (ioctl(ctx->fd, VM_REINIT, 0));
+}
+#else
 int
 vm_reinit(struct vmctx *ctx, uint64_t flags)
 {
@@ -834,13 +912,6 @@ vm_reinit(struct vmctx *ctx, uint64_t flags)
 	};
 
 	return (ioctl(ctx->fd, VM_REINIT, &reinit));
-}
-#else
-int
-vm_reinit(struct vmctx *ctx)
-{
-
-	return (ioctl(ctx->fd, VM_REINIT, 0));
 }
 #endif
 
@@ -1203,26 +1274,6 @@ vm_setup_pptdev_msix(struct vmctx *ctx, int vcpu, int bus, int slot, int func,
 }
 
 int
-vm_get_pptdev_limits(struct vmctx *ctx, int bus, int slot, int func,
-    int *msi_limit, int *msix_limit)
-{
-	struct vm_pptdev_limits pptlimits;
-	int error;
-
-	bzero(&pptlimits, sizeof (pptlimits));
-	pptlimits.bus = bus;
-	pptlimits.slot = slot;
-	pptlimits.func = func;
-
-	error = ioctl(ctx->fd, VM_GET_PPTDEV_LIMITS, &pptlimits);
-
-	*msi_limit = pptlimits.msi_limit;
-	*msix_limit = pptlimits.msix_limit;
-
-	return (error);
-}
-
-int
 vm_disable_pptdev_msix(struct vmctx *ctx, int bus, int slot, int func)
 {
 	struct vm_pptdev ppt;
@@ -1340,21 +1391,47 @@ uint64_t *
 vm_get_stats(struct vmctx *ctx, int vcpu, struct timeval *ret_tv,
 	     int *ret_entries)
 {
-	int error;
+	static _Thread_local uint64_t *stats_buf;
+	static _Thread_local uint32_t stats_count;
+	uint64_t *new_stats;
+	struct vm_stats vmstats;
+	uint32_t count, index;
+	bool have_stats;
 
-	static struct vm_stats vmstats;
-
+	have_stats = false;
 	vmstats.cpuid = vcpu;
+	count = 0;
+	for (index = 0;; index += nitems(vmstats.statbuf)) {
+		vmstats.index = index;
+		if (ioctl(ctx->fd, VM_STATS_IOC, &vmstats) != 0)
+			break;
+		if (stats_count < index + vmstats.num_entries) {
+			new_stats = reallocarray(stats_buf,
+			    index + vmstats.num_entries, sizeof(uint64_t));
+			if (new_stats == NULL) {
+				errno = ENOMEM;
+				return (NULL);
+			}
+			stats_count = index + vmstats.num_entries;
+			stats_buf = new_stats;
+		}
+		memcpy(stats_buf + index, vmstats.statbuf,
+		    vmstats.num_entries * sizeof(uint64_t));
+		count += vmstats.num_entries;
+		have_stats = true;
 
-	error = ioctl(ctx->fd, VM_STATS_IOC, &vmstats);
-	if (error == 0) {
+		if (vmstats.num_entries != nitems(vmstats.statbuf))
+			break;
+	}
+	if (have_stats) {
 		if (ret_entries)
-			*ret_entries = vmstats.num_entries;
+			*ret_entries = count;
 		if (ret_tv)
 			*ret_tv = vmstats.tv;
-		return (vmstats.statbuf);
-	} else
+		return (stats_buf);
+	} else {
 		return (NULL);
+	}
 }
 
 const char *
@@ -1433,13 +1510,21 @@ vcpu_reset(struct vmctx *vmctx, int vcpu)
 	if ((error = vm_set_register(vmctx, vcpu, VM_REG_GUEST_RIP, rip)) != 0)
 		goto done;
 
+	/*
+	 * According to Intels Software Developer Manual CR0 should be
+	 * initialized with CR0_ET | CR0_NW | CR0_CD but that crashes some
+	 * guests like Windows.
+	 */
 	cr0 = CR0_NE;
 	if ((error = vm_set_register(vmctx, vcpu, VM_REG_GUEST_CR0, cr0)) != 0)
 		goto done;
 
+	if ((error = vm_set_register(vmctx, vcpu, VM_REG_GUEST_CR2, zero)) != 0)
+		goto done;
+
 	if ((error = vm_set_register(vmctx, vcpu, VM_REG_GUEST_CR3, zero)) != 0)
 		goto done;
-	
+
 	cr4 = 0;
 	if ((error = vm_set_register(vmctx, vcpu, VM_REG_GUEST_CR4, cr4)) != 0)
 		goto done;
@@ -1502,6 +1587,9 @@ vcpu_reset(struct vmctx *vmctx, int vcpu)
 	if ((error = vm_set_register(vmctx, vcpu, VM_REG_GUEST_GS, sel)) != 0)
 		goto done;
 
+	if ((error = vm_set_register(vmctx, vcpu, VM_REG_GUEST_EFER, zero)) != 0)
+		goto done;
+
 	/* General purpose registers */
 	rdx = 0xf00;
 	if ((error = vm_set_register(vmctx, vcpu, VM_REG_GUEST_RAX, zero)) != 0)
@@ -1519,6 +1607,22 @@ vcpu_reset(struct vmctx *vmctx, int vcpu)
 	if ((error = vm_set_register(vmctx, vcpu, VM_REG_GUEST_RBP, zero)) != 0)
 		goto done;
 	if ((error = vm_set_register(vmctx, vcpu, VM_REG_GUEST_RSP, zero)) != 0)
+		goto done;
+	if ((error = vm_set_register(vmctx, vcpu, VM_REG_GUEST_R8, zero)) != 0)
+		goto done;
+	if ((error = vm_set_register(vmctx, vcpu, VM_REG_GUEST_R9, zero)) != 0)
+		goto done;
+	if ((error = vm_set_register(vmctx, vcpu, VM_REG_GUEST_R10, zero)) != 0)
+		goto done;
+	if ((error = vm_set_register(vmctx, vcpu, VM_REG_GUEST_R11, zero)) != 0)
+		goto done;
+	if ((error = vm_set_register(vmctx, vcpu, VM_REG_GUEST_R12, zero)) != 0)
+		goto done;
+	if ((error = vm_set_register(vmctx, vcpu, VM_REG_GUEST_R13, zero)) != 0)
+		goto done;
+	if ((error = vm_set_register(vmctx, vcpu, VM_REG_GUEST_R14, zero)) != 0)
+		goto done;
+	if ((error = vm_set_register(vmctx, vcpu, VM_REG_GUEST_R15, zero)) != 0)
 		goto done;
 
 	/* GDTR, IDTR */
@@ -1560,7 +1664,16 @@ vcpu_reset(struct vmctx *vmctx, int vcpu)
 	if ((error = vm_set_register(vmctx, vcpu, VM_REG_GUEST_LDTR, 0)) != 0)
 		goto done;
 
-	/* XXX cr2, debug registers */
+	if ((error = vm_set_register(vmctx, vcpu, VM_REG_GUEST_DR6,
+		 0xffff0ff0)) != 0)
+		goto done;
+	if ((error = vm_set_register(vmctx, vcpu, VM_REG_GUEST_DR7, 0x400)) !=
+	    0)
+		goto done;
+
+	if ((error = vm_set_register(vmctx, vcpu, VM_REG_GUEST_INTR_SHADOW,
+		 zero)) != 0)
+		goto done;
 
 	error = 0;
 done:

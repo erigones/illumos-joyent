@@ -36,7 +36,7 @@
  *   console device; configure process runtime attributes such as resource
  *   controls, pool bindings, fine-grained privileges.
  *
- * - Launch the zone's init(1M) process.
+ * - Launch the zone's init(8) process.
  *
  * - Implement a door server; clients (like zoneadm) connect to the door
  *   server and request zone state changes.  The kernel is also a client of
@@ -316,7 +316,8 @@ strnappend(char *dest, size_t destsize, const char *src)
 }
 
 /*
- * Since illumos boot arguments are getopt(3c) compatible (see kernel(1m)), we
+ * Emit a warning for any boot arguments which are unrecognized.  Since
+ * Solaris boot arguments are getopt(3c) compatible (see kernel(8)), we
  * put the arguments into an argv style array, use getopt to process them,
  * and put the resultant argument string back into outargs. Non-native brands
  * may support alternate forms of boot arguments so we must handle that as well.
@@ -1337,10 +1338,10 @@ zone_bootup(zlog_t *zlogp, const char *bootargs, int zstate, boolean_t debug)
 		goto bad;
 	}
 
-	/* Get the path for this zone's init(1M) (or equivalent) process.  */
+	/* Get the path for this zone's init(8) (or equivalent) process.  */
 	if (get_initname(bh, init_file, MAXPATHLEN) != 0) {
 		zerror(zlogp, B_FALSE,
-		    "unable to determine zone's init(1M) location");
+		    "unable to determine zone's init(8) location");
 		brand_close(bh);
 		goto bad;
 	}
@@ -2024,8 +2025,8 @@ server(void *cookie, char *args, size_t alen, door_desc_t *dp,
 			zerror(zlogp, B_FALSE, "zone is already ready");
 			rval = 0;
 			break;
-		case Z_BOOT:
 		case Z_FORCEBOOT:
+		case Z_BOOT:
 			(void) strlcpy(boot_args, zargp->bootbuf,
 			    sizeof (boot_args));
 			eventstream_write(Z_EVT_ZONE_BOOTING);
@@ -2053,8 +2054,8 @@ server(void *cookie, char *args, size_t alen, door_desc_t *dp,
 		case Z_SHUTDOWN:
 		case Z_REBOOT:
 		case Z_NOTE_UNINSTALLING:
-		case Z_MOUNT:
 		case Z_FORCEMOUNT:
+		case Z_MOUNT:
 		case Z_UNMOUNT:
 			if (kernelcall)	/* Invalid; can't happen */
 				abort();
@@ -2103,8 +2104,8 @@ server(void *cookie, char *args, size_t alen, door_desc_t *dp,
 			else
 				eventstream_write(Z_EVT_ZONE_HALTED);
 			break;
-		case Z_BOOT:
 		case Z_FORCEBOOT:
+		case Z_BOOT:
 			/*
 			 * We could have two clients racing to boot this
 			 * zone; the second client loses, but its request
@@ -2159,8 +2160,8 @@ server(void *cookie, char *args, size_t alen, door_desc_t *dp,
 			}
 			break;
 		case Z_NOTE_UNINSTALLING:
-		case Z_MOUNT:
 		case Z_FORCEMOUNT:
+		case Z_MOUNT:
 		case Z_UNMOUNT:
 			zerror(zlogp, B_FALSE, "%s operation is invalid "
 			    "for zones in state '%s'", z_cmd_name(cmd),
@@ -2220,7 +2221,7 @@ setup_door(zlog_t *zlogp)
 }
 
 /*
- * zoneadm(1m) will start zoneadmd if it thinks it isn't running; this
+ * zoneadm(8) will start zoneadmd if it thinks it isn't running; this
  * is where zoneadmd itself will check to see that another instance of
  * zoneadmd isn't already controlling this zone.
  *
@@ -2235,7 +2236,7 @@ setup_door(zlog_t *zlogp)
  *	There is no fattach(3c)ed door, so we have a chance of becoming
  *	the managing zoneadmd. We attempt to lock the file: if it is
  *	already locked, that means someone else raced us here, so we
- *	lose and give up.  zoneadm(1m) will try to contact the zoneadmd
+ *	lose and give up.  zoneadm(8) will try to contact the zoneadmd
  *	that beat us to it.
  *
  * - If the file we opened is a namefs file:
@@ -2245,7 +2246,7 @@ setup_door(zlog_t *zlogp)
  *	will succeed in acquiring it since the vnode locked by the
  *	"winning" zoneadmd was a regular one, and the one we locked was
  *	the fattach(3c)'ed door node.  At any rate, no harm is done, and
- *	we just return to zoneadm(1m) which knows to retry.
+ *	we just return to zoneadm(8) which knows to retry.
  */
 static int
 make_daemon_exclusive(zlog_t *zlogp)
@@ -2303,7 +2304,7 @@ top:
 			 *
 			 * If the door has been revoked, the zoneadmd
 			 * process currently managing the zone is going
-			 * away.  We'll return control to zoneadm(1m)
+			 * away.  We'll return control to zoneadm(8)
 			 * which will try again (by which time zoneadmd
 			 * will hopefully have exited).
 			 */

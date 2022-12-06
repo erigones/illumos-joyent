@@ -27,7 +27,7 @@
 /*	   All Rights Reserved	*/
 /*
  * Copyright 2019 Joyent, Inc.
- * Copyright 2021 Oxide Computer Company
+ * Copyright 2022 Oxide Computer Company
  */
 
 #include <sys/types.h>
@@ -162,7 +162,6 @@ handle_secflag_dt(proc_t *p, uint_t dt, uint_t val)
 
 	return (0);
 }
-
 
 #ifndef _ELF32_COMPAT
 void
@@ -329,7 +328,6 @@ mapexec_brand(vnode_t *vp, uarg_t *args, Ehdr *ehdr, Addr *uphdr_vaddr,
 	return (error);
 }
 
-/*ARGSUSED*/
 int
 elfexec(vnode_t *vp, execa_t *uap, uarg_t *args, intpdata_t *idatap,
     int level, size_t *execsz, int setid, caddr_t exec_file, cred_t *cred,
@@ -363,7 +361,7 @@ elfexec(vnode_t *vp, execa_t *uap, uarg_t *args, intpdata_t *idatap,
 	int		hasauxv = 0;
 	int		hasintp = 0;
 	int		branded = 0;
-	int		dynuphdr = 0;
+	boolean_t	dynuphdr = B_FALSE;
 
 	struct proc *p = ttoproc(curthread);
 	struct user *up = PTOU(p);
@@ -550,11 +548,12 @@ elfexec(vnode_t *vp, execa_t *uap, uarg_t *args, intpdata_t *idatap,
 		 *	AT_SUN_AUXFLAGS
 		 *	AT_SUN_HWCAP
 		 *	AT_SUN_HWCAP2
-		 *	AT_SUN_PLATFORM	(added in stk_copyout)
-		 *	AT_SUN_EXECNAME	(added in stk_copyout)
+		 *	AT_SUN_HWCAP3
+		 *	AT_SUN_PLATFORM (added in stk_copyout)
+		 *	AT_SUN_EXECNAME (added in stk_copyout)
 		 *	AT_NULL
 		 *
-		 * total == 10
+		 * total == 11
 		 */
 		if (hasintp && hasu) {
 			/*
@@ -569,7 +568,7 @@ elfexec(vnode_t *vp, execa_t *uap, uarg_t *args, intpdata_t *idatap,
 			 *
 			 * total = 5
 			 */
-			args->auxsize = (10 + 5) * sizeof (aux_entry_t);
+			args->auxsize = (11 + 5) * sizeof (aux_entry_t);
 		} else if (hasintp) {
 			/*
 			 * Has PT_INTERP but no PT_PHDR
@@ -579,9 +578,9 @@ elfexec(vnode_t *vp, execa_t *uap, uarg_t *args, intpdata_t *idatap,
 			 *
 			 * total = 2
 			 */
-			args->auxsize = (10 + 2) * sizeof (aux_entry_t);
+			args->auxsize = (11 + 2) * sizeof (aux_entry_t);
 		} else {
-			args->auxsize = 10 * sizeof (aux_entry_t);
+			args->auxsize = 11 * sizeof (aux_entry_t);
 		}
 	} else {
 		args->auxsize = 0;
@@ -630,7 +629,7 @@ elfexec(vnode_t *vp, execa_t *uap, uarg_t *args, intpdata_t *idatap,
 		branded = 1;
 		/*
 		 * We will be adding 5 entries to the aux vectors.  One for
-		 * the the brandname and 4 for the brand specific aux vectors.
+		 * the brandname and 4 for the brand specific aux vectors.
 		 */
 		args->auxsize += 5 * sizeof (aux_entry_t);
 	}
@@ -739,6 +738,7 @@ elfexec(vnode_t *vp, execa_t *uap, uarg_t *args, intpdata_t *idatap,
 	error = mapelfexec(vp, ehdrp, nphdrs, phdrbase, &uphdr, &intphdr,
 	    &stphdr, &dtrphdr, dataphdrp, &bssbase, &brkbase, &voffset, NULL,
 	    len, execsz, &brksize);
+
 	/*
 	 * Our uphdr has been dynamically allocated if (and only if) its
 	 * program header flags are clear.  To avoid leaks, this must be
@@ -746,9 +746,8 @@ elfexec(vnode_t *vp, execa_t *uap, uarg_t *args, intpdata_t *idatap,
 	 */
 	dynuphdr = (uphdr != NULL && uphdr->p_flags == 0);
 
-	if (error != 0) {
+	if (error != 0)
 		goto bad;
-	}
 
 	if (uphdr != NULL && intphdr == NULL)
 		goto bad;
@@ -1025,18 +1024,16 @@ elfexec(vnode_t *vp, execa_t *uap, uarg_t *args, intpdata_t *idatap,
 		 * Used for choosing faster library routines.
 		 * (Potentially different between 32-bit and 64-bit ABIs)
 		 */
-#if defined(_LP64)
 		if (args->to_model == DATAMODEL_NATIVE) {
 			ADDAUX(aux, AT_SUN_HWCAP, auxv_hwcap)
 			ADDAUX(aux, AT_SUN_HWCAP2, auxv_hwcap_2)
+			ADDAUX(aux, AT_SUN_HWCAP3, auxv_hwcap_3)
 		} else {
 			ADDAUX(aux, AT_SUN_HWCAP, auxv_hwcap32)
 			ADDAUX(aux, AT_SUN_HWCAP2, auxv_hwcap32_2)
+			ADDAUX(aux, AT_SUN_HWCAP3, auxv_hwcap32_3)
 		}
-#else
-		ADDAUX(aux, AT_SUN_HWCAP, auxv_hwcap)
-		ADDAUX(aux, AT_SUN_HWCAP2, auxv_hwcap_2)
-#endif
+
 		if (branded) {
 			/*
 			 * Reserve space for the brand-private aux vectors,
@@ -1381,8 +1378,9 @@ getelfshdr(vnode_t *vp, cred_t *credp, const Ehdr *ehdr, uint_t nshdrs,
 	 * of the string table section must also be valid.
 	 */
 	if (ehdr->e_shentsize < MINSHDRSZ || (ehdr->e_shentsize & 3) ||
-	    nshdrs == 0 || shstrndx >= nshdrs)
+	    nshdrs == 0 || shstrndx >= nshdrs) {
 		return (EINVAL);
+	}
 
 	*shsizep = nshdrs * ehdr->e_shentsize;
 
@@ -1437,7 +1435,6 @@ getelfshdr(vnode_t *vp, cred_t *credp, const Ehdr *ehdr, uint_t nshdrs,
 	return (0);
 }
 
-
 int
 elfreadhdr(vnode_t *vp, cred_t *credp, Ehdr *ehdrp, uint_t *nphdrs,
     caddr_t *phbasep, size_t *phsizep)
@@ -1453,7 +1450,6 @@ elfreadhdr(vnode_t *vp, cred_t *credp, Ehdr *ehdrp, uint_t *nphdrs,
 	}
 	return (0);
 }
-
 
 static int
 mapelfexec(
@@ -1577,8 +1573,8 @@ mapelfexec(
 
 			addr = (caddr_t)((uintptr_t)phdr->p_vaddr + *voffset);
 
-			if ((*intphdr != NULL) && uphdr != NULL &&
-			    (*uphdr == NULL)) {
+			if (*intphdr != NULL && uphdr != NULL &&
+			    *uphdr == NULL) {
 				/*
 				 * The PT_PHDR program header is, strictly
 				 * speaking, optional.  If we find that this
@@ -2765,9 +2761,8 @@ exclude:
 done:
 	if (zeropg != NULL)
 		kmem_free(zeropg, elf_zeropg_sz);
-	if (ctx.ecc_bufsz != 0) {
+	if (ctx.ecc_bufsz != 0)
 		kmem_free(ctx.ecc_buf, ctx.ecc_bufsz);
-	}
 	kmem_free(bigwad, bigsize);
 	return (error);
 }

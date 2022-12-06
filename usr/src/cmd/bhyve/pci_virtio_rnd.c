@@ -179,6 +179,8 @@ pci_vtrnd_init(struct vmctx *ctx, struct pci_devinst *pi, nvlist_t *nvl)
 
 	sc = calloc(1, sizeof(struct pci_vtrnd_softc));
 
+	pthread_mutex_init(&sc->vrsc_mtx, NULL);
+
 	vi_softc_linkup(&sc->vrsc_vs, &vtrnd_vi_consts, sc, pi, &sc->vrsc_vq);
 	sc->vrsc_vs.vs_mtx = &sc->vrsc_mtx;
 
@@ -202,7 +204,7 @@ pci_vtrnd_init(struct vmctx *ctx, struct pci_devinst *pi, nvlist_t *nvl)
 }
 
 
-struct pci_devemu pci_de_vrnd = {
+static const struct pci_devemu pci_de_vrnd = {
 	.pe_emu =	"virtio-rnd",
 	.pe_init =	pci_vtrnd_init,
 	.pe_barwrite =	vi_pci_write,

@@ -376,7 +376,6 @@ COMMON_SUBDIRS=		\
 	setfacl		\
 	setmnt		\
 	setpgrp		\
-	setuname	\
 	sgs		\
 	sh		\
 	sleep		\
@@ -418,7 +417,6 @@ COMMON_SUBDIRS=		\
 	tic		\
 	time		\
 	tip		\
-	tnf		\
 	touch		\
 	tput		\
 	tr		\
@@ -714,7 +712,6 @@ MSGSUBDIRS=		\
 	tar		\
 	tbl		\
 	time		\
-	tnf		\
 	touch		\
 	tput		\
 	troff		\

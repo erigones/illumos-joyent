@@ -25,6 +25,7 @@
  *
  * Copyright (c) 1989, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012, Joyent, Inc. All rights reserved.
+ * Copyright 2022 Oxide Computer Company
  */
 
 /*
@@ -188,7 +189,7 @@ process_section(const char *name, Ifl_desc *ifl, Shdr *shdr, Elf_Scn *scn,
 	 * section elf_getdata() will still create a data buffer (the buffer
 	 * will be null and the size will reflect the actual memory size).
 	 */
-	if ((isp = libld_calloc(sizeof (Is_desc), 1)) == NULL)
+	if ((isp = libld_calloc(1, sizeof (Is_desc))) == NULL)
 		return (S_ERROR);
 	isp->is_shdr = shdr;
 	isp->is_file = ifl;
@@ -389,12 +390,21 @@ hw_cap(Ofl_desc *ofl, Xword tag, Xword val)
 	elfcap_mask_t	*hwcap;
 	ofl_flag_t	flags1;
 
-	if (tag == CA_SUNW_HW_1) {
+	switch (tag) {
+	case CA_SUNW_HW_1:
 		hwcap = &ofl->ofl_ocapset.oc_hw_1.cm_val;
 		flags1 = FLG_OF1_OVHWCAP1;
-	} else {
+		break;
+	case CA_SUNW_HW_2:
 		hwcap = &ofl->ofl_ocapset.oc_hw_2.cm_val;
 		flags1 = FLG_OF1_OVHWCAP2;
+		break;
+	case CA_SUNW_HW_3:
+		hwcap = &ofl->ofl_ocapset.oc_hw_3.cm_val;
+		flags1 = FLG_OF1_OVHWCAP3;
+		break;
+	default:
+		assert(0);
 	}
 
 	/*
@@ -547,6 +557,9 @@ ld_cap_move_symtoobj(Ofl_desc *ofl)
 				    CA_SUNW_MACH, &ofl->ofl_ocapset.oc_mach);
 			}
 		}
+		if (scapset->oc_hw_3.cm_val)
+			hw_cap(ofl, CA_SUNW_HW_3, scapset->oc_hw_3.cm_val);
+
 		if (scapset->oc_hw_2.cm_val)
 			hw_cap(ofl, CA_SUNW_HW_2, scapset->oc_hw_2.cm_val);
 
@@ -599,6 +612,8 @@ get_cap_group(Objcapset *ocapset, Word cnum, Ofl_desc *ofl, Is_desc *isp)
 			continue;
 		if (cgp->cg_set.oc_hw_2.cm_val != ocapset->oc_hw_2.cm_val)
 			continue;
+		if (cgp->cg_set.oc_hw_3.cm_val != ocapset->oc_hw_3.cm_val)
+			continue;
 
 		calp = cgp->cg_set.oc_plat.cl_val;
 		oalp = ocapset->oc_plat.cl_val;
@@ -630,7 +645,7 @@ get_cap_group(Objcapset *ocapset, Word cnum, Ofl_desc *ofl, Is_desc *isp)
 	/*
 	 * If a capabilities group is not found, create a new one.
 	 */
-	if (((cgp = libld_calloc(sizeof (Cap_group), 1)) == NULL) ||
+	if (((cgp = libld_calloc(1, sizeof (Cap_group))) == NULL) ||
 	    (aplist_append(&(ofl->ofl_capgroups), cgp,
 	    AL_CNT_CAP_DESCS) == NULL))
 		return (NULL);
@@ -721,7 +736,7 @@ ld_cap_add_family(Ofl_desc *ofl, Sym_desc *lsdp, Sym_desc *csdp, Cap_group *cgp,
 	 * Make sure the capability families have an initialized AVL tree.
 	 */
 	if ((avlt = ofl->ofl_capfamilies) == NULL) {
-		if ((avlt = libld_calloc(sizeof (avl_tree_t), 1)) == NULL)
+		if ((avlt = libld_calloc(1, sizeof (avl_tree_t))) == NULL)
 			return (S_ERROR);
 		avl_create(avlt, &ld_sym_avl_comp, sizeof (Cap_avlnode),
 		    SGSOFFSETOF(Cap_avlnode, cn_symavlnode.sav_node));
@@ -743,7 +758,7 @@ ld_cap_add_family(Ofl_desc *ofl, Sym_desc *lsdp, Sym_desc *csdp, Cap_group *cgp,
 	qcav.cn_symavlnode.sav_name = lsdp->sd_name;
 
 	if ((cav = avl_find(avlt, &qcav, &where)) == NULL) {
-		if ((cav = libld_calloc(sizeof (Cap_avlnode), 1)) == NULL)
+		if ((cav = libld_calloc(1, sizeof (Cap_avlnode))) == NULL)
 			return (S_ERROR);
 		cav->cn_symavlnode.sav_hash = qcav.cn_symavlnode.sav_hash;
 		cav->cn_symavlnode.sav_name = qcav.cn_symavlnode.sav_name;
@@ -898,6 +913,7 @@ process_cap(Ofl_desc *ofl, Ifl_desc *ifl, Is_desc *cisp)
 		case CA_SUNW_HW_1:
 		case CA_SUNW_SF_1:
 		case CA_SUNW_HW_2:
+		case CA_SUNW_HW_3:
 			/*
 			 * If this is the start of a new group, save it.
 			 */
@@ -1033,7 +1049,7 @@ process_cap(Ofl_desc *ofl, Ifl_desc *ifl, Is_desc *cisp)
 	 * is used, although it will be sparsely populated, as the list provides
 	 * a convenient mechanism for traversal later.
 	 */
-	if (((cdp = libld_calloc(sizeof (Cap_desc), 1)) == NULL) ||
+	if (((cdp = libld_calloc(1, sizeof (Cap_desc))) == NULL) ||
 	    (aplist_append(&(cdp->ca_groups), NULL, cnum) == NULL))
 		return (S_ERROR);
 
@@ -1099,7 +1115,8 @@ process_cap(Ofl_desc *ofl, Ifl_desc *ifl, Is_desc *cisp)
 				 */
 				ocapset.oc_hw_1.cm_val =
 				    ocapset.oc_sf_1.cm_val =
-				    ocapset.oc_hw_2.cm_val = 0;
+				    ocapset.oc_hw_2.cm_val =
+				    ocapset.oc_hw_3.cm_val = 0;
 				if (ocapset.oc_plat.cl_val) {
 					free((void *)ocapset.oc_plat.cl_val);
 					ocapset.oc_plat.cl_val = NULL;
@@ -1156,6 +1173,13 @@ process_cap(Ofl_desc *ofl, Ifl_desc *ifl, Is_desc *cisp)
 			DBG_CALL(Dbg_cap_ptr_entry(ofl->ofl_lml,
 			    DBG_STATE_ORIGINAL, CA_SUNW_ID,
 			    ocapset.oc_id.cs_str));
+			break;
+
+		case CA_SUNW_HW_3:
+			ocapset.oc_hw_3.cm_val = data->c_un.c_val;
+			DBG_CALL(Dbg_cap_val_entry(ofl->ofl_lml,
+			    DBG_STATE_ORIGINAL, CA_SUNW_HW_3,
+			    ocapset.oc_hw_3.cm_val, ld_targ.t_m.m_mach));
 			break;
 		}
 

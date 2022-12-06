@@ -247,8 +247,6 @@ DRV_KMODS	+= dr
 DRV_KMODS	+= ioat
 DRV_KMODS	+= fipe
 DRV_KMODS	+= vmm
-DRV_KMODS	+= viona
-DRV_KMODS	+= ppt
 
 DRV_KMODS	+= cpudrv
 
@@ -294,7 +292,7 @@ SYS_KMODS	+=
 #
 #	'Misc' Modules (/kernel/misc):
 #
-MISC_KMODS	+= gfx_private pcie
+MISC_KMODS	+= gfx_private pcie pci_prd
 MISC_KMODS	+= acpidev
 MISC_KMODS	+= drmach_acpi
 

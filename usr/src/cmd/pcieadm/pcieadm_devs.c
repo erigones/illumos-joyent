@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2021 Oxide Computer Company
+ * Copyright 2022 Oxide Computer Company
  */
 
 #include <err.h>
@@ -28,6 +28,7 @@ typedef struct pcieadm_show_devs {
 	boolean_t psd_funcs;
 	int psd_nfilts;
 	char **psd_filts;
+	boolean_t *psd_used;
 	uint_t psd_nprint;
 } pcieadm_show_devs_t;
 
@@ -39,6 +40,8 @@ typedef enum pcieadm_show_devs_otype {
 	PCIEADM_SDO_BDF_DEV,
 	PCIEADM_SDO_BDF_FUNC,
 	PCIEADM_SDO_DRIVER,
+	PCIEADM_SDO_INSTANCE,
+	PCIEADM_SDO_INSTNUM,
 	PCIEADM_SDO_TYPE,
 	PCIEADM_SDO_VENDOR,
 	PCIEADM_SDO_DEVICE,
@@ -134,11 +137,26 @@ pcieadm_show_devs_ofmt_cb(ofmt_arg_t *ofarg, char *buf, uint_t buflen)
 			return (B_FALSE);
 		}
 		break;
-	case PCIEADM_SDO_DRIVER:
+	case PCIEADM_SDO_INSTANCE:
 		if (psdo->psdo_driver == NULL || psdo->psdo_instance == -1) {
 			(void) snprintf(buf, buflen, "--");
 		} else if (snprintf(buf, buflen, "%s%d", psdo->psdo_driver,
 		    psdo->psdo_instance) >= buflen) {
+			return (B_FALSE);
+		}
+		break;
+	case PCIEADM_SDO_DRIVER:
+		if (psdo->psdo_driver == NULL) {
+			(void) snprintf(buf, buflen, "--");
+		} else if (strlcpy(buf, psdo->psdo_driver, buflen) >= buflen) {
+			return (B_FALSE);
+		}
+		break;
+	case PCIEADM_SDO_INSTNUM:
+		if (psdo->psdo_instance == -1) {
+			(void) snprintf(buf, buflen, "--");
+		} else if (snprintf(buf, buflen, "%d", psdo->psdo_instance) >=
+		    buflen) {
 			return (B_FALSE);
 		}
 		break;
@@ -228,15 +246,15 @@ pcieadm_show_devs_ofmt_cb(ofmt_arg_t *ofarg, char *buf, uint_t buflen)
 		}
 		break;
 	case PCIEADM_SDO_TYPE:
-		if (pcieadm_speed2gen(psdo->psdo_mspeed) == 0 ||
+		if (pcieadm_speed2gen(psdo->psdo_cspeed) == 0 ||
 		    psdo->psdo_mwidth == -1) {
 			if (strlcat(buf, "PCI", buflen) >= buflen) {
 				return (B_FALSE);
 			}
 		} else {
 			if (snprintf(buf, buflen, "PCIe Gen %ux%u",
-			    pcieadm_speed2gen(psdo->psdo_mspeed),
-			    psdo->psdo_mwidth) >= buflen) {
+			    pcieadm_speed2gen(psdo->psdo_cspeed),
+			    psdo->psdo_cwidth) >= buflen) {
 				return (B_FALSE);
 			}
 		}
@@ -247,7 +265,7 @@ pcieadm_show_devs_ofmt_cb(ofmt_arg_t *ofarg, char *buf, uint_t buflen)
 	return (B_TRUE);
 }
 
-static const char *pcieadm_show_dev_fields = "bdf,type,driver,device";
+static const char *pcieadm_show_dev_fields = "bdf,type,instance,device";
 static const char *pcieadm_show_dev_speeds =
 	"bdf,driver,maxspeed,curspeed,maxwidth,curwidth,supspeeds";
 static const ofmt_field_t pcieadm_show_dev_ofmt[] = {
@@ -255,6 +273,8 @@ static const ofmt_field_t pcieadm_show_dev_ofmt[] = {
 	{ "DID", 6, PCIEADM_SDO_DID, pcieadm_show_devs_ofmt_cb },
 	{ "BDF", 8, PCIEADM_SDO_BDF, pcieadm_show_devs_ofmt_cb },
 	{ "DRIVER", 15, PCIEADM_SDO_DRIVER, pcieadm_show_devs_ofmt_cb },
+	{ "INSTANCE", 15, PCIEADM_SDO_INSTANCE, pcieadm_show_devs_ofmt_cb },
+	{ "INSTNUM", 8, PCIEADM_SDO_INSTNUM, pcieadm_show_devs_ofmt_cb },
 	{ "TYPE", 15, PCIEADM_SDO_TYPE, pcieadm_show_devs_ofmt_cb },
 	{ "VENDOR", 30, PCIEADM_SDO_VENDOR, pcieadm_show_devs_ofmt_cb },
 	{ "DEVICE", 30, PCIEADM_SDO_DEVICE, pcieadm_show_devs_ofmt_cb },
@@ -291,20 +311,24 @@ pcieadm_show_devs_match(pcieadm_show_devs_t *psd,
 		const char *filt = psd->psd_filts[i];
 
 		if (strcmp(filt, psdo->psdo_path) == 0) {
+			psd->psd_used[i] = B_TRUE;
 			return (B_TRUE);
 		}
 
 		if (strcmp(filt, bdf) == 0) {
+			psd->psd_used[i] = B_TRUE;
 			return (B_TRUE);
 		}
 
 		if (psdo->psdo_driver != NULL &&
 		    strcmp(filt, psdo->psdo_driver) == 0) {
+			psd->psd_used[i] = B_TRUE;
 			return (B_TRUE);
 		}
 
 		if (psdo->psdo_driver != NULL && psdo->psdo_instance != -1 &&
 		    strcmp(filt, dinst) == 0) {
+			psd->psd_used[i] = B_TRUE;
 			return (B_TRUE);
 		}
 
@@ -313,6 +337,7 @@ pcieadm_show_devs_match(pcieadm_show_devs_t *psd,
 		}
 
 		if (strcmp(filt, psdo->psdo_path) == 0) {
+			psd->psd_used[i] = B_TRUE;
 			return (B_TRUE);
 		}
 	}
@@ -481,14 +506,32 @@ pcieadm_show_devs_help(const char *fmt, ...)
 	    "\t-H\t\tomit the column header\n"
 	    "\t-o field\toutput fields to print\n"
 	    "\t-p\t\tparsable output (requires -o)\n"
-	    "\t-s\t\tlist speeds and widths\n");
-
+	    "\t-s\t\tlist speeds and widths\n\n"
+	    "The following fields are supported:\n"
+	    "\tvid\t\tthe PCI vendor ID in hex\n"
+	    "\tdid\t\tthe PCI device ID in hex\n"
+	    "\tvendor\t\tthe name of the PCI vendor\n"
+	    "\tdevice\t\tthe name of the PCI device\n"
+	    "\tinstance\tthe name of this particular instance, e.g. igb0\n"
+	    "\tdriver\t\tthe name of the driver attached to the device\n"
+	    "\tinstnum\t\tthe instance number of a device, e.g. 2 for nvme2\n"
+	    "\tpath\t\tthe /devices path of the device\n"
+	    "\tbdf\t\tthe PCI bus/device/function, with values in hex\n"
+	    "\tbus\t\tthe PCI bus number of the device in hex\n"
+	    "\tdev\t\tthe PCI device number of the device in hex\n"
+	    "\tfunc\t\tthe PCI function number of the device in hex\n"
+	    "\ttype\t\ta string describing the PCIe generation and width\n"
+	    "\tmaxspeed\tthe maximum supported PCIe speed of the device\n"
+	    "\tcurspeed\tthe current PCIe speed of the device\n"
+	    "\tmaxwidth\tthe maximum supported PCIe lane count of the device\n"
+	    "\tcurwidth\tthe current lane count of the PCIe device\n"
+	    "\tsupspeeds\tthe list of speeds the device supports\n");
 }
 
 int
 pcieadm_show_devs(pcieadm_t *pcip, int argc, char *argv[])
 {
-	int c;
+	int c, ret;
 	uint_t flags = 0;
 	const char *fields = NULL;
 	pcieadm_show_devs_t psd;
@@ -557,6 +600,11 @@ pcieadm_show_devs(pcieadm_t *pcip, int argc, char *argv[])
 	if (argc > 0) {
 		psd.psd_nfilts = argc;
 		psd.psd_filts = argv;
+		psd.psd_used = calloc(argc, sizeof (boolean_t));
+		if (psd.psd_used == NULL) {
+			err(EXIT_FAILURE, "failed to allocate filter tracking "
+			    "memory");
+		}
 	}
 
 	oferr = ofmt_open(fields, pcieadm_show_dev_ofmt, flags, 0,
@@ -568,9 +616,18 @@ pcieadm_show_devs(pcieadm_t *pcip, int argc, char *argv[])
 
 	pcieadm_di_walk(pcip, &walk);
 
-	if (psd.psd_nprint > 0) {
-		return (EXIT_SUCCESS);
-	} else {
-		return (EXIT_FAILURE);
+	ret = EXIT_SUCCESS;
+	for (int i = 0; i < psd.psd_nfilts; i++) {
+		if (!psd.psd_used[i]) {
+			warnx("filter '%s' did not match any devices",
+			    psd.psd_filts[i]);
+			ret = EXIT_FAILURE;
+		}
 	}
+
+	if (psd.psd_nprint == 0) {
+		ret = EXIT_FAILURE;
+	}
+
+	return (ret);
 }

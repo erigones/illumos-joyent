@@ -24,6 +24,7 @@
  *	  All Rights Reserved
  *
  * Copyright (c) 1992, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2022 Oxide Computer Company
  */
 
 #ifndef	_LIBLD_H
@@ -210,6 +211,7 @@ typedef	struct {
 	Caplist		oc_plat;	/* CA_SUNW_PLAT capabilities */
 	Caplist		oc_mach;	/* CA_SUNW_MACH capabilities */
 	Capstr		oc_id;		/* CA_SUNW_ID capability */
+	Capmask		oc_hw_3;	/* CA_SUNW_HW_3 capabilities */
 	oc_flag_t	oc_flags;
 } Objcapset;
 
@@ -524,6 +526,7 @@ struct ofl_desc {
 #define	FLG_OF1_OVMACHCAP 0x0800000000	/* override CA_SUNW_MACH capability */
 #define	FLG_OF1_OVPLATCAP 0x1000000000	/* override CA_SUNW_PLAT capability */
 #define	FLG_OF1_OVIDCAP	0x2000000000	/* override CA_SUNW_ID capability */
+#define	FLG_OF1_OVHWCAP3 0x4000000000	/* override CA_SUNW_HW_3 capabilities */
 
 /*
  * Guidance flags. The flags with the FLG_OFG_NO_ prefix are used to suppress
@@ -1497,7 +1500,7 @@ typedef enum {
 /*
  * Structure to manage archive member caching.  Each archive has an archive
  * descriptor (Ar_desc) associated with it.  This contains pointers to the
- * archive symbol table (obtained by elf_getarsyms(3e)) and an auxiliary
+ * archive symbol table (obtained by elf_getarsyms(3ELF)) and an auxiliary
  * structure (Ar_uax[]) that parallels this symbol table.  The member element
  * of this auxiliary table indicates whether the archive member associated with
  * the symbol offset has already been extracted (AREXTRACTED) or partially

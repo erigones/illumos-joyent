@@ -28,15 +28,17 @@ OBJECTS =	libvarpd.o \
 
 include ../../../Makefile.lib
 
+# install this library in the root filesystem
+include ../../../Makefile.rootfs
+
 LIBS =		$(DYNLIB)
-LDLIBS +=	-lc -lavl -lumem -lidspace -lnvpair -lmd5 -lrename \
+LDLIBS +=	-lc -lavl -lumem -lidspace -lnvpair -lmd -lrename \
 		-lbunyan
 CPPFLAGS +=	-I../common
 
 CERRWARN +=	-erroff=E_STRUCT_DERIVED_FROM_FLEX_MBR
 
-C99MODE=	-xc99=%all
-C99LMODE=	-Xc99=%all
+CSTD=		$(CSTD_GNU99)
 
 SRCDIR =	../common
 

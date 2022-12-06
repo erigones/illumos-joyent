@@ -1187,6 +1187,9 @@ mount_one_dev(zlog_t *zlogp, char *devpath, zone_mnt_t mount_cmd)
 	case ZS_EXCLUSIVE:
 		curr_iptype = "exclusive";
 		break;
+	default:
+		zerror(zlogp, B_FALSE, "bad ip-type");
+		goto cleanup;
 	}
 	if (curr_iptype == NULL)
 		abort();
@@ -1286,7 +1289,7 @@ mount_one(zlog_t *zlogp, struct zone_fstab *fsptr, const char *rootpath,
 	/*
 	 * In general the strategy here is to do just as much verification as
 	 * necessary to avoid crashing or otherwise doing something bad; if the
-	 * administrator initiated the operation via zoneadm(1m), they'll get
+	 * administrator initiated the operation via zoneadm(8), they'll get
 	 * auto-verification which will let them know what's wrong.  If they
 	 * modify the zone configuration of a running zone, and don't attempt
 	 * to verify that it's OK, then we won't crash but won't bother trying
@@ -2243,6 +2246,9 @@ configure_one_interface(zlog_t *zlogp, zoneid_t zone_id,
 	if (ioctl(s, SIOCLIFADDIF, (caddr_t)&lifr) < 0) {
 		/*
 		 * Here, we know that the interface can't be brought up.
+		 * A similar warning message was already printed out to
+		 * the console by zoneadm(8) so instead we log the
+		 * message to syslog and continue.
 		 */
 		(void) close(s);
 		return (Z_OK);
@@ -2385,7 +2391,7 @@ configure_one_interface(zlog_t *zlogp, zoneid_t zone_id,
 		 */
 		char buffer[INET6_ADDRSTRLEN];
 		void  *addr;
-		const char *nomatch = "no matching subnet found in netmasks(4)";
+		const char *nomatch = "no matching subnet found in netmasks(5)";
 
 		if (af == AF_INET)
 			addr = &((struct sockaddr_in *)
@@ -3260,6 +3266,9 @@ get_privset(zlog_t *zlogp, priv_set_t *privs, zone_mnt_t mount_cmd)
 		case ZS_EXCLUSIVE:
 			curr_iptype = "exclusive";
 			break;
+		default:
+			zerror(zlogp, B_FALSE, "bad ip-type");
+			return (-1);
 		}
 
 		if (zonecfg_default_privset(privs, curr_iptype) == Z_OK)
@@ -4201,7 +4210,7 @@ get_zone_label(zlog_t *zlogp, priv_set_t *privs)
 
 	if (zcent == NULL) {
 		zerror(zlogp, B_FALSE, "zone requires a label assignment. "
-		    "See tnzonecfg(4)");
+		    "See tnzonecfg(5)");
 	} else {
 		if (zlabel == NULL)
 			zlabel = m_label_alloc(MAC_LABEL);
@@ -4431,7 +4440,7 @@ setup_zone_rm(zlog_t *zlogp, char *zone_name, zoneid_t zoneid)
 			    "scheduling class for\nthis zone.  FSS will be "
 			    "used for processes\nin the zone but to get the "
 			    "full benefit of FSS,\nit should be the default "
-			    "scheduling class.\nSee dispadmin(1M) for more "
+			    "scheduling class.\nSee dispadmin(8) for more "
 			    "details.");
 
 			if (zone_setattr(zoneid, ZONE_ATTR_SCHED_CLASS, "FSS",
@@ -4474,7 +4483,7 @@ setup_zone_rm(zlog_t *zlogp, char *zone_name, zoneid_t zoneid)
 		    "enabled.\nThe system will not dynamically adjust the\n"
 		    "processor allocation within the specified range\n"
 		    "until svc:/system/pools/dynamic is enabled.\n"
-		    "See poold(1M).");
+		    "See poold(8).");
 	}
 
 	/* The following is a warning, not an error. */
@@ -4775,13 +4784,10 @@ vplat_create(zlog_t *zlogp, zone_mnt_t mount_cmd, zoneid_t zone_did)
 		zerror(zlogp, B_TRUE, "unable to determine ip-type");
 		return (-1);
 	}
-	switch (iptype) {
-	case ZS_SHARED:
-		flags = 0;
-		break;
-	case ZS_EXCLUSIVE:
+	if (iptype == ZS_EXCLUSIVE) {
 		flags = ZCF_NET_EXCL;
-		break;
+	} else {
+		flags = 0;
 	}
 	if (flags == -1)
 		abort();

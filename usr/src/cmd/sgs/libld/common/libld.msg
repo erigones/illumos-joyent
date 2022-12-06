@@ -23,6 +23,7 @@
 # Copyright (c) 1995, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright (c) 2012, Joyent, Inc.  All rights reserved.
 # Copyright 2017 RackTop Systems.
+# Copyright 2022 Oxide Computer Company
 #
 
 @ _START_
@@ -52,14 +53,14 @@
 #
 #	usage: ld [-6:abc:.....] file(s)
 #		[-a]		create an absolute file
-#		[-b]		do not do special PIC relocations in a.out
+#		[-b]		do not create special PIC relocations in executables
 #		[-c file]	record configuration 'file'
 #
 @ MSG_ARG_USAGE		"usage: ld [-%s] file(s)\n"
 @ MSG_ARG_DETAIL_3	"\t[-32]\t\tenforce a 32-bit link-edit\n"
 @ MSG_ARG_DETAIL_6	"\t[-64]\t\tenforce a 64-bit link-edit\n"
 @ MSG_ARG_DETAIL_A	"\t[-a]\t\tcreate an absolute file\n"
-@ MSG_ARG_DETAIL_B	"\t[-b]\t\tdo not do special PIC relocations in a.out\n"
+@ MSG_ARG_DETAIL_B	"\t[-b]\t\tdo not create special PIC relocations in executables\n"
 @ MSG_ARG_DETAIL_CBDR	"\t[-B direct | nodirect]\n\
 			 \t\t\testablish direct bindings, or inhibit direct \
 			 binding\n\
@@ -88,7 +89,7 @@
 			 \t\t\tspecify library for which this file is a filter\n"
 @ MSG_ARG_DETAIL_CG	"\t[-G], [-shared]\n\
 			 \t\t\tcreate a shared object\n"
-@ MSG_ARG_DETAIL_H	"\t[-h name], [--soname name]\n\
+@ MSG_ARG_DETAIL_H	"\t[-h name], [-soname name]\n\
 			 \t\t\tuse 'name' as internal shared object identifier\n"
 @ MSG_ARG_DETAIL_I	"\t[-i]\t\tignore LD_LIBRARY_PATH setting\n"
 @ MSG_ARG_DETAIL_CI	"\t[-I name]\tuse 'name' as path of interpreter\n"
@@ -140,7 +141,6 @@
 			 allow extraction of\n\
 			 \t\t\tarchive members to resolve weak references from \
 			 \n\t\t\t\archive files\n"
-@ MSG_ARG_DETAIL_ZAL	"\t[-z altexec64]\texecute the 64-bit link-editor\n"
 @ MSG_ARG_DETAIL_ZADLIB	"\t[-z assert-deflib]\n\
 			\t\t\tenables warnings for linking with libraries in \
 			the \n\t\t\tdefault search path\n\
@@ -260,6 +260,7 @@
 #
 @ MSG_GRP_INVALNDX	"file %s: group section [%u]%s: entry %d: \
 			 invalid section index: %d"
+@ MSG_GRP_MISSINGOUT	"file %s: discarded section: [%u]%s: part of output group [%u]%s"
 
 # Relocation processing messages (some of these are required to satisfy
 # do_reloc(), which is common code used by cmd/sgs/rtld - make sure both
@@ -441,7 +442,6 @@
 
 @ MSG_SYS_OPEN		"file %s: open failed: %s"
 @ MSG_SYS_UNLINK	"file %s: unlink failed: %s"
-@ MSG_SYS_MMAPANON	"mmap anon failed: %s"
 @ MSG_SYS_MALLOC	"malloc failed: %s"
 
 
@@ -694,6 +694,8 @@
 			 unsupported: %s"
 @ MSG_REJ_ARCHIVE	"file %s: invalid archive use"
 @ MSG_REJ_KMOD		"file %s: kernel modules can't be link-edit input"
+@ MSG_REJ_HWCAP_3	"file %s: hardware capability (CA_SUNW_HW_3) \
+			 unsupported: %s"
 
 # Guidance messages
 @ MSG_GUIDE_UNKNOWN	"unrecognized -z guidance item: %s"
@@ -976,7 +978,7 @@
 			-z type=reloc)"
 @ MSG_MARG_RPATH	"runpath option (-R, -rpath)"
 @ MSG_MARG_SO		"shared object option (-G, -shared, -z type=shared)"
-@ MSG_MARG_SONAME	"soname option (-h, --soname)"
+@ MSG_MARG_SONAME	"soname option (-h, -soname)"
 @ MSG_MARG_STRIP	"strip option (-s, --strip-all)"
 @ MSG_MARG_TYPE_KMOD	"-z type=kmod"
 
@@ -1618,6 +1620,7 @@
 @ MSG_MAPKW_HW			"HW"
 @ MSG_MAPKW_HW_1		"HW_1"
 @ MSG_MAPKW_HW_2		"HW_2"
+@ MSG_MAPKW_HW_3		"HW_3"
 @ MSG_MAPKW_INTERPOSE		"INTERPOSE"
 @ MSG_MAPKW_IS_NAME		"IS_NAME"
 @ MSG_MAPKW_IS_ORDER		"IS_ORDER"

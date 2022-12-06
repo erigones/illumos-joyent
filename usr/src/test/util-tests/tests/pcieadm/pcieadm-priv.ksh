@@ -12,7 +12,7 @@
 #
 
 #
-# Copyright 2021 Oxide Computer Company
+# Copyright 2022 Oxide Computer Company
 #
 
 #
@@ -46,6 +46,12 @@ pcieadm_validate_filter()
 		warn "failed to show-devs with filter $filter"
 	else
 		printf "TEST PASSED: show-devs $filter\n"
+	fi
+
+	if $pcieadm_prog show-devs $filter 9000/9000/9000; then
+		warn "show-devs $filter 9000/9000/9000, should have failed"
+	else
+		printf "TEST PASSED: show-devs $filter 9000/9000/9000\n"
 	fi
 
 	if ! $pcieadm_prog show-cfgspace -d $filter >/dev/null; then
@@ -96,9 +102,22 @@ else
 fi
 
 #
-# Verify based on device.
+# Do the same based on the device instance.
 #
-pcieadm_path=$($pcieadm_prog show-devs -p -o path | \
+pcieadm_dev=$($pcieadm_prog show-devs -p -o instance | \
+    awk '{ if ($1 != "--") { print $1; exit 0 } }')
+if [[ -z "$pcieadm_dev" ]]; then
+	warn "failed to obtain driver based filter"
+else
+	pcieadm_validate_filter "$pcieadm_dev"
+fi
+
+#
+# Verify based on the /devices path. Note, we use the device name to
+# seed this as if there is no device driver attached, the path may
+# overlap with another device on a PCI-only (non-express) based system.
+#
+pcieadm_path=$($pcieadm_prog show-devs -p -o path $pcieadm_dev | \
     awk '{ print $1; exit 0 }')
 if [[ -z "$pcieadm_path" ]]; then
 	warn "failed to obtain path based filter"
@@ -107,14 +126,12 @@ else
 fi
 
 #
-# Do the same based on the device name
+# Verify a bad filter doesn't work and results in an error.
 #
-pcieadm_dev=$($pcieadm_prog show-devs -p -o driver | \
-    awk '{ if ($1 != "--") { print $1; exit 0 } }')
-if [[ -z "$pcieadm_dev" ]]; then
-	warn "failed to obtain driver based filter"
+if $pcieadm_prog show-devs /enoent >/dev/null; then
+	warn "pcieadm succeeded with bad filter '/enoent'"
 else
-	pcieadm_validate_filter "$pcieadm_dev"
+	printf "TEST PASSED: show-devs /enoent\n"
 fi
 
 if ! $pcieadm_prog save-cfgspace -a "$pcieadm_tmp" > /dev/null; then

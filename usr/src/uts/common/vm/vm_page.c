@@ -59,7 +59,6 @@
 #include <sys/cpuvar.h>
 #include <sys/callb.h>
 #include <sys/debug.h>
-#include <sys/tnf_probe.h>
 #include <sys/condvar_impl.h>
 #include <sys/mem_config.h>
 #include <sys/mem_cage.h>
@@ -3572,11 +3571,6 @@ page_hashout(page_t *pp, kmutex_t *phm)
 	TRACE_2(TR_FAC_VM, TR_PAGE_HASHOUT,
 	    "page_hashout:pp %p vp %p", pp, vp);
 
-	/* Kernel probe */
-	TNF_PROBE_2(page_unmap, "vm pagefault", /* CSTYLED */,
-	    tnf_opaque, vnode, vp,
-	    tnf_offset, offset, pp->p_offset);
-
 	/*
 	 *
 	 */
@@ -3657,7 +3651,7 @@ page_add_common(page_t **ppp, page_t *pp)
 void
 page_sub(page_t **ppp, page_t *pp)
 {
-	ASSERT((PP_ISFREE(pp)) ? 1 :
+	ASSERT(pp != NULL && (PP_ISFREE(pp)) ? 1 :
 	    (PAGE_EXCL(pp)) || (PAGE_SHARED(pp) && page_iolock_assert(pp)));
 
 	if (*ppp == NULL || pp == NULL) {

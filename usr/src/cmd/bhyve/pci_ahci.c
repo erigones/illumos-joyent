@@ -1932,7 +1932,7 @@ ata_ioreq_cb(struct blockif_req *br, int err)
 	if (!err && aior->more) {
 		if (dsm)
 			ahci_handle_dsm_trim(p, slot, cfis, aior->done);
-		else 
+		else
 			ahci_handle_rw(p, slot, cfis, aior->done);
 		goto out;
 	}
@@ -2435,7 +2435,7 @@ pci_ahci_init(struct vmctx *ctx, struct pci_devinst *pi, nvlist_t *nvl)
 	slots = 32;
 
 	ports_nvl = find_relative_config_node(nvl, "port");
-	for (p = 0; p < MAX_PORTS; p++) {
+	for (p = 0; ports_nvl != NULL && p < MAX_PORTS; p++) {
 		struct ata_params *ata_ident = &sc->port[p].ata_ident;
 		char ident[AHCI_PORT_IDENT];
 
@@ -2465,7 +2465,7 @@ pci_ahci_init(struct vmctx *ctx, struct pci_devinst *pi, nvlist_t *nvl)
 			sc->ports = p;
 			ret = 1;
 			goto open_fail;
-		}	
+		}
 		sc->port[p].bctx = bctxt;
 		sc->port[p].pr_sc = sc;
 		sc->port[p].port = p;
@@ -2570,7 +2570,7 @@ open_fail:
 /*
  * Use separate emulation names to distinguish drive and atapi devices
  */
-struct pci_devemu pci_de_ahci = {
+static const struct pci_devemu pci_de_ahci = {
 	.pe_emu =	"ahci",
 	.pe_init =	pci_ahci_init,
 	.pe_legacy_config = pci_ahci_legacy_config,
@@ -2579,14 +2579,14 @@ struct pci_devemu pci_de_ahci = {
 };
 PCI_EMUL_SET(pci_de_ahci);
 
-struct pci_devemu pci_de_ahci_hd = {
+static const struct pci_devemu pci_de_ahci_hd = {
 	.pe_emu =	"ahci-hd",
 	.pe_legacy_config = pci_ahci_hd_legacy_config,
 	.pe_alias =	"ahci",
 };
 PCI_EMUL_SET(pci_de_ahci_hd);
 
-struct pci_devemu pci_de_ahci_cd = {
+static const struct pci_devemu pci_de_ahci_cd = {
 	.pe_emu =	"ahci-cd",
 	.pe_legacy_config = pci_ahci_cd_legacy_config,
 	.pe_alias =	"ahci",

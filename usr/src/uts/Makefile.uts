@@ -184,12 +184,6 @@ CERRWARN += -_smatch=-p=illumos_kernel
 include $(SRC)/Makefile.smatch
 
 #
-# Unfortunately, _IOWR() is regularly used with a third argument of 0,
-# so we have to disable all these smatch checks.
-#
-SMOFF += sizeof
-
-#
 # Add specific compiler options that are required based on the
 # architecture in question.
 #
@@ -581,7 +575,7 @@ PARALLEL_KMODS = $(DRV_KMODS) $(EXEC_KMODS) $(FS_KMODS) $(SCHED_KMODS) \
 		 $(MMU_KMODS) $(DACF_KMODS) $(EXPORT_KMODS) $(IPP_KMODS) \
 		 $(CRYPTO_KMODS) $(PCBE_KMODS) \
 		 $(DRV_KMODS_$(CLASS)) $(MISC_KMODS_$(CLASS)) $(MAC_KMODS) \
-		 $(BRAND_KMODS) $(KICONV_KMODS) $(OVERLAY_KMODS) $(CC_KMODS) \
+		 $(BRAND_KMODS) $(KICONV_KMODS) $(CC_KMODS) $(OVERLAY_KMODS) \
 		 $(SOCKET_KMODS)
 
 KMODS = $(GENUNIX_KMODS) $(PARALLEL_KMODS)

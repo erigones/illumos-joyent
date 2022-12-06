@@ -26,6 +26,7 @@
  * Copyright 2020 Joyent, Inc.
  * Copyright (c) 2014, OmniTI Computer Consulting, Inc. All rights reserved.
  * Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
+ * Copyright 2022 Garrett D'Amore <garrett@damore.org>
  */
 
 /*	Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T	*/
@@ -91,7 +92,6 @@
 #include <net/simnet.h>
 #include <sys/vnic.h>
 #include <sys/fs/zfs.h>
-#include <inet/kssl/kssl.h>
 #include <sys/dkio.h>
 #include <sys/fdio.h>
 #include <sys/cdio.h>
@@ -1307,12 +1307,6 @@ const struct ioc {
 	{ (uint_t)ZFS_IOC_GET_BOOTENV,		"ZFS_IOC_GET_BOOTENV",
 		"zfs_cmd_t" },
 
-	/* kssl ioctls */
-	{ (uint_t)KSSL_ADD_ENTRY,		"KSSL_ADD_ENTRY",
-		"kssl_params_t"},
-	{ (uint_t)KSSL_DELETE_ENTRY,		"KSSL_DELETE_ENTRY",
-		"sockaddr_in"},
-
 	/* disk ioctls - (0x04 << 8) - dkio.h */
 	{ (uint_t)DKIOCGGEOM,		"DKIOCGGEOM",
 		"struct dk_geom"},
@@ -1503,8 +1497,8 @@ const struct ioc {
 	{ (uint_t)IPTUN_GET_6TO4RELAY, "IPTUN_GET_6TO4RELAY",	NULL},
 
 	/* zcons ioctls */
-	{ (uint_t)ZC_HOLDSLAVE,		"ZC_HOLDSLAVE",		NULL },
-	{ (uint_t)ZC_RELEASESLAVE,	"ZC_RELEASESLAVE",	NULL },
+	{ (uint_t)ZC_HOLDSUBSID,	"ZC_HOLDSUBSID",	NULL },
+	{ (uint_t)ZC_RELEASESUBSID,	"ZC_RELEASESUBSID",	NULL },
 
 	/* hid ioctls - ('h' << 8) - hid.h */
 	{ (uint_t)HIDIOCKMGDIRECT,	"HIDIOCKMGDIRECT",	NULL },

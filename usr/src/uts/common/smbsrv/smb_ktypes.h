@@ -20,8 +20,8 @@
  */
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2020 RackTop Systems, Inc.
- * Copyright 2020 Tintri by DDN, Inc. All rights reserved.
+ * Copyright 2011-2022 Tintri by DDN, Inc.  All rights reserved.
+ * Copyright 2022 RackTop Systems, Inc.
  */
 
 /*
@@ -601,7 +601,6 @@ typedef struct smb_oplock_grant {
 	uint32_t		og_state;	/* latest sent to client */
 	uint32_t		og_breaking;	/* BREAK_TO... flags */
 	uint16_t		og_dialect;	/* how to send breaks */
-	boolean_t		og_closing;
 	/* File-system level state */
 	uint8_t			onlist_II;
 	uint8_t			onlist_R;
@@ -730,11 +729,6 @@ typedef struct smb_arg_negotiate {
 	uint8_t		ni_key[SMB_ENCRYPT_KEY_MAXLEN];
 	timestruc_t	ni_servertime;
 } smb_arg_negotiate_t;
-
-typedef struct smb2_arg_negotiate {
-	struct smb2_neg_ctxs	*neg_in_ctxs;
-	struct smb2_neg_ctxs	*neg_out_ctxs;
-} smb2_arg_negotiate_t;
 
 typedef enum {
 	SMB_SSNSETUP_PRE_NTLM012 = 1,
@@ -912,8 +906,6 @@ typedef enum {
 #define	SMB_SSN_AAPL_CCEXT	1	/* Saw "AAPL" create ctx. ext. */
 #define	SMB_SSN_AAPL_READDIR	2	/* Wants MacOS ext. readdir */
 
-#define	SMB2_NEGOTIATE_MAX_DIALECTS	64
-
 typedef struct smb_session {
 	list_node_t		s_lnd;
 	uint32_t		s_magic;
@@ -977,11 +969,6 @@ typedef struct smb_session {
 	int64_t			activity_timestamp;
 	timeout_id_t		s_auth_tmo;
 
-	/*
-	 * Client dialects
-	 */
-	uint16_t		cli_dialect_cnt;
-	uint16_t		cli_dialects[SMB2_NEGOTIATE_MAX_DIALECTS];
 	/*
 	 * Maximum negotiated buffer sizes between SMB client and server
 	 * in SMB_SESSION_SETUP_ANDX
@@ -1078,6 +1065,8 @@ typedef struct smb_user {
 	uint32_t		u_privileges;
 	uint16_t		u_uid;		/* unique per-session */
 	uint32_t		u_audit_sid;
+	uint32_t		u_owned_tree_cnt;
+	kcondvar_t		u_owned_tree_cv;
 
 	uint32_t		u_sign_flags;
 	struct smb_key		u_sign_key;	/* SMB2 signing */
@@ -1238,6 +1227,7 @@ typedef struct smb_tree {
 #define	SMB_ODIR_FLAG_CATIA		0x0010
 #define	SMB_ODIR_FLAG_ABE		0x0020
 #define	SMB_ODIR_FLAG_SHORTNAMES	0x0040
+#define	SMB_ODIR_FLAG_RESTRICTED	0x0080
 
 typedef enum {
 	SMB_ODIR_STATE_OPEN = 0,
@@ -1427,7 +1417,9 @@ typedef struct smb_ofile {
 	cred_t			*f_cr;
 	pid_t			f_pid;
 	smb_attr_t		f_pending_attr;
+	boolean_t		f_written;
 	smb_oplock_grant_t	f_oplock;
+	boolean_t		f_oplock_closing;
 	uint8_t			TargetOplockKey[SMB_LEASE_KEY_SZ];
 	uint8_t			ParentOplockKey[SMB_LEASE_KEY_SZ];
 	struct smb_lease	*f_lease;
@@ -1799,6 +1791,7 @@ typedef enum smb_req_state {
 	SMB_REQ_STATE_WAITING_FCN2,
 	SMB_REQ_STATE_WAITING_LOCK,
 	SMB_REQ_STATE_WAITING_PIPE,
+	SMB_REQ_STATE_WAITING_OLBRK,
 	SMB_REQ_STATE_COMPLETED,
 	SMB_REQ_STATE_CANCEL_PENDING,
 	SMB_REQ_STATE_CANCELLED,
@@ -1922,7 +1915,6 @@ typedef struct smb_request {
 	uint32_t		sr_seqnum;
 
 	union {
-		smb2_arg_negotiate_t	nego2;
 		smb_arg_negotiate_t	*negprot;
 		smb_arg_sessionsetup_t	*ssetup;
 		smb_arg_tcon_t		tcon;
@@ -1938,7 +1930,6 @@ typedef struct smb_request {
 
 #define	sr_ssetup	arg.ssetup
 #define	sr_negprot	arg.negprot
-#define	sr_nego2	arg.nego2
 #define	sr_tcon		arg.tcon
 #define	sr_dirop	arg.dirop
 #define	sr_open		arg.open
@@ -2063,6 +2054,7 @@ typedef struct {
 	int			ld_family;
 	struct sockaddr_in	ld_sin;
 	struct sockaddr_in6	ld_sin6;
+	clock_t			ld_quiet;
 } smb_listener_daemon_t;
 
 #define	SMB_SSETUP_CMD			"authentication"
