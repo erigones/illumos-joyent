@@ -13,7 +13,7 @@
 
 #
 # Copyright 2020 Joyent, Inc.
-# Copyright 2022 MNX Cloud, Inc.
+# Copyright 2023 MNX Cloud, Inc.
 #
 
 #
@@ -24,15 +24,6 @@
 #
 
 export PATH=/usr/bin:/usr/sbin:/opt/tools/sbin:/opt/tools/bin:$PATH
-
-# The pkgsrc packages we will install.
-export SMARTOS_TEST_PKGS="
-    python39
-    sudo
-    coreutils
-    gcc10
-    gmake
-"
 
 #
 # Set $KEEP as a precaution in case we ever end up running the zfs-test suite
@@ -186,6 +177,20 @@ function add_loopback_mounts {
 }
 
 #
+# The ZFS test suite often will invoke user{add,del,mod}(8). Move /etc/shadow
+# into /etc's normal ramdisk volume.  The link(2) calls the above utilities
+# use will start working, unlocking a great deal of tests.
+#
+function shadow_fix {
+    FS=$(/bin/df -n /etc/shadow | awk '{print $NF'})
+    if [[ "$FS" == "lofs" ]]; then
+	log_must umount /etc/shadow
+	log_must cp -pf /usbkey/shadow /etc/shadow
+    fi
+    # Else leave it alone.
+}
+
+#
 # Extract the non-/usr parts of the test archive
 #
 function extract_remaining_test_bits {
@@ -225,9 +230,13 @@ function setup_pkgsrc {
     log_must tar -zxpf ${BOOTSTRAP_TAR} -C /
 }
 
+# The pkgsrc packages we will install are now a single metapackage.
+# If updates in that metapackage (e.g. python change) cause tests to fail,
+# consult with pkgsrc and/or maintainers of usr/src/test tests to update.
+
 function install_required_pkgs {
 
-    log_must pkgin -y in ${SMARTOS_TEST_PKGS}
+    log_must pkgin -y in smartos-test-tools
 }
 
 function add_test_accounts {
@@ -423,6 +432,7 @@ if [[ $do_rollback = true ]]; then
 fi
 
 if [[ $do_configure = true ]]; then
+    shadow_fix
     add_loopback_mounts $test_archive
     extract_remaining_test_bits $test_archive
     add_test_accounts

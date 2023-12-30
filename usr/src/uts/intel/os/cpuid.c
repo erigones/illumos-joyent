@@ -24,7 +24,7 @@
  * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
  * Copyright 2014 Josef "Jeff" Sipek <jeffpc@josefsipek.net>
  * Copyright 2020 Joyent, Inc.
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  * Copyright 2022 MNX Cloud, Inc.
  */
 /*
@@ -1126,12 +1126,13 @@
  *
  * The second variant of the spectre attack focuses on performing branch target
  * injection. This generally impacts indirect call instructions in the system.
- * There are three different ways to mitigate this issue that are commonly
+ * There are four different ways to mitigate this issue that are commonly
  * described today:
  *
  *  1. Using Indirect Branch Restricted Speculation (IBRS).
  *  2. Using Retpolines and RSB Stuffing
  *  3. Using Enhanced Indirect Branch Restricted Speculation (eIBRS)
+ *  4. Using Automated Indirect Branch Restricted Speculation (AIBRS)
  *
  * IBRS uses a feature added to microcode to restrict speculation, among other
  * things. This form of mitigation has not been used as it has been generally
@@ -1213,6 +1214,23 @@
  * To fully protect user to user and vmx to vmx attacks from these classes of
  * issues, we would also need to allow them to opt into performing an Indirect
  * Branch Prediction Barrier (IBPB) on switch. This is not currently wired up.
+ *
+ * The fourth form of mitigation here is specific to AMD and is called Automated
+ * IBRS (AIBRS). This is similar in spirit to eIBRS; however rather than set the
+ * IBRS bit in MSR_IA32_SPEC_CTRL (0x48) we instead set a bit in the EFER
+ * (extended feature enable register) MSR. This bit basically says that IBRS
+ * acts as though it is always active when executing at CPL0 and when executing
+ * in the 'host' context when SEV-SNP is enabled.
+ *
+ * When this is active, AMD states that the RSB is cleared on VMEXIT and
+ * therefore it is unnecessary. While this handles RSB stuffing attacks from SVM
+ * to the kernel, we must still consider the remaining cases that exist, just
+ * like above. While traditionally AMD employed a 32 entry RSB allowing the
+ * traditional technique to work, this is not true on all CPUs. While a write to
+ * IBRS would clear the RSB if the processor supports more than 32 entries (but
+ * not otherwise), AMD states that as long as at leat a single 4 KiB unmapped
+ * guard page is present between user and kernel address spaces and SMEP is
+ * enabled, then there is no need to clear the RSB at all.
  *
  * By default, the system will enable RSB stuffing and the required variant of
  * retpolines and store that information in the x86_spectrev2_mitigation value.
@@ -1436,7 +1454,7 @@
  *
  *  - Spectre v1: Not currently mitigated
  *  - swapgs: lfences after swapgs paths
- *  - Spectre v2: Retpolines/RSB Stuffing or eIBRS if HW support
+ *  - Spectre v2: Retpolines/RSB Stuffing or eIBRS/AIBRS if HW support
  *  - Meltdown: Kernel Page Table Isolation
  *  - Spectre v3a: Updated CPU microcode
  *  - Spectre v4: Not currently mitigated
@@ -1477,6 +1495,7 @@
 #include <sys/tsc.h>
 #include <sys/kobj.h>
 #include <sys/asm_misc.h>
+#include <sys/bitmap.h>
 
 #ifdef __xpv
 #include <sys/hypervisor.h>
@@ -1499,6 +1518,7 @@ int x86_use_invpcid = -1;
 typedef enum {
 	X86_SPECTREV2_RETPOLINE,
 	X86_SPECTREV2_ENHANCED_IBRS,
+	X86_SPECTREV2_AUTO_IBRS,
 	X86_SPECTREV2_DISABLED
 } x86_spectrev2_mitigation_t;
 
@@ -1639,7 +1659,8 @@ static char *x86_feature_names[NUM_X86_FEATURES] = {
 	"avx512_vp2intersect",
 	"avx512_bitalg",
 	"avx512_vbmi2",
-	"avx512_bf16"
+	"avx512_bf16",
+	"auto_ibrs"
 };
 
 boolean_t
@@ -1760,7 +1781,8 @@ struct xsave_info {
  */
 
 #define	NMAX_CPI_STD	8		/* eax = 0 .. 7 */
-#define	NMAX_CPI_EXTD	0x1f		/* eax = 0x80000000 .. 0x8000001e */
+#define	NMAX_CPI_EXTD	0x22		/* eax = 0x80000000 .. 0x80000021 */
+#define	NMAX_CPI_TOPO	0x10		/* Sanity check on leaf 8X26, 1F */
 
 /*
  * See the big theory statement for a more detailed explanation of what some of
@@ -1789,7 +1811,7 @@ struct cpuid_info {
 	id_t cpi_last_lvl_cacheid;	/* fn 4: %eax: derived cache id */
 	uint_t cpi_cache_leaf_size;	/* Number of cache elements */
 					/* Intel fn: 4, AMD fn: 8000001d */
-	struct cpuid_regs **cpi_cache_leaves;	/* Acual leaves from above */
+	struct cpuid_regs **cpi_cache_leaves;	/* Actual leaves from above */
 	struct cpuid_regs cpi_std[NMAX_CPI_STD];	/* 0 .. 7 */
 	struct cpuid_regs cpi_sub7[1];	/* Leaf 7, sub-leaf 1 */
 	/*
@@ -1840,6 +1862,13 @@ struct cpuid_info {
 	uint_t cpi_cores_per_compunit;	/* AMD: # of cores in the ComputeUnit */
 
 	struct xsave_info cpi_xsave;	/* fn D: xsave/xrestor info */
+
+	/*
+	 * AMD and Intel extended topology information. Leaf 8X26 (AMD) and
+	 * eventually leaf 0x1F (Intel).
+	 */
+	uint_t cpi_topo_nleaves;
+	struct cpuid_regs cpi_topo[NMAX_CPI_TOPO];
 };
 
 
@@ -1885,6 +1914,10 @@ static struct cpuid_info cpuid_info0;
 #define	CPI_SELF_INIT_CACHE(regs)	BITX((regs)->cp_eax, 8, 8)
 #define	CPI_CACHE_LVL(regs)		BITX((regs)->cp_eax, 7, 5)
 #define	CPI_CACHE_TYPE(regs)		BITX((regs)->cp_eax, 4, 0)
+#define	CPI_CACHE_TYPE_DONE	0
+#define	CPI_CACHE_TYPE_DATA	1
+#define	CPI_CACHE_TYPE_INSTR	2
+#define	CPI_CACHE_TYPE_UNIFIED	3
 #define	CPI_CPU_LEVEL_TYPE(regs)	BITX((regs)->cp_ecx, 15, 8)
 
 #define	CPI_CACHE_WAYS(regs)		BITX((regs)->cp_ebx, 31, 22)
@@ -1957,9 +1990,11 @@ static struct cpuid_info cpuid_info0;
 #define	CPUID_LEAF_EXT_8		0x80000008
 #define	CPUID_LEAF_EXT_1d		0x8000001d
 #define	CPUID_LEAF_EXT_1e		0x8000001e
+#define	CPUID_LEAF_EXT_21		0x80000021
+#define	CPUID_LEAF_EXT_26		0x80000026
 
 /*
- * Functions we consune from cpuid_subr.c;  don't publish these in a header
+ * Functions we consume from cpuid_subr.c;  don't publish these in a header
  * file to try and keep people using the expected cpuid_* interfaces.
  */
 extern uint32_t _cpuid_skt(uint_t, uint_t, uint_t, uint_t);
@@ -2228,6 +2263,32 @@ is_controldom(void)
 #endif	/* __xpv */
 
 /*
+ * Gather the extended topology information. This should be the same for both
+ * AMD leaf 8X26 and Intel leaf 0x1F (though the data interpretation varies).
+ */
+static void
+cpuid_gather_ext_topo_leaf(struct cpuid_info *cpi, uint32_t leaf)
+{
+	uint_t i;
+
+	for (i = 0; i < ARRAY_SIZE(cpi->cpi_topo); i++) {
+		struct cpuid_regs *regs = &cpi->cpi_topo[i];
+
+		bzero(regs, sizeof (struct cpuid_regs));
+		regs->cp_eax = leaf;
+		regs->cp_ecx = i;
+
+		(void) __cpuid_insn(regs);
+		if (CPUID_AMD_8X26_ECX_TYPE(regs->cp_ecx) ==
+		    CPUID_AMD_8X26_TYPE_DONE) {
+			break;
+		}
+	}
+
+	cpi->cpi_topo_nleaves = i;
+}
+
+/*
  * Make sure that we have gathered all of the CPUID leaves that we might need to
  * determine topology. We assume that the standard leaf 1 has already been done
  * and that xmaxeax has already been calculated.
@@ -2254,6 +2315,10 @@ cpuid_gather_amd_topology_leaves(cpu_t *cpu)
 		cp->cp_eax = CPUID_LEAF_EXT_1e;
 		(void) __cpuid_insn(cp);
 	}
+
+	if (cpi->cpi_xmaxeax >= CPUID_LEAF_EXT_26) {
+		cpuid_gather_ext_topo_leaf(cpi, CPUID_LEAF_EXT_26);
+	}
 }
 
 /*
@@ -2266,7 +2331,7 @@ static uint32_t
 cpuid_gather_apicid(struct cpuid_info *cpi)
 {
 	/*
-	 * Leaf B changes based on the arguments to it. Beacuse we don't cache
+	 * Leaf B changes based on the arguments to it. Because we don't cache
 	 * it, we need to gather it again.
 	 */
 	if (cpi->cpi_maxeax >= 0xB) {
@@ -2866,6 +2931,13 @@ cpuid_update_l1d_flush(cpu_t *cpu, uchar_t *featureset)
  * NOTE: We used to skip RSB mitigations with eIBRS, but developments around
  * post-barrier RSB guessing suggests we should enable RSB mitigations always
  * unless specifically instructed not to.
+ *
+ * AMD indicates that when Automatic IBRS is enabled we do not need to implement
+ * return stack buffer clearing for VMEXIT as it takes care of it. The manual
+ * also states that as long as SMEP and we maintain at least one page between
+ * the kernel and user space (we have much more of a red zone), then we do not
+ * need to clear the RSB. We constrain this to only when Automatic IRBS is
+ * present.
  */
 static void
 cpuid_patch_rsb(x86_spectrev2_mitigation_t mit)
@@ -2874,6 +2946,7 @@ cpuid_patch_rsb(x86_spectrev2_mitigation_t mit)
 	uint8_t *stuff = (uint8_t *)x86_rsb_stuff;
 
 	switch (mit) {
+	case X86_SPECTREV2_AUTO_IBRS:
 	case X86_SPECTREV2_DISABLED:
 		*stuff = ret;
 		break;
@@ -2899,12 +2972,13 @@ cpuid_patch_retpolines(x86_spectrev2_mitigation_t mit)
 	case X86_SPECTREV2_RETPOLINE:
 		type = "gen";
 		break;
+	case X86_SPECTREV2_AUTO_IBRS:
 	case X86_SPECTREV2_ENHANCED_IBRS:
 	case X86_SPECTREV2_DISABLED:
 		type = "jmp";
 		break;
 	default:
-		panic("asked to updated retpoline state with unknown state!");
+		panic("asked to update retpoline state with unknown state!");
 	}
 
 	for (i = 0; i < nthunks; i++) {
@@ -2934,6 +3008,16 @@ cpuid_enable_enhanced_ibrs(void)
 	val = rdmsr(MSR_IA32_SPEC_CTRL);
 	val |= IA32_SPEC_CTRL_IBRS;
 	wrmsr(MSR_IA32_SPEC_CTRL, val);
+}
+
+static void
+cpuid_enable_auto_ibrs(void)
+{
+	uint64_t val;
+
+	val = rdmsr(MSR_AMD_EFER);
+	val |= AMD_EFER_AIBRSE;
+	wrmsr(MSR_AMD_EFER, val);
 }
 
 /*
@@ -3055,14 +3139,17 @@ cpuid_scan_security(cpu_t *cpu, uchar_t *featureset)
 			add_x86_feature(featureset, X86FSET_SSBD_VIRT);
 		if (cpi->cpi_extd[8].cp_ebx & CPUID_AMD_EBX_SSB_NO)
 			add_x86_feature(featureset, X86FSET_SSB_NO);
+
 		/*
-		 * Don't enable enhanced IBRS unless we're told that we should
-		 * prefer it and it has the same semantics as Intel. This is
-		 * split into two bits rather than a single one.
+		 * Rather than Enhanced IBRS, AMD has a different feature that
+		 * is a bit in EFER that can be enabled and will basically do
+		 * the right thing while executing in the kernel.
 		 */
-		if ((cpi->cpi_extd[8].cp_ebx & CPUID_AMD_EBX_PREFER_IBRS) &&
-		    (cpi->cpi_extd[8].cp_ebx & CPUID_AMD_EBX_IBRS_ALL)) {
-			add_x86_feature(featureset, X86FSET_IBRS_ALL);
+		if (cpi->cpi_vendor == X86_VENDOR_AMD &&
+		    (cpi->cpi_extd[8].cp_ebx & CPUID_AMD_EBX_PREFER_IBRS) &&
+		    cpi->cpi_xmaxeax >= CPUID_LEAF_EXT_21 &&
+		    (cpi->cpi_extd[0x21].cp_eax & CPUID_AMD_8X21_EAX_AIBRS)) {
+			add_x86_feature(featureset, X86FSET_AUTO_IBRS);
 		}
 
 	} else if (cpi->cpi_vendor == X86_VENDOR_Intel &&
@@ -3149,8 +3236,15 @@ cpuid_scan_security(cpu_t *cpu, uchar_t *featureset)
 	 * enhanced IBRS, or disabling TSX.
 	 */
 	if (cpu->cpu_id != 0) {
-		if (x86_spectrev2_mitigation == X86_SPECTREV2_ENHANCED_IBRS) {
+		switch (x86_spectrev2_mitigation) {
+		case X86_SPECTREV2_ENHANCED_IBRS:
 			cpuid_enable_enhanced_ibrs();
+			break;
+		case X86_SPECTREV2_AUTO_IBRS:
+			cpuid_enable_auto_ibrs();
+			break;
+		default:
+			break;
 		}
 
 		cpuid_apply_tsx(x86_taa_mitigation, featureset);
@@ -3165,14 +3259,16 @@ cpuid_scan_security(cpu_t *cpu, uchar_t *featureset)
 
 	/*
 	 * By default we've come in with retpolines enabled. Check whether we
-	 * should disable them or enable enhanced IBRS. RSB stuffing is enabled
-	 * by default, but disabled if we are using enhanced IBRS. Note, we do
-	 * not allow the use of AMD optimized retpolines as it was disclosed by
-	 * AMD in March 2022 that they were still vulnerable. Prior to that
-	 * point, we used them.
+	 * should disable them or enable enhanced or automatic IBRS. RSB
+	 * stuffing is enabled by default. Note, we do not allow the use of AMD
+	 * optimized retpolines as it was disclosed by AMD in March 2022 that
+	 * they were still vulnerable. Prior to that point, we used them.
 	 */
 	if (x86_disable_spectrev2 != 0) {
 		v2mit = X86_SPECTREV2_DISABLED;
+	} else if (is_x86_feature(featureset, X86FSET_AUTO_IBRS)) {
+		cpuid_enable_auto_ibrs();
+		v2mit = X86_SPECTREV2_AUTO_IBRS;
 	} else if (is_x86_feature(featureset, X86FSET_IBRS_ALL)) {
 		cpuid_enable_enhanced_ibrs();
 		v2mit = X86_SPECTREV2_ENHANCED_IBRS;
@@ -4138,6 +4234,22 @@ cpuid_pass_basic(cpu_t *cpu, void *arg)
 			add_x86_feature(featureset, X86FSET_XSAVEC);
 		if (ecp->cp_eax & CPUID_INTC_EAX_D_1_XSAVES)
 			add_x86_feature(featureset, X86FSET_XSAVES);
+
+		/*
+		 * Zen 2 family processors suffer from erratum 1386 that causes
+		 * xsaves to not function correctly in some circumstances. There
+		 * are no supervisor states in Zen 2 and earlier. Practically
+		 * speaking this has no impact for us as we currently do not
+		 * leverage compressed xsave formats. To safeguard against
+		 * issues in the future where we may opt to using it, we remove
+		 * it from the feature set now. While Matisse has a microcode
+		 * update available with a fix, not all Zen 2 CPUs do so it's
+		 * simpler for the moment to unconditionally remove it.
+		 */
+		if (cpi->cpi_vendor == X86_VENDOR_AMD &&
+		    uarchrev_uarch(cpi->cpi_uarchrev) <= X86_UARCH_AMD_ZEN2) {
+			remove_x86_feature(featureset, X86FSET_XSAVES);
+		}
 	}
 
 	/*
@@ -4452,8 +4564,23 @@ cpuid_pass_basic(cpu_t *cpu, void *arg)
 
 
 	/*
-	 * Check the processor leaves that are used for security features.
+	 * Check the processor leaves that are used for security features. Grab
+	 * any additional processor-specific leaves that we may not have yet.
 	 */
+	switch (cpi->cpi_vendor) {
+	case X86_VENDOR_AMD:
+	case X86_VENDOR_HYGON:
+		if (cpi->cpi_xmaxeax >= CPUID_LEAF_EXT_21) {
+			cp = &cpi->cpi_extd[7];
+			cp->cp_eax = CPUID_LEAF_EXT_21;
+			cp->cp_ecx = 0;
+			(void) __cpuid_insn(cp);
+		}
+		break;
+	default:
+		break;
+	}
+
 	cpuid_scan_security(cpu, featureset);
 }
 
@@ -4819,8 +4946,9 @@ cpuid_pass_extended(cpu_t *cpu, void *_arg __unused)
 	if ((nmax = cpi->cpi_xmaxeax - CPUID_LEAF_EXT_0 + 1) > NMAX_CPI_EXTD)
 		nmax = NMAX_CPI_EXTD;
 	/*
-	 * Copy the extended properties, fixing them as we go.
-	 * (We already handled n == 0 and n == 1 in the basic pass)
+	 * Copy the extended properties, fixing them as we go. While we start at
+	 * 2 because we've already handled a few cases in the basic pass, the
+	 * rest we let ourselves just grab again (e.g. 0x8, 0x21).
 	 */
 	iptr = (void *)cpi->cpi_brandstr;
 	for (n = 2, cp = &cpi->cpi_extd[2]; n < nmax; cp++, n++) {
@@ -6011,10 +6139,53 @@ cpuid_get_addrsize(cpu_t *cpu, uint_t *pabits, uint_t *vabits)
 }
 
 size_t
-cpuid_get_xsave_size()
+cpuid_get_xsave_size(void)
 {
 	return (MAX(cpuid_info0.cpi_xsave.xsav_max_size,
 	    sizeof (struct xsave_state)));
+}
+
+/*
+ * Export information about known offsets to the kernel. We only care about
+ * things we have actually enabled support for in %xcr0.
+ */
+void
+cpuid_get_xsave_info(uint64_t bit, size_t *sizep, size_t *offp)
+{
+	size_t size, off;
+
+	VERIFY3U(bit & xsave_bv_all, !=, 0);
+
+	if (sizep == NULL)
+		sizep = &size;
+	if (offp == NULL)
+		offp = &off;
+
+	switch (bit) {
+	case XFEATURE_LEGACY_FP:
+	case XFEATURE_SSE:
+		*sizep = sizeof (struct fxsave_state);
+		*offp = 0;
+		break;
+	case XFEATURE_AVX:
+		*sizep = cpuid_info0.cpi_xsave.ymm_size;
+		*offp = cpuid_info0.cpi_xsave.ymm_offset;
+		break;
+	case XFEATURE_AVX512_OPMASK:
+		*sizep = cpuid_info0.cpi_xsave.opmask_size;
+		*offp = cpuid_info0.cpi_xsave.opmask_offset;
+		break;
+	case XFEATURE_AVX512_ZMM:
+		*sizep = cpuid_info0.cpi_xsave.zmmlo_size;
+		*offp = cpuid_info0.cpi_xsave.zmmlo_offset;
+		break;
+	case XFEATURE_AVX512_HI_ZMM:
+		*sizep = cpuid_info0.cpi_xsave.zmmhi_size;
+		*offp = cpuid_info0.cpi_xsave.zmmhi_offset;
+		break;
+	default:
+		panic("asked for unsupported xsave feature: 0x%lx", bit);
+	}
 }
 
 /*
@@ -6025,7 +6196,7 @@ cpuid_get_xsave_size()
  * feature bit and is reflected in the cpi_fp_amd_save member.
  */
 boolean_t
-cpuid_need_fp_excp_handling()
+cpuid_need_fp_excp_handling(void)
 {
 	return (cpuid_info0.cpi_vendor == X86_VENDOR_AMD &&
 	    cpuid_info0.cpi_fp_amd_save != 0);
@@ -7682,11 +7853,25 @@ cpuid_pass_ucode(cpu_t *cpu, uchar_t *fset)
 			}
 		}
 
+		/*
+		 * Most AMD features are in leaf 8. Automatic IBRS was added in
+		 * leaf 0x21. So we also check that.
+		 */
 		bzero(&cp, sizeof (cp));
 		cp.cp_eax = CPUID_LEAF_EXT_8;
 		(void) __cpuid_insn(&cp);
 		platform_cpuid_mangle(cpi->cpi_vendor, CPUID_LEAF_EXT_8, &cp);
 		cpi->cpi_extd[8] = cp;
+
+		if (cpi->cpi_xmaxeax < CPUID_LEAF_EXT_21) {
+			return;
+		}
+
+		bzero(&cp, sizeof (cp));
+		cp.cp_eax = CPUID_LEAF_EXT_21;
+		(void) __cpuid_insn(&cp);
+		platform_cpuid_mangle(cpi->cpi_vendor, CPUID_LEAF_EXT_21, &cp);
+		cpi->cpi_extd[0x21] = cp;
 	} else {
 		/*
 		 * Nothing to do here. Return an empty set which has already
@@ -7917,4 +8102,132 @@ uarchrev_at_least(const x86_uarchrev_t ur, const x86_uarchrev_t min)
 	return (_X86_UARCHREV_VENDOR(ur) == _X86_UARCHREV_VENDOR(min) &&
 	    _X86_UARCHREV_UARCH(ur) == _X86_UARCHREV_UARCH(min) &&
 	    _X86_UARCHREV_REV(ur) >= _X86_UARCHREV_REV(min));
+}
+
+/*
+ * Topology cache related information. This is yet another cache interface that
+ * we're exposing out intended to be used when we have either Intel Leaf 4 or
+ * AMD Leaf 8x1D (introduced with Zen 1).
+ */
+static boolean_t
+cpuid_cache_topo_sup(const struct cpuid_info *cpi)
+{
+	switch (cpi->cpi_vendor) {
+	case X86_VENDOR_Intel:
+		if (cpi->cpi_maxeax >= 4) {
+			return (B_TRUE);
+		}
+		break;
+	case X86_VENDOR_AMD:
+	case X86_VENDOR_HYGON:
+		if (cpi->cpi_xmaxeax >= CPUID_LEAF_EXT_1d &&
+		    is_x86_feature(x86_featureset, X86FSET_TOPOEXT)) {
+			return (B_TRUE);
+		}
+		break;
+	default:
+		break;
+	}
+
+	return (B_FALSE);
+}
+
+int
+cpuid_getncaches(struct cpu *cpu, uint32_t *ncache)
+{
+	const struct cpuid_info *cpi;
+
+	ASSERT(cpuid_checkpass(cpu, CPUID_PASS_DYNAMIC));
+	cpi = cpu->cpu_m.mcpu_cpi;
+
+	if (!cpuid_cache_topo_sup(cpi)) {
+		return (ENOTSUP);
+	}
+
+	*ncache = cpi->cpi_cache_leaf_size;
+	return (0);
+}
+
+int
+cpuid_getcache(struct cpu *cpu, uint32_t cno, x86_cache_t *cache)
+{
+	const struct cpuid_info *cpi;
+	const struct cpuid_regs *cp;
+
+	ASSERT(cpuid_checkpass(cpu, CPUID_PASS_DYNAMIC));
+	cpi = cpu->cpu_m.mcpu_cpi;
+
+	if (!cpuid_cache_topo_sup(cpi)) {
+		return (ENOTSUP);
+	}
+
+	if (cno >= cpi->cpi_cache_leaf_size) {
+		return (EINVAL);
+	}
+
+	bzero(cache, sizeof (cache));
+	cp = cpi->cpi_cache_leaves[cno];
+	switch (CPI_CACHE_TYPE(cp)) {
+	case CPI_CACHE_TYPE_DATA:
+		cache->xc_type = X86_CACHE_TYPE_DATA;
+		break;
+	case CPI_CACHE_TYPE_INSTR:
+		cache->xc_type = X86_CACHE_TYPE_INST;
+		break;
+	case CPI_CACHE_TYPE_UNIFIED:
+		cache->xc_type = X86_CACHE_TYPE_UNIFIED;
+		break;
+	case CPI_CACHE_TYPE_DONE:
+	default:
+		return (EINVAL);
+	}
+	cache->xc_level = CPI_CACHE_LVL(cp);
+	if (CPI_FULL_ASSOC_CACHE(cp) != 0) {
+		cache->xc_flags |= X86_CACHE_F_FULL_ASSOC;
+	}
+	cache->xc_nparts = CPI_CACHE_PARTS(cp) + 1;
+	/*
+	 * The number of sets is reserved on AMD if the CPU is tagged as fully
+	 * associative, where as it is considered valid on Intel.
+	 */
+	if (cpi->cpi_vendor == X86_VENDOR_AMD &&
+	    CPI_FULL_ASSOC_CACHE(cp) != 0) {
+		cache->xc_nsets = 1;
+	} else {
+		cache->xc_nsets = CPI_CACHE_SETS(cp) + 1;
+	}
+	cache->xc_nways = CPI_CACHE_WAYS(cp) + 1;
+	cache->xc_line_size = CPI_CACHE_COH_LN_SZ(cp) + 1;
+	cache->xc_size = cache->xc_nparts * cache->xc_nsets * cache->xc_nways *
+	    cache->xc_line_size;
+	/*
+	 * We're looking for the number of bits to cover the number of CPUs that
+	 * are being shared. Normally this would be the value - 1, but the CPUID
+	 * value is encoded as the actual value minus one, so we don't modify
+	 * this at all.
+	 */
+	cache->xc_apic_shift = highbit(CPI_NTHR_SHR_CACHE(cp));
+
+	/*
+	 * To construct a unique ID we construct a uint64_t that looks as
+	 * follows:
+	 *
+	 * [47:40] cache level
+	 * [39:32] CPUID cache type
+	 * [31:00] shifted APIC ID
+	 *
+	 * The shifted APIC ID gives us a guarantee that a given cache entry is
+	 * unique within its peers. The other two numbers give us something that
+	 * ensures that something is unique within the CPU. If we just had the
+	 * APIC ID shifted over by the indicated number of bits we'd end up with
+	 * an ID of zero for the L1I, L1D, L2, and L3.
+	 *
+	 * The format of this ID is private to the system and can change across
+	 * a reboot for the time being.
+	 */
+	cache->xc_id = (uint64_t)cache->xc_level << 40;
+	cache->xc_id |= (uint64_t)cache->xc_type << 32;
+	cache->xc_id |= (uint64_t)cpi->cpi_apicid >> cache->xc_apic_shift;
+
+	return (0);
 }

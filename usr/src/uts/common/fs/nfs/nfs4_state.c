@@ -26,6 +26,7 @@
 /*
  * Copyright 2018 Nexenta Systems, Inc.
  * Copyright 2019 Nexenta by DDN, Inc.
+ * Copyright 2023 MNX Cloud, Inc.
  */
 
 #include <sys/systm.h>
@@ -392,8 +393,6 @@ static void rfs4_state_rele_nounlock(rfs4_state_t *);
 
 static int rfs4_ss_enabled = 0;
 
-extern void (*rfs4_client_clrst)(struct nfs4clrst_args *);
-
 void
 rfs4_ss_pnfree(rfs4_ss_pn_t *ss_pn)
 {
@@ -534,7 +533,8 @@ rfs4_ss_getstate(vnode_t *dvp, rfs4_ss_pn_t *ss_pn)
 	uio.uio_loffset = 0;
 	uio.uio_resid = sizeof (int) + NFS4_VERIFIER_SIZE + sizeof (uint_t);
 
-	if (err = VOP_READ(vp, &uio, FREAD, CRED(), NULL)) {
+	err = VOP_READ(vp, &uio, FREAD, CRED(), NULL);
+	if (err != 0) {
 		VOP_RWUNLOCK(vp, V_WRITELOCK_FALSE, NULL);
 		(void) VOP_CLOSE(vp, FREAD, 1, (offset_t)0, CRED(), NULL);
 		VN_RELE(vp);
@@ -574,7 +574,8 @@ rfs4_ss_getstate(vnode_t *dvp, rfs4_ss_pn_t *ss_pn)
 	uio.uio_segflg = UIO_SYSSPACE;
 	uio.uio_resid = cl_ss->cl_id4.id_len = id_len;
 
-	if (err = VOP_READ(vp, &uio, FREAD, CRED(), NULL)) {
+	err = VOP_READ(vp, &uio, FREAD, CRED(), NULL);
+	if (err != 0) {
 		VOP_RWUNLOCK(vp, V_WRITELOCK_FALSE, NULL);
 		(void) VOP_CLOSE(vp, FREAD, 1, (offset_t)0, CRED(), NULL);
 		VN_RELE(vp);
@@ -662,7 +663,8 @@ rfs4_ss_oldstate(rfs4_oldstate_t *oldstate, char *statedir, char *destdir)
 			if (ss_pn == NULL)
 				continue;
 
-			if (cl_ss = rfs4_ss_getstate(dvp, ss_pn)) {
+			cl_ss = rfs4_ss_getstate(dvp, ss_pn);
+			if (cl_ss != NULL) {
 				if (destdir != NULL) {
 					rfs4_ss_pnfree(ss_pn);
 					cl_ss->ss_pn = rfs4_ss_movestate(
@@ -1130,12 +1132,32 @@ rfs4_client_scrub(rfs4_entry_t ent, void *arg)
  * This is called from nfssys() in order to clear server state
  * for the specified client IP Address.
  */
-void
+int
 rfs4_clear_client_state(struct nfs4clrst_args *clr)
 {
-	nfs4_srv_t *nsrv4;
-	nsrv4 = nfs4_get_srv();
-	(void) rfs4_dbe_walk(nsrv4->rfs4_client_tab, rfs4_client_scrub, clr);
+	nfs4_srv_t *nsrv4 = nfs4_get_srv();
+	int rc;
+
+	/* Once nfssrv is loaded, every zone should have one of these. */
+	VERIFY(nsrv4 != NULL);
+
+	mutex_enter(&nsrv4->state_lock);
+	/*
+	 * But only after NFS service is running is the nfs4_server_state
+	 * around. It's dirty (and needs the state_lock held), but all of the
+	 * databases live deep in the nfs4_server_state, so it's the only thing
+	 * to legitimately check prior to using anything. The pointers
+	 * themselves may be stale.
+	 */
+	if (nsrv4->nfs4_server_state != NULL) {
+		VERIFY(nsrv4->rfs4_client_tab != NULL);
+		rfs4_dbe_walk(nsrv4->rfs4_client_tab, rfs4_client_scrub, clr);
+		rc = 0;
+	} else {
+		rc = ENXIO;
+	}
+	mutex_exit(&nsrv4->state_lock);
+	return (rc);
 }
 
 /*
@@ -1180,8 +1202,6 @@ rfs4_state_g_init()
 	rfs4_file_mem_cache = nfs4_init_mem_cache("File_entry_cache", 1, sizeof (rfs4_file_t), 6);
 	/* CSTYLED */
 	rfs4_delegstID_mem_cache = nfs4_init_mem_cache("DelegStateID_entry_cache", 2, sizeof (rfs4_deleg_state_t), 7);
-
-	rfs4_client_clrst = rfs4_clear_client_state;
 }
 
 
@@ -1198,8 +1218,6 @@ rfs4_state_g_fini()
 	 */
 	if (cpr_id)
 		(void) callb_delete(cpr_id);
-
-	rfs4_client_clrst = NULL;
 
 	/* free the NFSv4 state databases */
 	for (i = 0; i < RFS4_DB_MEM_CACHE_NUM; i++) {
@@ -3932,7 +3950,7 @@ rfs4_close_all_state(rfs4_file_t *fp)
 	rw_enter(&fp->rf_file_rwlock, RW_WRITER);
 
 	/* Remove ALL state from the file */
-	while (sp = rfs4_findstate_by_file(fp)) {
+	while ((sp = rfs4_findstate_by_file(fp)) != NULL) {
 		rfs4_state_close(sp, FALSE, FALSE, CRED());
 		rfs4_state_rele_nounlock(sp);
 	}

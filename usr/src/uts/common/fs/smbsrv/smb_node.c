@@ -188,33 +188,31 @@ smb_node_fini(void)
 	if (smb_node_cache == NULL)
 		return;
 
-#ifdef DEBUG
 	for (i = 0; i <= SMBND_HASH_MASK; i++) {
 		smb_llist_t	*bucket;
 		smb_node_t	*node;
 
 		/*
-		 * The following sequence is just intended for sanity check.
-		 * This will have to be modified when the code goes into
-		 * production.
+		 * The SMB node hash table should be empty at this point.
+		 * If the hash table is not empty, clean it up.
 		 *
-		 * The SMB node hash table should be emtpy at this point. If the
-		 * hash table is not empty a panic will be triggered.
-		 *
-		 * The reason why SMB nodes are still remaining in the hash
-		 * table is problably due to a mismatch between calls to
-		 * smb_node_lookup() and smb_node_release(). You must track that
-		 * down.
+		 * The reason why SMB nodes might remain in this table is
+		 * generally forgotten references somewhere, perhaps on
+		 * open files, etc.  Those are defects.
 		 */
 		bucket = &smb_node_hash_table[i];
 		node = smb_llist_head(bucket);
 		while (node != NULL) {
+#ifdef DEBUG
 			cmn_err(CE_NOTE, "leaked node: 0x%p %s",
 			    (void *)node, node->od_name);
-			node = smb_llist_next(bucket, node);
+			cmn_err(CE_NOTE, "...bucket: 0x%p", bucket);
+			debug_enter("leaked_node");
+#endif
+			smb_llist_remove(bucket, node);
+			node = smb_llist_head(bucket);
 		}
 	}
-#endif
 
 	for (i = 0; i <= SMBND_HASH_MASK; i++) {
 		smb_llist_destructor(&smb_node_hash_table[i]);
@@ -782,7 +780,7 @@ smb_node_open_check(smb_node_t *node, uint32_t desired_access,
 		default:
 			ASSERT(status == NT_STATUS_SHARING_VIOLATION);
 			DTRACE_PROBE3(conflict3,
-			    smb_ofile_t, of,
+			    smb_ofile_t *, of,
 			    uint32_t, desired_access,
 			    uint32_t, share_access);
 			smb_llist_exit(&node->n_ofile_list);
@@ -817,7 +815,7 @@ smb_node_rename_check(smb_node_t *node)
 			break;
 		default:
 			ASSERT(status == NT_STATUS_SHARING_VIOLATION);
-			DTRACE_PROBE1(conflict1, smb_ofile_t, of);
+			DTRACE_PROBE1(conflict1, smb_ofile_t *, of);
 			smb_llist_exit(&node->n_ofile_list);
 			return (status);
 		}
@@ -855,7 +853,7 @@ smb_node_delete_check(smb_node_t *node)
 			break;
 		default:
 			ASSERT(status == NT_STATUS_SHARING_VIOLATION);
-			DTRACE_PROBE1(conflict1, smb_ofile_t, of);
+			DTRACE_PROBE1(conflict1, smb_ofile_t *, of);
 			smb_llist_exit(&node->n_ofile_list);
 			return (status);
 		}
@@ -1228,7 +1226,6 @@ smb_node_alloc(
     uint32_t	hashkey)
 {
 	smb_node_t	*node;
-	vnode_t		*root_vp;
 
 	node = kmem_cache_alloc(smb_node_cache, KM_SLEEP);
 
@@ -1253,11 +1250,8 @@ smb_node_alloc(
 	if (strcmp(od_name, XATTR_DIR) == 0)
 		node->flags |= NODE_XATTR_DIR;
 
-	if (VFS_ROOT(vp->v_vfsp, &root_vp) == 0) {
-		if (vp == root_vp)
-			node->flags |= NODE_FLAGS_VFSROOT;
-		VN_RELE(root_vp);
-	}
+	if ((vp->v_flag & VROOT) != 0)
+		node->flags |= NODE_FLAGS_VFSROOT;
 
 	node->n_state = SMB_NODE_STATE_AVAILABLE;
 	node->n_magic = SMB_NODE_MAGIC;
@@ -1669,12 +1663,6 @@ smb_node_getattr(smb_request_t *sr, smb_node_t *node, cred_t *cr,
 
 	SMB_NODE_VALID(node);
 
-	/* Deal with some interdependencies */
-	if (attr->sa_mask & SMB_AT_ALLOCSZ)
-		attr->sa_mask |= SMB_AT_SIZE;
-	if (attr->sa_mask & SMB_AT_DOSATTR)
-		attr->sa_mask |= SMB_AT_TYPE;
-
 	rc = smb_fsop_getattr(sr, cr, node, attr);
 	if (rc != 0)
 		return (rc);
@@ -1683,42 +1671,24 @@ smb_node_getattr(smb_request_t *sr, smb_node_t *node, cred_t *cr,
 
 	mutex_enter(&node->n_mutex);
 
-	if (attr->sa_mask & SMB_AT_DOSATTR) {
-		if (attr->sa_dosattr == 0) {
-			attr->sa_dosattr = (isdir) ?
-			    FILE_ATTRIBUTE_DIRECTORY:
-			    FILE_ATTRIBUTE_NORMAL;
-		}
-	}
-
 	/*
-	 * Also fix-up sa_allocsz, which is not persistent.
-	 * When there are no open files, allocsz is faked.
-	 * While there are open files, we pretend we have a
-	 * persistent allocation size in n_allocsz, and
-	 * keep that up-to-date here, increasing it when
-	 * we see the file size grow past it.
+	 * Fix-up sa_allocsz, for which we simulate persistence
+	 * while there are open files. (See smb_node_setattr)
+	 *
+	 * The value in node->n_allocsz is the value last set via
+	 * smb_node_setattr.  It's possible that writes may have
+	 * increased the file size beyond n_allocsz, in which case
+	 * the sa_vattr.va_size, sa_allocsz from smb_fsop_getattr
+	 * will be greater than n_allocsz, so this returns the
+	 * greater of n_allocsz and sa_allocsz.
 	 */
-	if (attr->sa_mask & SMB_AT_ALLOCSZ) {
-		if (isdir) {
-			attr->sa_allocsz = 0;
-		} else if (node->n_open_count == 0) {
-			attr->sa_allocsz =
-			    SMB_ALLOCSZ(attr->sa_vattr.va_size);
-		} else {
-			if (node->n_allocsz < attr->sa_vattr.va_size)
-				node->n_allocsz =
-				    SMB_ALLOCSZ(attr->sa_vattr.va_size);
-			attr->sa_allocsz = node->n_allocsz;
-		}
+	if ((attr->sa_mask & SMB_AT_ALLOCSZ) != 0 &&
+	    node->n_open_count > 0 && !isdir &&
+	    attr->sa_allocsz < node->n_allocsz) {
+		attr->sa_allocsz = node->n_allocsz;
 	}
 
 	mutex_exit(&node->n_mutex);
-
-	if (isdir) {
-		attr->sa_vattr.va_size = 0;
-		attr->sa_vattr.va_nlink = 1;
-	}
 
 	/*
 	 * getattr with an ofile gets any "pending" times that

@@ -33,6 +33,7 @@
 #
 
 <include SUNWcs.man1.inc>
+<include SUNWcs.man1has.inc>
 <include SUNWcs.man4d.inc>
 <include SUNWcs.man4fs.inc>
 <include SUNWcs.man5.inc>
@@ -531,29 +532,19 @@ link path=usr/adm target=../var/adm
 dir  path=usr/bin
 dir  path=usr/bin/$(ARCH32)
 $(i386_ONLY)file path=usr/bin/$(ARCH32)/amt mode=0555
-file path=usr/bin/$(ARCH32)/decrypt mode=0555
-file path=usr/bin/$(ARCH32)/digest mode=0555
-hardlink path=usr/bin/$(ARCH32)/encrypt target=decrypt
-hardlink path=usr/bin/$(ARCH32)/mac target=digest
-$(i386_ONLY)file path=usr/bin/$(ARCH32)/newtask group=sys mode=4555
-$(i386_ONLY)file path=usr/bin/$(ARCH32)/nohup mode=0555
-$(i386_ONLY)file path=usr/bin/$(ARCH32)/prctl mode=0555
-$(i386_ONLY)file path=usr/bin/$(ARCH32)/prstat mode=0555
-file path=usr/bin/$(ARCH32)/savecore mode=0555
 dir  path=usr/bin/$(ARCH64)
 file path=usr/bin/$(ARCH64)/amt mode=0555
 file path=usr/bin/$(ARCH64)/crle mode=0555
-file path=usr/bin/$(ARCH64)/decrypt mode=0555
-file path=usr/bin/$(ARCH64)/digest mode=0555
-hardlink path=usr/bin/$(ARCH64)/encrypt target=decrypt
+link path=usr/bin/$(ARCH64)/decrypt target=../../bin/decrypt
+link path=usr/bin/$(ARCH64)/digest target=../../bin/digest
+link path=usr/bin/$(ARCH64)/encrypt target=../../bin/encrypt
 file path=usr/bin/$(ARCH64)/ls mode=0555
-hardlink path=usr/bin/$(ARCH64)/mac target=digest
+link path=usr/bin/$(ARCH64)/mac target=../../bin/mac
 file path=usr/bin/$(ARCH64)/moe mode=0555
-file path=usr/bin/$(ARCH64)/newtask group=sys mode=4555
-file path=usr/bin/$(ARCH64)/nohup mode=0555
-file path=usr/bin/$(ARCH64)/prctl mode=0555
-file path=usr/bin/$(ARCH64)/prstat mode=0555
-file path=usr/bin/$(ARCH64)/savecore mode=0555
+link path=usr/bin/$(ARCH64)/newtask target=../../bin/newtask
+link path=usr/bin/$(ARCH64)/nohup target=../../bin/nohup
+link path=usr/bin/$(ARCH64)/prctl target=../../bin/prctl
+link path=usr/bin/$(ARCH64)/prstat target=../../bin/prstat
 $(i386_ONLY)file path=usr/bin/addbadsec mode=0555
 file path=usr/bin/amt mode=0555
 file path=usr/bin/arch mode=0555
@@ -587,18 +578,19 @@ file path=usr/bin/cpio mode=0555
 file path=usr/bin/crle mode=0555
 file path=usr/bin/crontab mode=4555
 file path=usr/bin/crypt mode=0555
-file path=usr/bin/csh mode=0555
+link path=usr/bin/csh target=../has/bin/csh mediator=csh \
+    mediator-implementation=illumos
 file path=usr/bin/ctrun mode=0555
 file path=usr/bin/ctstat mode=0555
 file path=usr/bin/ctwatch mode=0555
 file path=usr/bin/date mode=0555
 file path=usr/bin/dd mode=0555
-hardlink path=usr/bin/decrypt target=../../usr/lib/isaexec
+file path=usr/bin/decrypt mode=0555
 file path=usr/bin/devattr mode=0555
 file path=usr/bin/devfree mode=0555
 file path=usr/bin/devreserv mode=0555
 link path=usr/bin/df target=../sbin/df
-hardlink path=usr/bin/digest target=../../usr/lib/isaexec
+file path=usr/bin/digest mode=0555
 file path=usr/bin/dirname mode=0555
 $(i386_ONLY)file path=usr/bin/diskscan mode=0555
 hardlink path=usr/bin/dispgid target=../../usr/bin/ckgid
@@ -612,7 +604,7 @@ file path=usr/bin/ed mode=0555
 hardlink path=usr/bin/edit target=../has/bin/edit
 hardlink path=usr/bin/egrep target=../../usr/bin/grep
 file path=usr/bin/eject mode=0555
-hardlink path=usr/bin/encrypt target=../../usr/lib/isaexec
+hardlink path=usr/bin/encrypt target=../bin/decrypt
 file path=usr/bin/env mode=0555
 file path=usr/bin/expr mode=0555
 file path=usr/bin/false mode=0555
@@ -661,7 +653,7 @@ file path=usr/bin/logins mode=0750
 file path=usr/bin/logname mode=0555
 file path=usr/bin/ls mode=0555
 file path=usr/bin/m4 mode=0555
-hardlink path=usr/bin/mac target=../../usr/lib/isaexec
+hardlink path=usr/bin/mac target=../bin/digest
 file path=usr/bin/mach mode=0555
 file path=usr/bin/mail group=mail mode=2511
 file path=usr/bin/mailx group=mail mode=2511
@@ -677,9 +669,9 @@ file path=usr/bin/mt mode=0555
 hardlink path=usr/bin/mv target=../../usr/bin/cp
 file path=usr/bin/netstat mode=0555
 file path=usr/bin/newgrp group=sys mode=4755
-hardlink path=usr/bin/newtask target=../../usr/lib/isaexec
+file path=usr/bin/newtask group=sys mode=4555
 file path=usr/bin/nice mode=0555
-hardlink path=usr/bin/nohup target=../../usr/lib/isaexec
+file path=usr/bin/nohup mode=0555
 file path=usr/bin/optisa mode=0555
 hardlink path=usr/bin/page target=../../usr/bin/more
 file path=usr/bin/pagesize mode=0555
@@ -696,12 +688,12 @@ file path=usr/bin/pgrep mode=0555
 hardlink path=usr/bin/pkill target=../../usr/bin/pgrep
 file path=usr/bin/pktool mode=0555
 file path=usr/bin/pr mode=0555
-hardlink path=usr/bin/prctl target=../../usr/lib/isaexec
+file path=usr/bin/prctl mode=0555
 file path=usr/bin/printf mode=0555
 file path=usr/bin/priocntl mode=0555
 file path=usr/bin/profiles mode=0555
 file path=usr/bin/projects mode=0555
-hardlink path=usr/bin/prstat target=../../usr/lib/isaexec
+file path=usr/bin/prstat mode=0555
 file path=usr/bin/ps mode=0555
 file path=usr/bin/putdev mode=0555
 file path=usr/bin/putdgrp mode=0555
@@ -715,7 +707,7 @@ file path=usr/bin/rmdir mode=0555
 file path=usr/bin/roles mode=0555
 file path=usr/bin/rpcinfo mode=0555
 file path=usr/bin/runat mode=0555
-hardlink path=usr/bin/savecore target=../../usr/lib/isaexec
+file path=usr/bin/savecore mode=0555
 file path=usr/bin/script mode=0555
 file path=usr/bin/sed mode=0555
 file path=usr/bin/setfacl mode=0555
@@ -765,6 +757,7 @@ dir  path=usr/demo
 dir  path=usr/games
 dir  path=usr/has
 dir  path=usr/has/bin
+file path=usr/has/bin/csh mode=0555
 file path=usr/has/bin/edit mode=0555
 hardlink path=usr/has/bin/ex target=edit
 link path=usr/has/bin/jsh target=sh
@@ -1140,23 +1133,6 @@ file path=usr/lib/help/profiles/locale/C/RtZFSStorageMngmnt.html
 file path=usr/lib/help/profiles/locale/C/RtZoneMngmnt.html
 file path=usr/lib/help/profiles/locale/C/RtZoneSecurity.html
 file path=usr/lib/hotplugd mode=0555
-dir  path=usr/lib/iconv
-file path=usr/lib/iconv/646da.8859.t mode=0444
-file path=usr/lib/iconv/646de.8859.t mode=0444
-file path=usr/lib/iconv/646en.8859.t mode=0444
-file path=usr/lib/iconv/646es.8859.t mode=0444
-file path=usr/lib/iconv/646fr.8859.t mode=0444
-file path=usr/lib/iconv/646it.8859.t mode=0444
-file path=usr/lib/iconv/646sv.8859.t mode=0444
-file path=usr/lib/iconv/8859.646.t mode=0444
-file path=usr/lib/iconv/8859.646da.t mode=0444
-file path=usr/lib/iconv/8859.646de.t mode=0444
-file path=usr/lib/iconv/8859.646en.t mode=0444
-file path=usr/lib/iconv/8859.646es.t mode=0444
-file path=usr/lib/iconv/8859.646fr.t mode=0444
-file path=usr/lib/iconv/8859.646it.t mode=0444
-file path=usr/lib/iconv/8859.646sv.t mode=0444
-file path=usr/lib/iconv/iconv_data mode=0444
 file path=usr/lib/idmapd mode=0555
 dir  path=usr/lib/inet
 dir  path=usr/lib/inet/$(ARCH64)
@@ -1226,6 +1202,8 @@ dir  path=usr/lib/secure/$(ARCH64)
 link path=usr/lib/secure/32 target=.
 link path=usr/lib/secure/64 target=$(ARCH64)
 dir  path=usr/lib/security
+dir  path=usr/lib/spd
+file path=usr/lib/spd/spd mode=0555
 dir  path=usr/lib/sysevent
 dir  path=usr/lib/sysevent/modules
 file path=usr/lib/sysevent/modules/datalink_mod.so

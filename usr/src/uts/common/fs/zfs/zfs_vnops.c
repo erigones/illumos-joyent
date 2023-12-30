@@ -24,7 +24,8 @@
  * Copyright (c) 2012, 2017 by Delphix. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
  * Copyright 2020 Joyent, Inc.
- * Copyright 2017 Nexenta Systems, Inc.
+ * Copyright 2020 Tintri by DDN, Inc. All rights reserved.
+ * Copyright 2015-2023 RackTop Systems, Inc.
  */
 
 /* Portions Copyright 2007 Jeremy Teo */
@@ -761,30 +762,43 @@ zfs_write_clear_setid_bits_if_necessary(zfsvfs_t *zfsvfs, znode_t *zp,
 	 * Note: we don't call zfs_fuid_map_id() here because
 	 * user 0 is not an ephemeral uid.
 	 */
-	mutex_enter(&zp->z_acl_lock);
+	rw_enter(&zp->z_acl_lock, RW_READER);
 	if ((zp->z_mode & (S_IXUSR | (S_IXUSR >> 3) | (S_IXUSR >> 6))) != 0 &&
 	    (zp->z_mode & (S_ISUID | S_ISGID)) != 0 &&
 	    secpolicy_vnode_setid_retain(cr,
 	    ((zp->z_mode & S_ISUID) != 0 && zp->z_uid == 0)) != 0) {
-		uint64_t newmode;
-		vattr_t va;
-
-		zp->z_mode &= ~(S_ISUID | S_ISGID);
-		newmode = zp->z_mode;
-		(void) sa_update(zp->z_sa_hdl, SA_ZPL_MODE(zfsvfs),
-		    (void *)&newmode, sizeof (uint64_t), tx);
+		/*
+		 * We need to clear the SUID|SGID bits, but
+		 * become RW_WRITER before updating z_mode.
+		 */
+		rw_exit(&zp->z_acl_lock);
+		rw_enter(&zp->z_acl_lock, RW_WRITER);
 
 		/*
-		 * Make sure SUID/SGID bits will be removed when we replay the
-		 * log.
+		 * If another writer did this, skip it.
 		 */
-		bzero(&va, sizeof (va));
-		va.va_mask = AT_MODE;
-		va.va_nodeid = zp->z_id;
-		va.va_mode = newmode;
-		zfs_log_setattr(zilog, tx, TX_SETATTR, zp, &va, AT_MODE, NULL);
+		if ((zp->z_mode & (S_ISUID | S_ISGID)) != 0) {
+			uint64_t newmode;
+			vattr_t va;
+
+			zp->z_mode &= ~(S_ISUID | S_ISGID);
+			newmode = zp->z_mode;
+			(void) sa_update(zp->z_sa_hdl, SA_ZPL_MODE(zfsvfs),
+			    (void *)&newmode, sizeof (uint64_t), tx);
+
+			/*
+			 * Make sure SUID/SGID bits will be removed
+			 * when we replay the log.
+			 */
+			bzero(&va, sizeof (va));
+			va.va_mask = AT_MODE;
+			va.va_nodeid = zp->z_id;
+			va.va_mode = newmode;
+			zfs_log_setattr(zilog, tx, TX_SETATTR,
+			    zp, &va, AT_MODE, NULL);
+		}
 	}
-	mutex_exit(&zp->z_acl_lock);
+	rw_exit(&zp->z_acl_lock);
 
 	*did_check = B_TRUE;
 }
@@ -1396,6 +1410,15 @@ zfs_lookup(vnode_t *dvp, char *nm, vnode_t **vpp, struct pathname *pnp,
 	znode_t *zdp = VTOZ(dvp);
 	zfsvfs_t *zfsvfs = zdp->z_zfsvfs;
 	int	error = 0;
+	boolean_t skipaclchk = ((flags & LOOKUP_NOACLCHECK) != 0);
+
+	/*
+	 * LOOKUP_NOACLCHECK is specified to skip EXECUTE checks for
+	 * consumers (like SMB) that bypass traverse checking.
+	 * Turn it off here so it can't accidentally be used
+	 * for other checks.
+	 */
+	flags &= ~LOOKUP_NOACLCHECK;
 
 	/*
 	 * Fast path lookup, however we must skip DNLC lookup
@@ -1415,7 +1438,7 @@ zfs_lookup(vnode_t *dvp, char *nm, vnode_t **vpp, struct pathname *pnp,
 		}
 
 		if (nm[0] == 0 || (nm[0] == '.' && nm[1] == '\0')) {
-			error = zfs_fastaccesschk_execute(zdp, cr);
+			error = zfs_fastaccesschk_execute(zdp, cr, skipaclchk);
 			if (!error) {
 				*vpp = dvp;
 				VN_HOLD(*vpp);
@@ -1428,7 +1451,8 @@ zfs_lookup(vnode_t *dvp, char *nm, vnode_t **vpp, struct pathname *pnp,
 			vnode_t *tvp = dnlc_lookup(dvp, nm);
 
 			if (tvp) {
-				error = zfs_fastaccesschk_execute(zdp, cr);
+				error = zfs_fastaccesschk_execute(zdp, cr,
+				    skipaclchk);
 				if (error) {
 					VN_RELE(tvp);
 					return (error);
@@ -1479,7 +1503,7 @@ zfs_lookup(vnode_t *dvp, char *nm, vnode_t **vpp, struct pathname *pnp,
 		 */
 
 		if (error = zfs_zaccess(VTOZ(*vpp), ACE_EXECUTE, 0,
-		    B_FALSE, cr)) {
+		    skipaclchk, cr)) {
 			VN_RELE(*vpp);
 			*vpp = NULL;
 		}
@@ -1497,7 +1521,7 @@ zfs_lookup(vnode_t *dvp, char *nm, vnode_t **vpp, struct pathname *pnp,
 	 * Check accessibility of directory.
 	 */
 
-	if (error = zfs_zaccess(zdp, ACE_EXECUTE, 0, B_FALSE, cr)) {
+	if (error = zfs_zaccess(zdp, ACE_EXECUTE, 0, skipaclchk, cr)) {
 		ZFS_EXIT(zfsvfs);
 		return (error);
 	}
@@ -3028,6 +3052,8 @@ zfs_setattr(vnode_t *vp, vattr_t *vap, int flags, cred_t *cr,
 	boolean_t skipaclchk = (flags & ATTR_NOACLCHECK) ? B_TRUE : B_FALSE;
 	boolean_t	fuid_dirtied = B_FALSE;
 	boolean_t	handle_eadir = B_FALSE;
+	boolean_t	zp_acl_entered = B_FALSE;
+	boolean_t	attr_acl_entered = B_FALSE;
 	sa_bulk_attr_t	bulk[8], xattr_bulk[8];
 	int		count = 0, xattr_count = 0;
 
@@ -3347,8 +3373,12 @@ top:
 		 * has the ability to modify mode.  In that case remove
 		 * UID|GID and or MODE from mask so that
 		 * secpolicy_vnode_setattr() doesn't revoke it.
+		 * If acl_implicit (implicit owner rights) is false,
+		 * tell secpolicy about that via the flags.
 		 */
 
+		if (zfsvfs->z_acl_implicit == B_FALSE)
+			flags |= ATTR_NOIMPLICIT;
 		if (trim_mask) {
 			saved_mask = vap->va_mask;
 			vap->va_mask &= ~trim_mask;
@@ -3507,16 +3537,20 @@ top:
 			projid = ZFS_INVALID_PROJID;
 	}
 
-	if (mask & (AT_UID|AT_GID|AT_MODE))
-		mutex_enter(&zp->z_acl_lock);
+	if (mask & (AT_UID|AT_GID|AT_MODE)) {
+		rw_enter(&zp->z_acl_lock, RW_WRITER);
+		zp_acl_entered = B_TRUE;
+	}
 	mutex_enter(&zp->z_lock);
 
 	SA_ADD_BULK_ATTR(bulk, count, SA_ZPL_FLAGS(zfsvfs), NULL,
 	    &zp->z_pflags, sizeof (zp->z_pflags));
 
 	if (attrzp) {
-		if (mask & (AT_UID|AT_GID|AT_MODE))
-			mutex_enter(&attrzp->z_acl_lock);
+		if (mask & (AT_UID|AT_GID|AT_MODE)) {
+			rw_enter(&attrzp->z_acl_lock, RW_WRITER);
+			attr_acl_entered = B_TRUE;
+		}
 		mutex_enter(&attrzp->z_lock);
 		SA_ADD_BULK_ATTR(xattr_bulk, xattr_count,
 		    SA_ZPL_FLAGS(zfsvfs), NULL, &attrzp->z_pflags,
@@ -3668,15 +3702,15 @@ top:
 	if (mask != 0)
 		zfs_log_setattr(zilog, tx, TX_SETATTR, zp, vap, mask, fuidp);
 
-	mutex_exit(&zp->z_lock);
-	if (mask & (AT_UID|AT_GID|AT_MODE))
-		mutex_exit(&zp->z_acl_lock);
-
 	if (attrzp) {
-		if (mask & (AT_UID|AT_GID|AT_MODE))
-			mutex_exit(&attrzp->z_acl_lock);
+		if (attr_acl_entered)
+			rw_exit(&attrzp->z_acl_lock);
 		mutex_exit(&attrzp->z_lock);
 	}
+
+	mutex_exit(&zp->z_lock);
+	if (zp_acl_entered)
+		rw_exit(&zp->z_acl_lock);
 out:
 	if (err == 0 && xattr_count > 0) {
 		err2 = sa_bulk_update(attrzp->z_sa_hdl, xattr_bulk,
@@ -5574,6 +5608,13 @@ zfs_reqzcbuf(vnode_t *vp, enum uio_rw ioflag, xuio_t *xuio, cred_t *cr,
 		return (SET_ERROR(EINVAL));
 	}
 
+	/*
+	 * Note: Setting UIO_XUIO in uio_extflg tells the caller to
+	 * return any loaned buffers by calling VOP_RETZCBUF, so
+	 * after we do this we MUST expect a zfs_retzcbuf call.
+	 * Note that for UIO_READ, XUIO_XUZC_PRIV is not set
+	 * until zfs_read calls dmu_xuio_init.
+	 */
 	uio->uio_extflg = UIO_XUIO;
 	XUIO_XUZC_RW(xuio) = ioflag;
 	ZFS_EXIT(zfsvfs);
@@ -5589,6 +5630,10 @@ zfs_retzcbuf(vnode_t *vp, xuio_t *xuio, cred_t *cr, caller_context_t *ct)
 	int ioflag = XUIO_XUZC_RW(xuio);
 
 	ASSERT(xuio->xu_type == UIOTYPE_ZEROCOPY);
+
+	/* In case zfs_read never calls dmu_xuio_init */
+	if (XUIO_XUZC_PRIV(xuio) == NULL)
+		return (0);
 
 	i = dmu_xuio_cnt(xuio);
 	while (i-- > 0) {

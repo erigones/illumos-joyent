@@ -37,7 +37,7 @@
  * http://www.illumos.org/license/CDDL.
  *
  * Copyright 2018 Joyent, Inc.
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 #include <sys/cdefs.h>
@@ -81,21 +81,6 @@ SYSCTL_DECL(_hw_vmm);
 SYSCTL_NODE(_hw_vmm, OID_AUTO, svm, CTLFLAG_RW | CTLFLAG_MPSAFE, NULL,
     NULL);
 
-/*
- * SVM CPUID function 0x8000_000A, edx bit decoding.
- */
-#define	AMD_CPUID_SVM_NP		BIT(0)  /* Nested paging or RVI */
-#define	AMD_CPUID_SVM_LBR		BIT(1)  /* Last branch virtualization */
-#define	AMD_CPUID_SVM_SVML		BIT(2)  /* SVM lock */
-#define	AMD_CPUID_SVM_NRIP_SAVE		BIT(3)  /* Next RIP is saved */
-#define	AMD_CPUID_SVM_TSC_RATE		BIT(4)  /* TSC rate control. */
-#define	AMD_CPUID_SVM_VMCB_CLEAN	BIT(5)  /* VMCB state caching */
-#define	AMD_CPUID_SVM_FLUSH_BY_ASID	BIT(6)  /* Flush by ASID */
-#define	AMD_CPUID_SVM_DECODE_ASSIST	BIT(7)  /* Decode assist */
-#define	AMD_CPUID_SVM_PAUSE_INC		BIT(10) /* Pause intercept filter. */
-#define	AMD_CPUID_SVM_PAUSE_FTH		BIT(12) /* Pause filter threshold */
-#define	AMD_CPUID_SVM_AVIC		BIT(13)	/* AVIC present */
-
 #define	VMCB_CACHE_DEFAULT	(VMCB_CACHE_ASID	|	\
 				VMCB_CACHE_IOPM		|	\
 				VMCB_CACHE_I		|	\
@@ -107,12 +92,21 @@ SYSCTL_NODE(_hw_vmm, OID_AUTO, svm, CTLFLAG_RW | CTLFLAG_MPSAFE, NULL,
 				VMCB_CACHE_SEG		|	\
 				VMCB_CACHE_NP)
 
+/*
+ * Guardrails for supported guest TSC frequencies.
+ *
+ * A minimum of 0.5 GHz, which should be sufficient for all recent AMD CPUs, and
+ * a maximum ratio of (15 * host frequency), which is sufficient to prevent
+ * overflowing frequency calcuations and give plenty of bandwidth for future CPU
+ * frequency increases.
+ */
+#define	AMD_TSC_MIN_FREQ	500000000
+#define	AMD_TSC_MAX_FREQ_RATIO	15
+
 static uint32_t vmcb_clean = VMCB_CACHE_DEFAULT;
-SYSCTL_INT(_hw_vmm_svm, OID_AUTO, vmcb_clean, CTLFLAG_RDTUN, &vmcb_clean,
-    0, NULL);
 
 /* SVM features advertised by CPUID.8000000AH:EDX */
-static uint32_t svm_feature = ~0U;	/* AMD SVM features. */
+static uint32_t svm_feature = 0;
 
 static int disable_npf_assist;
 
@@ -125,15 +119,27 @@ static int svm_getreg(void *arg, int vcpu, int ident, uint64_t *val);
 static void flush_asid(struct svm_softc *sc, int vcpuid);
 
 static __inline bool
-flush_by_asid(void)
+has_flush_by_asid(void)
 {
-	return ((svm_feature & AMD_CPUID_SVM_FLUSH_BY_ASID) != 0);
+	return ((svm_feature & CPUID_AMD_EDX_FLUSH_ASID) != 0);
 }
 
 static __inline bool
-decode_assist(void)
+has_lbr_virt(void)
 {
-	return ((svm_feature & AMD_CPUID_SVM_DECODE_ASSIST) != 0);
+	return ((svm_feature & CPUID_AMD_EDX_LBR_VIRT) != 0);
+}
+
+static __inline bool
+has_decode_assist(void)
+{
+	return ((svm_feature & CPUID_AMD_EDX_DECODE_ASSISTS) != 0);
+}
+
+static __inline bool
+has_tsc_freq_ctl(void)
+{
+	return ((svm_feature & CPUID_AMD_EDX_TSC_RATE_MSR) != 0);
 }
 
 static int
@@ -146,9 +152,23 @@ svm_cleanup(void)
 static int
 svm_init(void)
 {
-	vmcb_clean &= VMCB_CACHE_DEFAULT;
+	/* Grab a (bhyve) local copy of the SVM feature bits */
+	struct cpuid_regs regs = {
+		.cp_eax = 0x8000000a,
+	};
+	(void) cpuid_insn(NULL, &regs);
+	svm_feature = regs.cp_edx;
 
-	svm_msr_init();
+	/*
+	 * HMA should have already checked for these features which we refuse to
+	 * operate without, but no harm in making sure
+	 */
+	const uint32_t demand_bits =
+	    (CPUID_AMD_EDX_NESTED_PAGING | CPUID_AMD_EDX_NRIPS);
+	VERIFY((svm_feature & demand_bits) == demand_bits);
+
+	/* Clear any unexpected bits (set manually) from vmcb_clean */
+	vmcb_clean &= VMCB_CACHE_DEFAULT;
 
 	return (0);
 }
@@ -396,9 +416,10 @@ vmcb_init(struct svm_softc *sc, int vcpu, uint64_t iopm_base_pa,
 	 */
 	ctrl->v_intr_ctrl |= V_INTR_MASKING;
 
-	/* Enable Last Branch Record aka LBR for debugging */
-	ctrl->misc_ctrl |= LBR_VIRT_ENABLE;
-	state->dbgctl = BIT(0);
+	/* Enable Last Branch Record aka LBR-virt (if available) */
+	if (has_lbr_virt()) {
+		ctrl->misc_ctrl |= LBR_VIRT_ENABLE;
+	}
 
 	/* EFER_SVM must always be set when the guest is executing */
 	state->efer = EFER_SVM;
@@ -504,18 +525,6 @@ vm_exit_svm(struct vm_exit *vme, uint64_t code, uint64_t info1, uint64_t info2)
 	vme->u.svm.exitinfo2 = info2;
 }
 
-static int
-svm_cpl(struct vmcb_state *state)
-{
-
-	/*
-	 * From APMv2:
-	 *   "Retrieve the CPL from the CPL field in the VMCB, not
-	 *    from any segment DPL"
-	 */
-	return (state->cpl);
-}
-
 static enum vm_cpu_mode
 svm_vcpu_mode(struct vmcb *vmcb)
 {
@@ -556,10 +565,6 @@ svm_paging_mode(uint64_t cr0, uint64_t cr4, uint64_t efer)
 		return (PAGING_MODE_PAE);
 }
 
-/*
- * ins/outs utility routines
- */
-
 static void
 svm_paging_info(struct vmcb *vmcb, struct vm_guest_paging *paging)
 {
@@ -567,7 +572,7 @@ svm_paging_info(struct vmcb *vmcb, struct vm_guest_paging *paging)
 
 	state = &vmcb->state;
 	paging->cr3 = state->cr3;
-	paging->cpl = svm_cpl(state);
+	paging->cpl = state->cpl;
 	paging->cpu_mode = svm_vcpu_mode(vmcb);
 	paging->paging_mode = svm_paging_mode(state->cr0, state->cr4,
 	    state->efer);
@@ -609,7 +614,7 @@ svm_handle_inout(struct svm_softc *svm_sc, int vcpu, struct vm_exit *vmexit)
 		 * This is not specified explicitly in APMv2 but can be verified
 		 * empirically.
 		 */
-		if (!decode_assist()) {
+		if (!has_decode_assist()) {
 			/*
 			 * Without decoding assistance, force the task of
 			 * emulating the ins/outs on userspace.
@@ -730,7 +735,7 @@ svm_handle_mmio_emul(struct svm_softc *svm_sc, int vcpu, struct vm_exit *vmexit,
 	/*
 	 * Copy the instruction bytes into 'vie' if available.
 	 */
-	if (decode_assist() && !disable_npf_assist) {
+	if (has_decode_assist() && !disable_npf_assist) {
 		inst_len = ctrl->inst_len;
 		inst_bytes = (char *)ctrl->inst_bytes;
 	}
@@ -924,31 +929,43 @@ CTASSERT(VMCB_EVENTINJ_TYPE_INTn	== VM_INTINFO_SWINTR);
 CTASSERT(VMCB_EVENTINJ_EC_VALID		== VM_INTINFO_DEL_ERRCODE);
 CTASSERT(VMCB_EVENTINJ_VALID		== VM_INTINFO_VALID);
 
+/*
+ * Store SVM-specific event injection info for later handling.  This depends on
+ * the bhyve-internal event definitions matching those in the VMCB, as ensured
+ * by the above CTASSERTs.
+ */
+static void
+svm_stash_intinfo(struct svm_softc *svm_sc, int vcpu, uint64_t intinfo)
+{
+	ASSERT(VMCB_EXITINTINFO_VALID(intinfo));
+
+	/*
+	 * If stashing an NMI pending injection, ensure that it bears the
+	 * correct vector which exit_intinfo expects.
+	 */
+	if (VM_INTINFO_TYPE(intinfo) == VM_INTINFO_NMI) {
+		intinfo &= ~VM_INTINFO_MASK_VECTOR;
+		intinfo |= IDT_NMI;
+	}
+
+	VERIFY0(vm_exit_intinfo(svm_sc->vm, vcpu, intinfo));
+}
+
 static void
 svm_save_exitintinfo(struct svm_softc *svm_sc, int vcpu)
 {
-	struct vmcb_ctrl *ctrl;
-	uint64_t intinfo;
-	int err;
+	struct vmcb_ctrl *ctrl  = svm_get_vmcb_ctrl(svm_sc, vcpu);
+	uint64_t intinfo = ctrl->exitintinfo;
 
-	ctrl  = svm_get_vmcb_ctrl(svm_sc, vcpu);
-	intinfo = ctrl->exitintinfo;
-	if (!VMCB_EXITINTINFO_VALID(intinfo))
-		return;
+	if (VMCB_EXITINTINFO_VALID(intinfo)) {
+		/*
+		 * If a #VMEXIT happened during event delivery then record the
+		 * event that was being delivered.
+		 */
+		vmm_stat_incr(svm_sc->vm, vcpu, VCPU_EXITINTINFO, 1);
 
-	/*
-	 * From APMv2, Section "Intercepts during IDT interrupt delivery"
-	 *
-	 * If a #VMEXIT happened during event delivery then record the event
-	 * that was being delivered.
-	 */
-	vmm_stat_incr(svm_sc->vm, vcpu, VCPU_EXITINTINFO, 1);
-	/*
-	 * Relies on match between VMCB exitintinfo format and bhyve-generic
-	 * format, which is ensured by CTASSERTs above.
-	 */
-	err = vm_exit_intinfo(svm_sc->vm, vcpu, intinfo);
-	VERIFY0(err);
+		svm_stash_intinfo(svm_sc, vcpu, intinfo);
+	}
 }
 
 static __inline int
@@ -1449,7 +1466,7 @@ svm_vmexit(struct svm_softc *svm_sc, int vcpu, struct vm_exit *vmexit)
 		vmm_stat_incr(svm_sc->vm, vcpu, VMEXIT_INOUT, 1);
 		break;
 	case VMCB_EXIT_SHUTDOWN:
-		(void) vm_suspend(svm_sc->vm, VM_SUSPEND_TRIPLEFAULT);
+		(void) vm_suspend(svm_sc->vm, VM_SUSPEND_TRIPLEFAULT, vcpu);
 		handled = 1;
 		break;
 	case VMCB_EXIT_INVLPGA:
@@ -1755,7 +1772,7 @@ check_asid(struct svm_softc *sc, int vcpuid, uint_t thiscpu, uint64_t nptgen)
 	struct vmcb_ctrl *ctrl = svm_get_vmcb_ctrl(sc, vcpuid);
 	uint8_t flush;
 
-	flush = hma_svm_asid_update(&vcpustate->hma_asid, flush_by_asid(),
+	flush = hma_svm_asid_update(&vcpustate->hma_asid, has_flush_by_asid(),
 	    vcpustate->nptgen != nptgen);
 
 	if (flush != VMCB_TLB_FLUSH_NOTHING) {
@@ -1773,7 +1790,7 @@ flush_asid(struct svm_softc *sc, int vcpuid)
 	struct vmcb_ctrl *ctrl = svm_get_vmcb_ctrl(sc, vcpuid);
 	uint8_t flush;
 
-	flush = hma_svm_asid_update(&vcpustate->hma_asid, flush_by_asid(),
+	flush = hma_svm_asid_update(&vcpustate->hma_asid, has_flush_by_asid(),
 	    true);
 
 	ASSERT(flush != VMCB_TLB_FLUSH_NOTHING);
@@ -1853,6 +1870,9 @@ svm_dr_leave_guest(struct svm_regctx *gctx)
 	load_dr7(gctx->host_dr7);
 }
 
+/*
+ * Apply the TSC offset for a vCPU, including physical CPU and per-vCPU offsets.
+ */
 static void
 svm_apply_tsc_adjust(struct svm_softc *svm_sc, int vcpuid)
 {
@@ -1864,7 +1884,6 @@ svm_apply_tsc_adjust(struct svm_softc *svm_sc, int vcpuid)
 		svm_set_dirty(svm_sc, vcpuid, VMCB_CACHE_I);
 	}
 }
-
 
 /*
  * Start vcpu with specified RIP.
@@ -2359,6 +2378,19 @@ svm_getdesc(void *arg, int vcpu, int reg, struct seg_desc *desc)
 			/* Unusable segment */
 			desc->access |= 0x10000;
 		}
+
+		/*
+		 * Just as CPL (in the VMCB) is kept synced to SS when the
+		 * segment is written, so too shall the segment sync from CPL
+		 * when it is read.
+		 */
+		if (reg == VM_REG_GUEST_SS) {
+			desc->access &=
+			    ~(SEG_DESC_DPL_MASK << SEG_DESC_DPL_SHIFT);
+			desc->access |=
+			    (vmcb->state.cpl & SEG_DESC_DPL_MASK) <<
+			    SEG_DESC_DPL_SHIFT;
+		}
 		break;
 
 	case VM_REG_GUEST_CS:
@@ -2511,6 +2543,32 @@ svm_vlapic_cleanup(void *arg, struct vlapic *vlapic)
 }
 
 static void
+svm_pause(void *arg, int vcpu)
+{
+	struct svm_softc *sc = arg;
+	struct vmcb_ctrl *ctrl = svm_get_vmcb_ctrl(sc, vcpu);
+
+	/*
+	 * If an event is pending injection in the VMCB, stash it in
+	 * exit_intinfo as if it were deferred by an exit from guest context.
+	 */
+	const uint64_t intinfo = ctrl->eventinj;
+	if ((intinfo & VMCB_EVENTINJ_VALID) != 0) {
+		svm_stash_intinfo(sc, vcpu, intinfo);
+		ctrl->eventinj = 0;
+	}
+
+	/*
+	 * Now that no event is pending injection, interrupt-window exiting and
+	 * NMI-blocking can be disabled.  If/when this vCPU is made to run
+	 * again, those conditions will be reinstated when the now-queued events
+	 * are re-injected.
+	 */
+	svm_disable_intr_window_exiting(sc, vcpu);
+	svm_disable_intercept(sc, vcpu, VMCB_CTRL1_INTCPT, VMCB_INTCPT_IRET);
+}
+
+static void
 svm_savectx(void *arg, int vcpu)
 {
 	struct svm_softc *sc = arg;
@@ -2530,6 +2588,40 @@ svm_restorectx(void *arg, int vcpu)
 	}
 }
 
+static freqratio_res_t
+svm_freq_ratio(uint64_t guest_hz, uint64_t host_hz, uint64_t *mult)
+{
+	/*
+	 * Check whether scaling is needed at all before potentially erroring
+	 * out for other reasons.
+	 */
+	if (guest_hz == host_hz) {
+		return (FR_SCALING_NOT_NEEDED);
+	}
+
+	/*
+	 * Confirm that scaling is available.
+	 */
+	if (!has_tsc_freq_ctl()) {
+		return (FR_SCALING_NOT_SUPPORTED);
+	}
+
+	/*
+	 * Verify the guest_hz is within the supported range.
+	 */
+	if ((guest_hz < AMD_TSC_MIN_FREQ) ||
+	    (guest_hz >= (host_hz * AMD_TSC_MAX_FREQ_RATIO))) {
+		return (FR_OUT_OF_RANGE);
+	}
+
+	/* Calculate the multiplier. */
+	uint64_t m = vmm_calc_freq_multiplier(guest_hz, host_hz,
+	    AMD_TSCM_FRAC_SIZE);
+	*mult = m;
+
+	return (FR_VALID);
+}
+
 struct vmm_ops vmm_ops_amd = {
 	.init		= svm_init,
 	.cleanup	= svm_cleanup,
@@ -2546,10 +2638,15 @@ struct vmm_ops vmm_ops_amd = {
 	.vmsetcap	= svm_setcap,
 	.vlapic_init	= svm_vlapic_init,
 	.vlapic_cleanup	= svm_vlapic_cleanup,
+	.vmpause	= svm_pause,
 
 	.vmsavectx	= svm_savectx,
 	.vmrestorectx	= svm_restorectx,
 
 	.vmgetmsr	= svm_get_msr,
 	.vmsetmsr	= svm_set_msr,
+
+	.vmfreqratio	= svm_freq_ratio,
+	.fr_intsize	= AMD_TSCM_INT_SIZE,
+	.fr_fracsize	= AMD_TSCM_FRAC_SIZE,
 };

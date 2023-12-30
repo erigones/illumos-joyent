@@ -74,7 +74,7 @@ smb_kmod_isbound(void)
 int
 smb_kmod_setcfg(smb_kmod_cfg_t *cfg)
 {
-	smb_ioc_cfg_t ioc;
+	smb_ioc_cfg_t ioc = {0};
 
 	ioc.maxworkers = cfg->skc_maxworkers;
 	ioc.maxconnections = cfg->skc_maxconnections;
@@ -95,11 +95,13 @@ smb_kmod_setcfg(smb_kmod_cfg_t *cfg)
 	ioc.min_protocol = cfg->skc_min_protocol;
 	ioc.exec_flags = cfg->skc_execflags;
 	ioc.negtok_len = cfg->skc_negtok_len;
+	ioc.max_opens = cfg->skc_max_opens;
+
 	ioc.version = cfg->skc_version;
 	ioc.initial_credits = cfg->skc_initial_credits;
 	ioc.maximum_credits = cfg->skc_maximum_credits;
 	ioc.encrypt = cfg->skc_encrypt;
-	ioc.encrypt_cipher = cfg->skc_encrypt_cipher;
+	ioc.encrypt_ciphers = cfg->skc_encrypt_ciphers;
 
 	(void) memcpy(ioc.machine_uuid, cfg->skc_machine_uuid, sizeof (uuid_t));
 	(void) memcpy(ioc.negtok, cfg->skc_negtok, sizeof (ioc.negtok));
@@ -219,6 +221,25 @@ smb_kmod_shareinfo(char *shrname, boolean_t *shortnames)
 		*shortnames = ioc.shortnames;
 	else
 		*shortnames = B_TRUE;
+
+	return (rc);
+}
+
+/*
+ * Does the client have any access in this share?
+ */
+int
+smb_kmod_shareaccess(smb_netuserinfo_t *ui, smb_share_t *si)
+{
+	smb_ioc_shareaccess_t ioc;
+	int rc;
+
+	bzero(&ioc, sizeof (ioc));
+	ioc.session_id	= ui->ui_session_id;
+	ioc.user_id	= ui->ui_user_id;
+	(void) strlcpy(ioc.shrname, si->shr_name, MAXNAMELEN);
+
+	rc = smb_kmod_ioctl(SMB_IOC_SHAREACCESS, &ioc.hdr, sizeof (ioc));
 
 	return (rc);
 }

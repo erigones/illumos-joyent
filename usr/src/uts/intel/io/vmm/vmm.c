@@ -39,9 +39,10 @@
  *
  * Copyright 2015 Pluribus Networks Inc.
  * Copyright 2018 Joyent, Inc.
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  * Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
  */
+
 
 #include <sys/cdefs.h>
 __FBSDID("$FreeBSD$");
@@ -60,6 +61,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/systm.h>
 #include <sys/sunddi.h>
 #include <sys/hma.h>
+#include <sys/archsystm.h>
 
 #include <machine/md_var.h>
 #include <x86/psl.h>
@@ -136,7 +138,9 @@ struct vcpu {
 	kcondvar_t	state_cv;	/* (o) IDLE-transition cv */
 	int		hostcpu;	/* (o) vcpu's current host cpu */
 	int		lastloccpu;	/* (o) last host cpu localized to */
-	int		reqidle;	/* (i) request vcpu to idle */
+	bool		reqidle;	/* (i) request vcpu to idle */
+	bool		reqconsist;	/* (i) req. vcpu exit when consistent */
+	bool		reqbarrier;	/* (i) request vcpu exit barrier */
 	struct vlapic	*vlapic;	/* (i) APIC device model */
 	enum x2apic_state x2apic_state;	/* (i) APIC mode */
 	uint64_t	exit_intinfo;	/* (i) events pending at VM exit */
@@ -152,7 +156,7 @@ struct vcpu {
 	uint64_t	nextrip;	/* (x) next instruction to execute */
 	struct vie	*vie_ctx;	/* (x) instruction emulation context */
 	vm_client_t	*vmclient;	/* (a) VM-system client */
-	uint64_t	tsc_offset;	/* (x) offset from host TSC */
+	uint64_t	tsc_offset;	/* (x) vCPU TSC offset */
 	struct vm_mtrr	mtrr;		/* (i) vcpu's MTRR */
 	vcpu_cpuid_config_t cpuid_cfg;	/* (x) cpuid configuration */
 
@@ -201,9 +205,10 @@ struct vm {
 	struct vrtc	*vrtc;			/* (o) virtual RTC */
 	volatile cpuset_t active_cpus;		/* (i) active vcpus */
 	volatile cpuset_t debug_cpus;		/* (i) vcpus stopped for dbg */
-	int		suspend;		/* (i) stop VM execution */
-	volatile cpuset_t suspended_cpus;	/* (i) suspended vcpus */
 	volatile cpuset_t halted_cpus;		/* (x) cpus in a hard halt */
+	int		suspend_how;		/* (i) stop VM execution */
+	int		suspend_source;		/* (i) src vcpuid of suspend */
+	hrtime_t	suspend_when;		/* (i) time suspend asserted */
 	struct mem_map	mem_maps[VM_MAX_MEMMAPS]; /* (i) guest address space */
 	struct mem_seg	mem_segs[VM_MAX_MEMSEGS]; /* (o) guest memory regions */
 	struct vmspace	*vmspace;		/* (o) guest's address space */
@@ -214,8 +219,12 @@ struct vm {
 	uint16_t	threads;		/* (o) num of threads/core */
 	uint16_t	maxcpus;		/* (o) max pluggable cpus */
 
-	uint64_t	boot_tsc_offset;	/* (i) TSC offset at VM boot */
 	hrtime_t	boot_hrtime;		/* (i) hrtime at VM boot */
+
+	/* TSC and TSC scaling related values */
+	uint64_t	tsc_offset;		/* (i) VM-wide TSC offset */
+	uint64_t	guest_freq;		/* (i) guest TSC Frequency */
+	uint64_t	freq_multiplier;	/* (i) guest/host TSC Ratio */
 
 	struct ioport_config ioports;		/* (o) ioport handling */
 
@@ -224,6 +233,7 @@ struct vm {
 };
 
 static int vmm_initialized;
+static uint64_t vmm_host_freq;
 
 
 static void
@@ -248,10 +258,14 @@ static struct vmm_ops vmm_ops_null = {
 	.vmsetcap	= (vmi_set_cap_t)nullop_panic,
 	.vlapic_init	= (vmi_vlapic_init)nullop_panic,
 	.vlapic_cleanup	= (vmi_vlapic_cleanup)nullop_panic,
+	.vmpause	= (vmi_pause_t)nullop_panic,
 	.vmsavectx	= (vmi_savectx)nullop_panic,
 	.vmrestorectx	= (vmi_restorectx)nullop_panic,
 	.vmgetmsr	= (vmi_get_msr_t)nullop_panic,
 	.vmsetmsr	= (vmi_set_msr_t)nullop_panic,
+	.vmfreqratio	= (vmi_freqratio_t)nullop_panic,
+	.fr_fracsize	= 0,
+	.fr_intsize	= 0,
 };
 
 static struct vmm_ops *ops = &vmm_ops_null;
@@ -299,6 +313,7 @@ static bool sysmem_mapping(struct vm *vm, struct mem_map *mm);
 static void vcpu_notify_event_locked(struct vcpu *vcpu, vcpu_notify_t);
 static bool vcpu_sleep_bailout_checks(struct vm *vm, int vcpuid);
 static int vcpu_vector_sipi(struct vm *vm, int vcpuid, uint8_t vector);
+static bool vm_is_suspended(struct vm *, struct vm_exit *);
 
 static void vmm_savectx(void *);
 static void vmm_restorectx(void *);
@@ -307,6 +322,16 @@ static const struct ctxop_template vmm_ctxop_tpl = {
 	.ct_save	= vmm_savectx,
 	.ct_restore	= vmm_restorectx,
 };
+
+static uint64_t calc_tsc_offset(uint64_t base_host_tsc, uint64_t base_guest_tsc,
+    uint64_t mult);
+static uint64_t calc_guest_tsc(uint64_t host_tsc, uint64_t mult,
+    uint64_t offset);
+
+/* functions implemented in vmm_time_support.S */
+uint64_t calc_freq_multiplier(uint64_t guest_hz, uint64_t host_hz,
+    uint32_t frac_size);
+uint64_t scale_tsc(uint64_t tsc, uint64_t multiplier, uint32_t frac_size);
 
 #ifdef KTR
 static const char *
@@ -383,16 +408,16 @@ vcpu_init(struct vm *vm, int vcpu_id, bool create)
 	} else {
 		vie_reset(vcpu->vie_ctx);
 		bzero(&vcpu->exitinfo, sizeof (vcpu->exitinfo));
-		if (vcpu->ustate != VU_INIT) {
-			vcpu_ustate_change(vm, vcpu_id, VU_INIT);
-		}
+		vcpu_ustate_change(vm, vcpu_id, VU_INIT);
 		bzero(&vcpu->mtrr, sizeof (vcpu->mtrr));
 	}
 
 	vcpu->run_state = VRS_HALT;
 	vcpu->vlapic = VLAPIC_INIT(vm->cookie, vcpu_id);
 	(void) vm_set_x2apic_state(vm, vcpu_id, X2APIC_DISABLED);
-	vcpu->reqidle = 0;
+	vcpu->reqidle = false;
+	vcpu->reqconsist = false;
+	vcpu->reqbarrier = false;
 	vcpu->exit_intinfo = 0;
 	vcpu->nmi_pending = false;
 	vcpu->extint_pending = false;
@@ -441,6 +466,7 @@ static int
 vmm_init(void)
 {
 	vmm_host_state_init();
+	vmm_host_freq = unscalehrtime(NANOSEC);
 
 	if (vmm_is_intel()) {
 		ops = &vmm_ops_intel;
@@ -522,27 +548,42 @@ vm_init(struct vm *vm, bool create)
 	CPU_ZERO(&vm->active_cpus);
 	CPU_ZERO(&vm->debug_cpus);
 
-	vm->suspend = 0;
-	CPU_ZERO(&vm->suspended_cpus);
+	vm->suspend_how = 0;
+	vm->suspend_source = 0;
+	vm->suspend_when = 0;
 
 	for (i = 0; i < vm->maxcpus; i++)
 		vcpu_init(vm, i, create);
 
 	/*
-	 * Configure the VM-wide TSC offset so that the call to vm_init()
-	 * represents the boot time (when the TSC(s) read 0).  Each vCPU will
-	 * have its own offset from this, which is altered if/when the guest
-	 * writes to MSR_TSC.
+	 * Configure VM time-related data, including:
+	 * - VM-wide TSC offset
+	 * - boot_hrtime
+	 * - guest_freq (same as host at boot time)
+	 * - freq_multiplier (used for scaling)
 	 *
-	 * The TSC offsetting math is all unsigned, using overflow for negative
-	 * offets.  A reading of the TSC is negated to form the boot offset.
+	 * This data is configured such that the call to vm_init() represents
+	 * the boot time (when the TSC(s) read 0).  Each vCPU will have its own
+	 * offset from this, which is altered if/when the guest writes to
+	 * MSR_TSC.
+	 *
+	 * Further changes to this data may occur if userspace writes to the
+	 * time data.
 	 */
 	const uint64_t boot_tsc = rdtsc_offset();
-	vm->boot_tsc_offset = (uint64_t)(-(int64_t)boot_tsc);
 
 	/* Convert the boot TSC reading to hrtime */
 	vm->boot_hrtime = (hrtime_t)boot_tsc;
 	scalehrtime(&vm->boot_hrtime);
+
+	/* Guest frequency is the same as the host at boot time */
+	vm->guest_freq = vmm_host_freq;
+
+	/* no scaling needed if guest_freq == host_freq */
+	vm->freq_multiplier = VM_TSCM_NOSCALE;
+
+	/* configure VM-wide offset: initial guest TSC is 0 at boot */
+	vm->tsc_offset = calc_tsc_offset(boot_tsc, 0, vm->freq_multiplier);
 }
 
 /*
@@ -699,37 +740,6 @@ vm_destroy(struct vm *vm)
 int
 vm_reinit(struct vm *vm, uint64_t flags)
 {
-	/* A virtual machine can be reset only if all vcpus are suspended. */
-	if (CPU_CMP(&vm->suspended_cpus, &vm->active_cpus) != 0) {
-		if ((flags & VM_REINIT_F_FORCE_SUSPEND) == 0) {
-			return (EBUSY);
-		}
-
-		/*
-		 * Force the VM (and all its vCPUs) into a suspended state.
-		 * This should be quick and easy, since the vm_reinit() call is
-		 * made while holding the VM write lock, which requires holding
-		 * all of the vCPUs in the VCPU_FROZEN state.
-		 */
-		(void) atomic_cmpset_int((uint_t *)&vm->suspend, 0,
-		    VM_SUSPEND_RESET);
-		for (uint_t i = 0; i < vm->maxcpus; i++) {
-			struct vcpu *vcpu = &vm->vcpu[i];
-
-			if (CPU_ISSET(i, &vm->suspended_cpus) ||
-			    !CPU_ISSET(i, &vm->active_cpus)) {
-				continue;
-			}
-
-			vcpu_lock(vcpu);
-			VERIFY3U(vcpu->state, ==, VCPU_FROZEN);
-			CPU_SET_ATOMIC(i, &vm->suspended_cpus);
-			vcpu_unlock(vcpu);
-		}
-
-		VERIFY0(CPU_CMP(&vm->suspended_cpus, &vm->active_cpus));
-	}
-
 	vm_cleanup(vm, false);
 	vm_init(vm, false);
 	return (0);
@@ -756,6 +766,13 @@ vm_pause_instance(struct vm *vm)
 			continue;
 		}
 		vlapic_pause(vcpu->vlapic);
+
+		/*
+		 * vCPU-specific pause logic includes stashing any
+		 * to-be-injected events in exit_intinfo where it can be
+		 * accessed in a manner generic to the backend.
+		 */
+		ops->vmpause(vm->cookie, i);
 	}
 	vhpet_pause(vm->vhpet);
 	vatpit_pause(vm->vatpit);
@@ -801,7 +818,7 @@ vm_map_mmio(struct vm *vm, vm_paddr_t gpa, size_t len, vm_paddr_t hpa)
 int
 vm_unmap_mmio(struct vm *vm, vm_paddr_t gpa, size_t len)
 {
-	return (vmspace_unmap(vm->vmspace, gpa, gpa + len));
+	return (vmspace_unmap(vm->vmspace, gpa, len));
 }
 
 /*
@@ -947,9 +964,9 @@ vm_mmap_memseg(struct vm *vm, vm_paddr_t gpa, int segid, vm_ooffset_t first,
 	vm_object_reference(seg->object);
 
 	if ((flags & VM_MEMMAP_F_WIRED) != 0) {
-		error = vmspace_populate(vm->vmspace, gpa, gpa + len);
+		error = vmspace_populate(vm->vmspace, gpa, len);
 		if (error != 0) {
-			VERIFY0(vmspace_unmap(vm->vmspace, gpa, gpa + len));
+			VERIFY0(vmspace_unmap(vm->vmspace, gpa, len));
 			return (EFAULT);
 		}
 	}
@@ -1023,10 +1040,8 @@ vm_free_memmap(struct vm *vm, int ident)
 
 	mm = &vm->mem_maps[ident];
 	if (mm->len) {
-		error = vmspace_unmap(vm->vmspace, mm->gpa,
-		    mm->gpa + mm->len);
-		KASSERT(error == 0, ("%s: vmspace_unmap error %d",
-		    __func__, error));
+		error = vmspace_unmap(vm->vmspace, mm->gpa, mm->len);
+		VERIFY0(error);
 		bzero(mm, sizeof (struct mem_map));
 	}
 }
@@ -1419,9 +1434,10 @@ vcpu_set_state_locked(struct vm *vm, int vcpuid, enum vcpu_state newstate,
 	 */
 	if (from_idle) {
 		while (vcpu->state != VCPU_IDLE) {
-			vcpu->reqidle = 1;
+			vcpu->reqidle = true;
 			vcpu_notify_event_locked(vcpu, VCPU_NOTIFY_EXIT);
 			cv_wait(&vcpu->state_cv, &vcpu->lock);
+			vcpu->reqidle = false;
 		}
 	} else {
 		KASSERT(vcpu->state != VCPU_IDLE, ("invalid transition from "
@@ -1563,7 +1579,7 @@ vm_handle_hlt(struct vm *vm, int vcpuid, bool intr_disabled)
 	vcpu_unlock(vcpu);
 
 	if (vm_halted) {
-		(void) vm_suspend(vm, VM_SUSPEND_HALT);
+		(void) vm_suspend(vm, VM_SUSPEND_HALT, -1);
 	}
 
 	return (userspace_exit ? -1 : 0);
@@ -1814,75 +1830,6 @@ vm_handle_inst_emul(struct vm *vm, int vcpuid)
 }
 
 static int
-vm_handle_suspend(struct vm *vm, int vcpuid)
-{
-	int i;
-	struct vcpu *vcpu;
-
-	vcpu = &vm->vcpu[vcpuid];
-
-	CPU_SET_ATOMIC(vcpuid, &vm->suspended_cpus);
-
-	/*
-	 * Wait until all 'active_cpus' have suspended themselves.
-	 */
-	vcpu_lock(vcpu);
-	vcpu_ustate_change(vm, vcpuid, VU_INIT);
-	while (1) {
-		int rc;
-
-		if (CPU_CMP(&vm->suspended_cpus, &vm->active_cpus) == 0) {
-			break;
-		}
-
-		vcpu_require_state_locked(vm, vcpuid, VCPU_SLEEPING);
-		rc = cv_reltimedwait_sig(&vcpu->vcpu_cv, &vcpu->lock, hz,
-		    TR_CLOCK_TICK);
-		vcpu_require_state_locked(vm, vcpuid, VCPU_FROZEN);
-
-		/*
-		 * If the userspace process driving the instance is killed, any
-		 * vCPUs yet to be marked suspended (because they are not
-		 * VM_RUN-ing in the kernel presently) will never reach that
-		 * state.
-		 *
-		 * To avoid vm_handle_suspend() getting stuck in the kernel
-		 * waiting for those vCPUs, offer a bail-out even though it
-		 * means returning without all vCPUs in a suspended state.
-		 */
-		if (rc <= 0) {
-			if ((curproc->p_flag & SEXITING) != 0) {
-				break;
-			}
-		}
-	}
-	vcpu_unlock(vcpu);
-
-	/*
-	 * Wakeup the other sleeping vcpus and return to userspace.
-	 */
-	for (i = 0; i < vm->maxcpus; i++) {
-		if (CPU_ISSET(i, &vm->suspended_cpus)) {
-			vcpu_notify_event(vm, i);
-		}
-	}
-
-	return (-1);
-}
-
-static int
-vm_handle_reqidle(struct vm *vm, int vcpuid)
-{
-	struct vcpu *vcpu = &vm->vcpu[vcpuid];
-
-	vcpu_lock(vcpu);
-	KASSERT(vcpu->reqidle, ("invalid vcpu reqidle %d", vcpu->reqidle));
-	vcpu->reqidle = 0;
-	vcpu_unlock(vcpu);
-	return (-1);
-}
-
-static int
 vm_handle_run_state(struct vm *vm, int vcpuid)
 {
 	struct vcpu *vcpu = &vm->vcpu[vcpuid];
@@ -1969,7 +1916,7 @@ vm_rdmtrr(const struct vm_mtrr *mtrr, uint32_t num, uint64_t *val)
 		break;
 	}
 	default:
-		return (-1);
+		return (EINVAL);
 	}
 
 	return (0);
@@ -1981,11 +1928,11 @@ vm_wrmtrr(struct vm_mtrr *mtrr, uint32_t num, uint64_t val)
 	switch (num) {
 	case MSR_MTRRcap:
 		/* MTRRCAP is read only */
-		return (-1);
+		return (EPERM);
 	case MSR_MTRRdefType:
 		if (val & ~VMM_MTRR_DEF_MASK) {
 			/* generate #GP on writes to reserved fields */
-			return (-1);
+			return (EINVAL);
 		}
 		mtrr->def_type = val;
 		break;
@@ -2003,20 +1950,20 @@ vm_wrmtrr(struct vm_mtrr *mtrr, uint32_t num, uint64_t val)
 		if (offset % 2 == 0) {
 			if (val & ~VMM_MTRR_PHYSBASE_MASK) {
 				/* generate #GP on writes to reserved fields */
-				return (-1);
+				return (EINVAL);
 			}
 			mtrr->var[offset / 2].base = val;
 		} else {
 			if (val & ~VMM_MTRR_PHYSMASK_MASK) {
 				/* generate #GP on writes to reserved fields */
-				return (-1);
+				return (EINVAL);
 			}
 			mtrr->var[offset / 2].mask = val;
 		}
 		break;
 	}
 	default:
-		return (-1);
+		return (EINVAL);
 	}
 
 	return (0);
@@ -2063,14 +2010,21 @@ vm_handle_rdmsr(struct vm *vm, int vcpuid, struct vm_exit *vme)
 
 	case MSR_TSC:
 		/*
+		 * Get the guest TSC, applying necessary vCPU offsets.
+		 *
 		 * In all likelihood, this should always be handled in guest
 		 * context by VMX/SVM rather than taking an exit.  (Both VMX and
 		 * SVM pass through read-only access to MSR_TSC to the guest.)
 		 *
+		 * The VM-wide TSC offset and per-vCPU offset are included in
+		 * the calculations of vcpu_tsc_offset(), so this is sufficient
+		 * to use as the offset in our calculations.
+		 *
 		 * No physical offset is requested of vcpu_tsc_offset() since
 		 * rdtsc_offset() takes care of that instead.
 		 */
-		val = vcpu_tsc_offset(vm, vcpuid, false) + rdtsc_offset();
+		val = calc_guest_tsc(rdtsc_offset(), vm->freq_multiplier,
+		    vcpu_tsc_offset(vm, vcpuid, false));
 		break;
 
 	default:
@@ -2115,21 +2069,19 @@ vm_handle_wrmsr(struct vm *vm, int vcpuid, struct vm_exit *vme)
 		/*
 		 * The effect of writing the TSC MSR is that a subsequent read
 		 * of the TSC would report that value written (plus any time
-		 * elapsed between the write and the read).  The guest TSC value
-		 * is calculated from a global offset for the guest (which
-		 * effectively makes its TSC read 0 at guest boot) and a
-		 * per-vCPU offset to handle these writes to the MSR.
+		 * elapsed between the write and the read).
 		 *
 		 * To calculate that per-vCPU offset, we can work backwards from
-		 * the guest value at the time of write:
+		 * the guest TSC at the time of write:
 		 *
-		 * value = host TSC + VM boot offset + vCPU offset
+		 * value = current guest TSC + vCPU offset
 		 *
 		 * so therefore:
 		 *
-		 * value - host TSC - VM boot offset = vCPU offset
+		 * value - current guest TSC = vCPU offset
 		 */
-		vcpu->tsc_offset = val - vm->boot_tsc_offset - rdtsc_offset();
+		vcpu->tsc_offset = val - calc_guest_tsc(rdtsc_offset(),
+		    vm->freq_multiplier, vm->tsc_offset);
 		break;
 
 	default:
@@ -2143,37 +2095,104 @@ vm_handle_wrmsr(struct vm *vm, int vcpuid, struct vm_exit *vme)
 	return (0);
 }
 
-int
-vm_suspend(struct vm *vm, enum vm_suspend_how how)
+/*
+ * Has a suspend event been asserted on the VM?
+ *
+ * The reason and (in the case of a triple-fault) source vcpuid are optionally
+ * returned if such a state is present.
+ */
+static bool
+vm_is_suspended(struct vm *vm, struct vm_exit *vme)
 {
-	if (how <= VM_SUSPEND_NONE || how >= VM_SUSPEND_LAST)
-		return (EINVAL);
+	const int val = vm->suspend_how;
+	if (val == 0) {
+		return (false);
+	} else {
+		if (vme != NULL) {
+			vme->exitcode = VM_EXITCODE_SUSPENDED;
+			vme->u.suspended.how = val;
+			vme->u.suspended.source = vm->suspend_source;
+			/*
+			 * Normalize suspend event time and, on the off chance
+			 * that it was recorded as occuring prior to VM boot,
+			 * clamp it to a minimum of 0.
+			 */
+			vme->u.suspended.when = (uint64_t)
+			    MAX(vm_normalize_hrtime(vm, vm->suspend_when), 0);
+		}
+		return (true);
+	}
+}
 
-	if (atomic_cmpset_int((uint_t *)&vm->suspend, 0, how) == 0) {
-		return (EALREADY);
+int
+vm_suspend(struct vm *vm, enum vm_suspend_how how, int source)
+{
+	if (how <= VM_SUSPEND_NONE || how >= VM_SUSPEND_LAST) {
+		return (EINVAL);
 	}
 
 	/*
-	 * Notify all active vcpus that they are now suspended.
+	 * Although the common case of calling vm_suspend() is via
+	 * ioctl(VM_SUSPEND), where all the vCPUs will be held in the frozen
+	 * state, it can also be called by a running vCPU to indicate a
+	 * triple-fault.  In the latter case, there is no exclusion from a
+	 * racing vm_suspend() from a different vCPU, so assertion of the
+	 * suspended state must be performed carefully.
+	 *
+	 * The `suspend_when` is set first via atomic cmpset to pick a "winner"
+	 * of the suspension race, followed by population of 'suspend_source'.
+	 * Only after those are done, and a membar is emitted will 'suspend_how'
+	 * be set, which makes the suspended state visible to any vCPU checking
+	 * for it.  That order will prevent an incomplete suspend state (between
+	 * 'how', 'source', and 'when') from being observed.
 	 */
+	const hrtime_t now = gethrtime();
+	if (atomic_cmpset_long((ulong_t *)&vm->suspend_when, 0, now) == 0) {
+		return (EALREADY);
+	}
+	vm->suspend_source = source;
+	membar_producer();
+	vm->suspend_how = how;
+
+	/* Notify all active vcpus that they are now suspended. */
 	for (uint_t i = 0; i < vm->maxcpus; i++) {
 		struct vcpu *vcpu = &vm->vcpu[i];
 
 		vcpu_lock(vcpu);
-		if (vcpu->state == VCPU_IDLE || vcpu->state == VCPU_FROZEN) {
+
+		if (!CPU_ISSET(i, &vm->active_cpus)) {
 			/*
-			 * Any vCPUs not actively running or in HLT can be
-			 * marked as suspended immediately.
+			 * vCPUs not already marked as active can be ignored,
+			 * since they cannot become marked as active unless the
+			 * VM is reinitialized, clearing the suspended state.
 			 */
-			if (CPU_ISSET(i, &vm->active_cpus)) {
-				CPU_SET_ATOMIC(i, &vm->suspended_cpus);
-			}
-		} else {
+			vcpu_unlock(vcpu);
+			continue;
+		}
+
+		switch (vcpu->state) {
+		case VCPU_IDLE:
+		case VCPU_FROZEN:
 			/*
-			 * Those which are running or in HLT will pick up the
-			 * suspended state after notification.
+			 * vCPUs not locked by in-kernel activity can be
+			 * immediately marked as suspended: The ustate is moved
+			 * back to VU_INIT, since no further guest work will
+			 * occur while the VM is in this state.
+			 *
+			 * A FROZEN vCPU may still change its ustate on the way
+			 * out of the kernel, but a subsequent check at the end
+			 * of vm_run() should be adequate to fix it up.
+			 */
+			vcpu_ustate_change(vm, i, VU_INIT);
+			break;
+		default:
+			/*
+			 * Any vCPUs which are running or waiting in-kernel
+			 * (such as in HLT) are notified to pick up the newly
+			 * suspended state.
 			 */
 			vcpu_notify_event_locked(vcpu, VCPU_NOTIFY_EXIT);
+			break;
 		}
 		vcpu_unlock(vcpu);
 	}
@@ -2297,24 +2316,27 @@ vmm_restorectx(void *arg)
 
 }
 
+/* Convenience defines for parsing vm_entry`cmd values */
+#define	VEC_MASK_FLAGS	(VEC_FLAG_EXIT_CONSISTENT)
+#define	VEC_MASK_CMD	(~VEC_MASK_FLAGS)
+
 static int
 vm_entry_actions(struct vm *vm, int vcpuid, const struct vm_entry *entry,
     struct vm_exit *vme)
 {
-	struct vcpu *vcpu;
-	struct vie *vie;
-	int err;
+	struct vcpu *vcpu = &vm->vcpu[vcpuid];
+	struct vie *vie = vcpu->vie_ctx;
+	int err = 0;
 
-	vcpu = &vm->vcpu[vcpuid];
-	vie = vcpu->vie_ctx;
-	err = 0;
+	const uint_t cmd = entry->cmd & VEC_MASK_CMD;
+	const uint_t flags = entry->cmd & VEC_MASK_FLAGS;
 
-	switch (entry->cmd) {
+	switch (cmd) {
 	case VEC_DEFAULT:
-		return (0);
+		break;
 	case VEC_DISCARD_INSTR:
 		vie_reset(vie);
-		return (0);
+		break;
 	case VEC_FULFILL_MMIO:
 		err = vie_fulfill_mmio(vie, &entry->u.mmio);
 		if (err == 0) {
@@ -2356,6 +2378,16 @@ vm_entry_actions(struct vm *vm, int vcpuid, const struct vm_entry *entry,
 	default:
 		return (EINVAL);
 	}
+
+	/*
+	 * Pay heed to requests for exit-when-vCPU-is-consistent requests, at
+	 * least when we are not immediately bound for another exit due to
+	 * multi-part instruction emulation or related causes.
+	 */
+	if ((flags & VEC_FLAG_EXIT_CONSISTENT) != 0 && err == 0) {
+		vcpu->reqconsist = true;
+	}
+
 	return (err);
 }
 
@@ -2391,6 +2423,9 @@ vm_run(struct vm *vm, int vcpuid, const struct vm_entry *entry)
 		return (EINVAL);
 	if (!CPU_ISSET(vcpuid, &vm->active_cpus))
 		return (EINVAL);
+	if (vm->is_paused) {
+		return (EBUSY);
+	}
 
 	vcpu = &vm->vcpu[vcpuid];
 	vme = &vcpu->exitinfo;
@@ -2452,14 +2487,8 @@ restart:
 
 	vcpu->nextrip = vme->rip + vme->inst_length;
 	switch (vme->exitcode) {
-	case VM_EXITCODE_REQIDLE:
-		error = vm_handle_reqidle(vm, vcpuid);
-		break;
 	case VM_EXITCODE_RUN_STATE:
 		error = vm_handle_run_state(vm, vcpuid);
-		break;
-	case VM_EXITCODE_SUSPENDED:
-		error = vm_handle_suspend(vm, vcpuid);
 		break;
 	case VM_EXITCODE_IOAPIC_EOI:
 		vioapic_process_eoi(vm, vcpuid,
@@ -2517,7 +2546,13 @@ exit:
 	vmm_savectx(&vcpu->vtc);
 	kpreempt_enable();
 
-	vcpu_ustate_change(vm, vcpuid, VU_EMU_USER);
+	/*
+	 * Bill time in userspace against VU_EMU_USER, unless the VM is
+	 * suspended, in which case VU_INIT is the choice.
+	 */
+	vcpu_ustate_change(vm, vcpuid,
+	    vm_is_suspended(vm, NULL) ? VU_INIT : VU_EMU_USER);
+
 	return (error);
 }
 
@@ -2659,7 +2694,7 @@ vm_entry_intinfo(struct vm *vm, int vcpuid, uint64_t *retinfo)
 		 */
 		if (VM_INTINFO_TYPE(info1) == VM_INTINFO_HWEXCP &&
 		    VM_INTINFO_VECTOR(info1) == IDT_DF) {
-			(void) vm_suspend(vm, VM_SUSPEND_TRIPLEFAULT);
+			(void) vm_suspend(vm, VM_SUSPEND_TRIPLEFAULT, vcpuid);
 			*retinfo = 0;
 			return (false);
 		}
@@ -3183,20 +3218,29 @@ vcpu_get_state(struct vm *vm, int vcpuid, int *hostcpu)
 	return (state);
 }
 
+/*
+ * Calculate the TSC offset for a vCPU, applying physical CPU adjustments if
+ * requested. The offset calculations include the VM-wide TSC offset.
+ */
 uint64_t
 vcpu_tsc_offset(struct vm *vm, int vcpuid, bool phys_adj)
 {
 	ASSERT(vcpuid >= 0 && vcpuid < vm->maxcpus);
 
-	uint64_t vcpu_off = vm->boot_tsc_offset + vm->vcpu[vcpuid].tsc_offset;
+	uint64_t vcpu_off = vm->tsc_offset + vm->vcpu[vcpuid].tsc_offset;
 
 	if (phys_adj) {
 		/* Include any offset for the current physical CPU too */
-		extern hrtime_t tsc_gethrtime_tick_delta(void);
-		vcpu_off += (uint64_t)tsc_gethrtime_tick_delta();
+		vcpu_off += vmm_host_tsc_delta();
 	}
 
 	return (vcpu_off);
+}
+
+uint64_t
+vm_get_freq_multiplier(struct vm *vm)
+{
+	return (vm->freq_multiplier);
 }
 
 /* Normalize hrtime against the boot time for a VM */
@@ -3225,7 +3269,7 @@ vm_activate_cpu(struct vm *vm, int vcpuid)
 	if (CPU_ISSET(vcpuid, &vm->active_cpus))
 		return (EBUSY);
 
-	if (vm->suspend != 0) {
+	if (vm_is_suspended(vm, NULL)) {
 		return (EBUSY);
 	}
 
@@ -3233,11 +3277,10 @@ vm_activate_cpu(struct vm *vm, int vcpuid)
 
 	/*
 	 * It is possible that this vCPU was undergoing activation at the same
-	 * time that the VM was being suspended.  If that happens to be the
-	 * case, it should reflect the suspended state immediately.
+	 * time that the VM was being suspended.
 	 */
-	if (atomic_load_acq_int((uint_t *)&vm->suspend) != 0) {
-		CPU_SET_ATOMIC(vcpuid, &vm->suspended_cpus);
+	if (vm_is_suspended(vm, NULL)) {
+		return (EBUSY);
 	}
 
 	return (0);
@@ -3286,113 +3329,152 @@ vm_resume_cpu(struct vm *vm, int vcpuid)
 }
 
 static bool
-vcpu_bailout_checks(struct vm *vm, int vcpuid, bool on_entry,
-    uint64_t entry_rip)
+vcpu_bailout_checks(struct vm *vm, int vcpuid)
 {
 	struct vcpu *vcpu = &vm->vcpu[vcpuid];
 	struct vm_exit *vme = &vcpu->exitinfo;
-	bool bail = false;
 
 	ASSERT(vcpuid >= 0 && vcpuid < vm->maxcpus);
 
-	if (vm->suspend) {
-		if (on_entry) {
-			VERIFY(vm->suspend > VM_SUSPEND_NONE &&
-			    vm->suspend < VM_SUSPEND_LAST);
+	/*
+	 * Check if VM is suspended, only passing the 'vm_exit *' to be
+	 * populated if this check is being performed as part of entry.
+	 */
+	if (vm_is_suspended(vm, vme)) {
+		/* Confirm exit details are as expected */
+		VERIFY3S(vme->exitcode, ==, VM_EXITCODE_SUSPENDED);
+		VERIFY(vme->u.suspended.how > VM_SUSPEND_NONE &&
+		    vme->u.suspended.how < VM_SUSPEND_LAST);
 
-			vme->exitcode = VM_EXITCODE_SUSPENDED;
-			vme->u.suspended.how = vm->suspend;
-		} else {
-			/*
-			 * Handling VM suspend is complicated, so if that
-			 * condition is detected outside of VM-entry itself,
-			 * just emit a BOGUS exitcode so we take a lap to pick
-			 * up the event during an entry and are directed into
-			 * the vm_handle_suspend() logic.
-			 */
-			vme->exitcode = VM_EXITCODE_BOGUS;
-		}
-		bail = true;
+		return (true);
 	}
 	if (vcpu->reqidle) {
-		vme->exitcode = VM_EXITCODE_REQIDLE;
+		/*
+		 * Another thread is trying to lock this vCPU and is waiting for
+		 * it to enter the VCPU_IDLE state.  Take a lap with a BOGUS
+		 * exit to allow other thread(s) access to this vCPU.
+		 */
+		vme->exitcode = VM_EXITCODE_BOGUS;
 		vmm_stat_incr(vm, vcpuid, VMEXIT_REQIDLE, 1);
-
-		if (!on_entry) {
-			/*
-			 * A reqidle request detected outside of VM-entry can be
-			 * handled directly by clearing the request (and taking
-			 * a lap to userspace).
-			 */
-			vcpu_assert_locked(vcpu);
-			vcpu->reqidle = 0;
-		}
-		bail = true;
+		return (true);
+	}
+	if (vcpu->reqbarrier) {
+		/*
+		 * Similar to 'reqidle', userspace has requested that this vCPU
+		 * be pushed to a barrier by exiting to userspace.  Take that
+		 * lap with BOGUS and clear the flag.
+		 */
+		vme->exitcode = VM_EXITCODE_BOGUS;
+		vcpu->reqbarrier = false;
+		return (true);
+	}
+	if (vcpu->reqconsist) {
+		/*
+		 * We only expect exit-when-consistent requests to be asserted
+		 * during entry, not as an otherwise spontaneous condition.  As
+		 * such, we do not count it among the exit statistics, and emit
+		 * the expected BOGUS exitcode, while clearing the request.
+		 */
+		vme->exitcode = VM_EXITCODE_BOGUS;
+		vcpu->reqconsist = false;
+		return (true);
 	}
 	if (vcpu_should_yield(vm, vcpuid)) {
 		vme->exitcode = VM_EXITCODE_BOGUS;
 		vmm_stat_incr(vm, vcpuid, VMEXIT_ASTPENDING, 1);
-		bail = true;
+		return (true);
 	}
 	if (CPU_ISSET(vcpuid, &vm->debug_cpus)) {
 		vme->exitcode = VM_EXITCODE_DEBUG;
-		bail = true;
+		return (true);
 	}
 
-	if (bail) {
-		if (on_entry) {
-			/*
-			 * If bailing out during VM-entry, the current %rip must
-			 * be recorded in the exitinfo.
-			 */
-			vme->rip = entry_rip;
-		}
-		vme->inst_length = 0;
-	}
-	return (bail);
+	return (false);
 }
 
 static bool
 vcpu_sleep_bailout_checks(struct vm *vm, int vcpuid)
 {
-	/*
-	 * Bail-out check done prior to sleeping (in vCPU contexts like HLT or
-	 * wait-for-SIPI) expect that %rip is already populated in the vm_exit
-	 * structure, and we would only modify the exitcode.
-	 */
-	return (vcpu_bailout_checks(vm, vcpuid, false, 0));
+	if (vcpu_bailout_checks(vm, vcpuid)) {
+		struct vcpu *vcpu = &vm->vcpu[vcpuid];
+		struct vm_exit *vme = &vcpu->exitinfo;
+
+		/*
+		 * Bail-out check done prior to sleeping (in vCPU contexts like
+		 * HLT or wait-for-SIPI) expect that %rip is already populated
+		 * in the vm_exit structure, and we would only modify the
+		 * exitcode and clear the inst_length.
+		 */
+		vme->inst_length = 0;
+		return (true);
+	}
+	return (false);
 }
 
 bool
 vcpu_entry_bailout_checks(struct vm *vm, int vcpuid, uint64_t rip)
 {
-	/*
-	 * Bail-out checks done as part of VM entry require an updated %rip to
-	 * populate the vm_exit struct if any of the conditions of interest are
-	 * matched in the check.
-	 */
-	return (vcpu_bailout_checks(vm, vcpuid, true, rip));
+	if (vcpu_bailout_checks(vm, vcpuid)) {
+		struct vcpu *vcpu = &vm->vcpu[vcpuid];
+		struct vm_exit *vme = &vcpu->exitinfo;
+
+		/*
+		 * Bail-out checks done as part of VM entry require an updated
+		 * %rip to populate the vm_exit struct if any of the conditions
+		 * of interest are matched in the check.
+		 */
+		vme->rip = rip;
+		vme->inst_length = 0;
+		return (true);
+	}
+	return (false);
+}
+
+int
+vm_vcpu_barrier(struct vm *vm, int vcpuid)
+{
+	if (vcpuid >= 0 && vcpuid < vm->maxcpus) {
+		struct vcpu *vcpu = &vm->vcpu[vcpuid];
+
+		/* Push specified vCPU to barrier */
+		vcpu_lock(vcpu);
+		if (CPU_ISSET(vcpuid, &vm->active_cpus)) {
+			vcpu->reqbarrier = true;
+			vcpu_notify_event_locked(vcpu, VCPU_NOTIFY_EXIT);
+		}
+		vcpu_unlock(vcpu);
+
+		return (0);
+	} else if (vcpuid == -1) {
+		/* Push all (active) vCPUs to barrier */
+		for (int i = 0; i < vm->maxcpus; i++) {
+			struct vcpu *vcpu = &vm->vcpu[i];
+
+			vcpu_lock(vcpu);
+			if (CPU_ISSET(vcpuid, &vm->active_cpus)) {
+				vcpu->reqbarrier = true;
+				vcpu_notify_event_locked(vcpu,
+				    VCPU_NOTIFY_EXIT);
+			}
+			vcpu_unlock(vcpu);
+		}
+
+		return (0);
+	} else {
+		return (EINVAL);
+	}
 }
 
 cpuset_t
 vm_active_cpus(struct vm *vm)
 {
-
 	return (vm->active_cpus);
 }
 
 cpuset_t
 vm_debug_cpus(struct vm *vm)
 {
-
 	return (vm->debug_cpus);
-}
-
-cpuset_t
-vm_suspended_cpus(struct vm *vm)
-{
-
-	return (vm->suspended_cpus);
 }
 
 void *
@@ -3497,13 +3579,16 @@ void
 vcpu_ustate_change(struct vm *vm, int vcpuid, enum vcpu_ustate ustate)
 {
 	struct vcpu *vcpu = &vm->vcpu[vcpuid];
-	hrtime_t now = gethrtime();
+	const hrtime_t now = gethrtime();
 
-	ASSERT3U(ustate, !=, vcpu->ustate);
 	ASSERT3S(ustate, <, VU_MAX);
 	ASSERT3S(ustate, >=, VU_INIT);
 
-	hrtime_t delta = now - vcpu->ustate_when;
+	if (ustate == vcpu->ustate) {
+		return;
+	}
+
+	const hrtime_t delta = now - vcpu->ustate_when;
 	vcpu->ustate_total[vcpu->ustate] += delta;
 
 	membar_producer();
@@ -3796,22 +3881,9 @@ vmm_kstat_update_vcpu(struct kstat *ksp, int rw)
 
 SET_DECLARE(vmm_data_version_entries, const vmm_data_version_entry_t);
 
-static inline bool
-vmm_data_is_cpu_specific(uint16_t data_class)
-{
-	switch (data_class) {
-	case VDC_REGISTER:
-	case VDC_MSR:
-	case VDC_FPU:
-	case VDC_LAPIC:
-		return (true);
-	default:
-		return (false);
-	}
-}
-
 static int
-vmm_data_find(const vmm_data_req_t *req, const vmm_data_version_entry_t **resp)
+vmm_data_find(const vmm_data_req_t *req, int vcpuid,
+    const vmm_data_version_entry_t **resp)
 {
 	const vmm_data_version_entry_t **vdpp, *vdp;
 
@@ -3820,44 +3892,75 @@ vmm_data_find(const vmm_data_req_t *req, const vmm_data_version_entry_t **resp)
 
 	SET_FOREACH(vdpp, vmm_data_version_entries) {
 		vdp = *vdpp;
-		if (vdp->vdve_class == req->vdr_class &&
-		    vdp->vdve_version == req->vdr_version) {
-			/*
-			 * Enforce any data length expectation expressed by the
-			 * provider for this data.
-			 */
-			if (vdp->vdve_len_expect != 0 &&
-			    vdp->vdve_len_expect > req->vdr_len) {
-				*req->vdr_result_len = vdp->vdve_len_expect;
-				return (ENOSPC);
-			}
-			*resp = vdp;
-			return (0);
+		if (vdp->vdve_class != req->vdr_class ||
+		    vdp->vdve_version != req->vdr_version) {
+			continue;
 		}
+
+		/*
+		 * Enforce any data length expectation expressed by the provider
+		 * for this data.
+		 */
+		if (vdp->vdve_len_expect != 0 &&
+		    vdp->vdve_len_expect > req->vdr_len) {
+			*req->vdr_result_len = vdp->vdve_len_expect;
+			return (ENOSPC);
+		}
+
+		/*
+		 * Make sure that the provided vcpuid is acceptable for the
+		 * backend handler.
+		 */
+		if (vdp->vdve_readf != NULL || vdp->vdve_writef != NULL) {
+			/*
+			 * While it is tempting to demand the -1 sentinel value
+			 * in vcpuid here, that expectation was not established
+			 * for early consumers, so it is ignored.
+			 */
+		} else if (vdp->vdve_vcpu_readf != NULL ||
+		    vdp->vdve_vcpu_writef != NULL) {
+			/*
+			 * Per-vCPU handlers which permit "wildcard" access will
+			 * accept a vcpuid of -1 (for VM-wide data), while all
+			 * others expect vcpuid [0, VM_MAXCPU).
+			 */
+			const int llimit = vdp->vdve_vcpu_wildcard ? -1 : 0;
+			if (vcpuid < llimit || vcpuid >= VM_MAXCPU) {
+				return (EINVAL);
+			}
+		} else {
+			/*
+			 * A provider with neither VM-wide nor per-vCPU handlers
+			 * is completely unexpected.  Such a situation should be
+			 * made into a compile-time error.  Bail out for now,
+			 * rather than punishing the user with a panic.
+			 */
+			return (EINVAL);
+		}
+
+
+		*resp = vdp;
+		return (0);
 	}
 	return (EINVAL);
 }
 
 static void *
-vmm_data_from_class(const vmm_data_req_t *req, struct vm *vm, int vcpuid)
+vmm_data_from_class(const vmm_data_req_t *req, struct vm *vm)
 {
 	switch (req->vdr_class) {
-		/* per-cpu data/devices */
-	case VDC_LAPIC:
-		return (vm_lapic(vm, vcpuid));
-	case VDC_VMM_ARCH:
-		return (vm);
-
-	case VDC_FPU:
 	case VDC_REGISTER:
 	case VDC_MSR:
+	case VDC_FPU:
+	case VDC_LAPIC:
+	case VDC_VMM_ARCH:
 		/*
 		 * These have per-CPU handling which is dispatched outside
 		 * vmm_data_version_entries listing.
 		 */
-		return (NULL);
+		panic("Unexpected per-vcpu class %u", req->vdr_class);
+		break;
 
-		/* system-wide data/devices */
 	case VDC_IOAPIC:
 		return (vm->vioapic);
 	case VDC_ATPIT:
@@ -3870,6 +3973,14 @@ vmm_data_from_class(const vmm_data_req_t *req, struct vm *vm, int vcpuid)
 		return (vm->vpmtmr);
 	case VDC_RTC:
 		return (vm->vrtc);
+	case VDC_VMM_TIME:
+		return (vm);
+	case VDC_VERSION:
+		/*
+		 * Play along with all of the other classes which need backup
+		 * data, even though version info does not require it.
+		 */
+		return (vm);
 
 	default:
 		/* The data class will have been validated by now */
@@ -3877,7 +3988,11 @@ vmm_data_from_class(const vmm_data_req_t *req, struct vm *vm, int vcpuid)
 	}
 }
 
-const uint32_t arch_msr_iter[] = {
+const uint32_t default_msr_iter[] = {
+	/*
+	 * Although EFER is also available via the get/set-register interface,
+	 * we include it in the default list of emitted MSRs.
+	 */
 	MSR_EFER,
 
 	/*
@@ -3895,21 +4010,85 @@ const uint32_t arch_msr_iter[] = {
 	MSR_SYSENTER_CS_MSR,
 	MSR_SYSENTER_ESP_MSR,
 	MSR_SYSENTER_EIP_MSR,
+
 	MSR_PAT,
-};
-const uint32_t generic_msr_iter[] = {
+
 	MSR_TSC,
+
 	MSR_MTRRcap,
 	MSR_MTRRdefType,
-
 	MSR_MTRR4kBase, MSR_MTRR4kBase + 1, MSR_MTRR4kBase + 2,
 	MSR_MTRR4kBase + 3, MSR_MTRR4kBase + 4, MSR_MTRR4kBase + 5,
 	MSR_MTRR4kBase + 6, MSR_MTRR4kBase + 7,
-
 	MSR_MTRR16kBase, MSR_MTRR16kBase + 1,
-
 	MSR_MTRR64kBase,
 };
+
+static int
+vmm_data_read_msr(struct vm *vm, int vcpuid, uint32_t msr, uint64_t *value)
+{
+	int err = 0;
+
+	switch (msr) {
+	case MSR_TSC:
+		/*
+		 * The vmm-data interface for MSRs provides access to the
+		 * per-vCPU offset of the TSC, when reading/writing MSR_TSC.
+		 *
+		 * The VM-wide offset (and scaling) of the guest TSC is accessed
+		 * via the VMM_TIME data class.
+		 */
+		*value = vm->vcpu[vcpuid].tsc_offset;
+		return (0);
+
+	default:
+		if (is_mtrr_msr(msr)) {
+			err = vm_rdmtrr(&vm->vcpu[vcpuid].mtrr, msr, value);
+		} else {
+			err = ops->vmgetmsr(vm->cookie, vcpuid, msr, value);
+		}
+		break;
+	}
+
+	return (err);
+}
+
+static int
+vmm_data_write_msr(struct vm *vm, int vcpuid, uint32_t msr, uint64_t value)
+{
+	int err = 0;
+
+	switch (msr) {
+	case MSR_TSC:
+		/* See vmm_data_read_msr() for more detail */
+		vm->vcpu[vcpuid].tsc_offset = value;
+		return (0);
+	case MSR_MTRRcap: {
+		/*
+		 * MTRRcap is read-only.  If the desired value matches the
+		 * existing one, consider it a success.
+		 */
+		uint64_t comp;
+		err = vm_rdmtrr(&vm->vcpu[vcpuid].mtrr, msr, &comp);
+		if (err == 0 && comp != value) {
+			return (EINVAL);
+		}
+		break;
+	}
+	default:
+		if (is_mtrr_msr(msr)) {
+			/* MTRRcap is already handled above */
+			ASSERT3U(msr, !=, MSR_MTRRcap);
+
+			err = vm_wrmtrr(&vm->vcpu[vcpuid].mtrr, msr, value);
+		} else {
+			err = ops->vmsetmsr(vm->cookie, vcpuid, msr, value);
+		}
+		break;
+	}
+
+	return (err);
+}
 
 static int
 vmm_data_read_msrs(struct vm *vm, int vcpuid, const vmm_data_req_t *req)
@@ -3917,61 +4096,57 @@ vmm_data_read_msrs(struct vm *vm, int vcpuid, const vmm_data_req_t *req)
 	VERIFY3U(req->vdr_class, ==, VDC_MSR);
 	VERIFY3U(req->vdr_version, ==, 1);
 
-	const uint_t num_msrs = nitems(arch_msr_iter) + nitems(generic_msr_iter)
-	    + (VMM_MTRR_VAR_MAX * 2);
+	struct vdi_field_entry_v1 *entryp = req->vdr_data;
+
+	/* Specific MSRs requested */
+	if ((req->vdr_flags & VDX_FLAG_READ_COPYIN) != 0) {
+		const uint_t count =
+		    req->vdr_len / sizeof (struct vdi_field_entry_v1);
+
+		for (uint_t i = 0; i < count; i++, entryp++) {
+			int err = vmm_data_read_msr(vm, vcpuid,
+			    entryp->vfe_ident, &entryp->vfe_value);
+
+			if (err != 0) {
+				return (err);
+			}
+		}
+
+		*req->vdr_result_len =
+		    count * sizeof (struct vdi_field_entry_v1);
+		return (0);
+	}
+
+	/*
+	 * If specific MSRs are not requested, try to provide all those which we
+	 * know about instead.
+	 */
+	const uint_t num_msrs = nitems(default_msr_iter) +
+	    (VMM_MTRR_VAR_MAX * 2);
 	const uint32_t output_len =
 	    num_msrs * sizeof (struct vdi_field_entry_v1);
-	*req->vdr_result_len = output_len;
 
+	*req->vdr_result_len = output_len;
 	if (req->vdr_len < output_len) {
 		return (ENOSPC);
 	}
 
-	struct vdi_field_entry_v1 *entryp = req->vdr_data;
-	for (uint_t i = 0; i < nitems(arch_msr_iter); i++, entryp++) {
-		const uint32_t msr = arch_msr_iter[i];
-		uint64_t val = 0;
+	/* Output the MSRs in the default list */
+	for (uint_t i = 0; i < nitems(default_msr_iter); i++, entryp++) {
+		entryp->vfe_ident = default_msr_iter[i];
 
-		int err = ops->vmgetmsr(vm->cookie, vcpuid, msr, &val);
 		/* All of these MSRs are expected to work */
-		VERIFY0(err);
-		entryp->vfe_ident = msr;
-		entryp->vfe_value = val;
+		VERIFY0(vmm_data_read_msr(vm, vcpuid, entryp->vfe_ident,
+		    &entryp->vfe_value));
 	}
 
-	struct vm_mtrr *mtrr = &vm->vcpu[vcpuid].mtrr;
-	for (uint_t i = 0; i < nitems(generic_msr_iter); i++, entryp++) {
-		const uint32_t msr = generic_msr_iter[i];
-
-		entryp->vfe_ident = msr;
-		switch (msr) {
-		case MSR_TSC:
-			/*
-			 * Communicate this as the difference from the VM-wide
-			 * offset of the boot time.
-			 */
-			entryp->vfe_value = vm->vcpu[vcpuid].tsc_offset;
-			break;
-		case MSR_MTRRcap:
-		case MSR_MTRRdefType:
-		case MSR_MTRR4kBase ... MSR_MTRR4kBase + 7:
-		case MSR_MTRR16kBase ... MSR_MTRR16kBase + 1:
-		case MSR_MTRR64kBase: {
-			int err = vm_rdmtrr(mtrr, msr, &entryp->vfe_value);
-			VERIFY0(err);
-			break;
-		}
-		default:
-			panic("unexpected msr export %x", msr);
-		}
-	}
-	/* Copy the variable MTRRs */
+	/* Output the variable MTRRs */
 	for (uint_t i = 0; i < (VMM_MTRR_VAR_MAX * 2); i++, entryp++) {
-		const uint32_t msr = MSR_MTRRVarBase + i;
+		entryp->vfe_ident = MSR_MTRRVarBase + i;
 
-		entryp->vfe_ident = msr;
-		int err = vm_rdmtrr(mtrr, msr, &entryp->vfe_value);
-		VERIFY0(err);
+		/* All of these MSRs are expected to work */
+		VERIFY0(vmm_data_read_msr(vm, vcpuid, entryp->vfe_ident,
+		    &entryp->vfe_value));
 	}
 	return (0);
 }
@@ -3985,31 +4160,17 @@ vmm_data_write_msrs(struct vm *vm, int vcpuid, const vmm_data_req_t *req)
 	const struct vdi_field_entry_v1 *entryp = req->vdr_data;
 	const uint_t entry_count =
 	    req->vdr_len / sizeof (struct vdi_field_entry_v1);
-	struct vm_mtrr *mtrr = &vm->vcpu[vcpuid].mtrr;
 
 	/*
 	 * First make sure that all of the MSRs can be manipulated.
 	 * For now, this check is done by going though the getmsr handler
 	 */
 	for (uint_t i = 0; i < entry_count; i++, entryp++) {
-		const uint32_t msr = entryp->vfe_ident;
+		const uint64_t msr = entryp->vfe_ident;
 		uint64_t val;
-		int err = 0;
 
-		switch (msr) {
-		case MSR_TSC:
-			break;
-		default:
-			if (is_mtrr_msr(msr)) {
-				err = vm_rdmtrr(mtrr, msr, &val);
-			} else {
-				err = ops->vmgetmsr(vm->cookie, vcpuid, msr,
-				    &val);
-			}
-			break;
-		}
-		if (err != 0) {
-			return (err);
+		if (vmm_data_read_msr(vm, vcpuid, msr, &val) != 0) {
+			return (EINVAL);
 		}
 	}
 
@@ -4019,36 +4180,9 @@ vmm_data_write_msrs(struct vm *vm, int vcpuid, const vmm_data_req_t *req)
 	 */
 	entryp = req->vdr_data;
 	for (uint_t i = 0; i < entry_count; i++, entryp++) {
-		const uint32_t msr = entryp->vfe_ident;
-		const uint64_t val = entryp->vfe_value;
-		int err = 0;
+		int err = vmm_data_write_msr(vm, vcpuid, entryp->vfe_ident,
+		    entryp->vfe_value);
 
-		switch (msr) {
-		case MSR_TSC:
-			vm->vcpu[vcpuid].tsc_offset = entryp->vfe_value;
-			break;
-		default:
-			if (is_mtrr_msr(msr)) {
-				if (msr == MSR_MTRRcap) {
-					/*
-					 * MTRRcap is read-only.  If the current
-					 * value matches the incoming one,
-					 * consider it a success
-					 */
-					uint64_t comp;
-					err = vm_rdmtrr(mtrr, msr, &comp);
-					if (err != 0 || comp != val) {
-						err = EINVAL;
-					}
-				} else {
-					err = vm_wrmtrr(mtrr, msr, val);
-				}
-			} else {
-				err = ops->vmsetmsr(vm->cookie, vcpuid, msr,
-				    val);
-			}
-			break;
-		}
 		if (err != 0) {
 			return (err);
 		}
@@ -4062,50 +4196,69 @@ static const vmm_data_version_entry_t msr_v1 = {
 	.vdve_class = VDC_MSR,
 	.vdve_version = 1,
 	.vdve_len_per_item = sizeof (struct vdi_field_entry_v1),
-	/* Requires backend-specific dispatch */
-	.vdve_readf = NULL,
-	.vdve_writef = NULL,
+	.vdve_vcpu_readf = vmm_data_read_msrs,
+	.vdve_vcpu_writef = vmm_data_write_msrs,
 };
 VMM_DATA_VERSION(msr_v1);
 
 static const uint32_t vmm_arch_v1_fields[] = {
-	VAI_TSC_BOOT_OFFSET,
-	VAI_BOOT_HRTIME,
-	VAI_TSC_FREQ,
+	VAI_VM_IS_PAUSED,
+};
+
+static const uint32_t vmm_arch_v1_vcpu_fields[] = {
+	VAI_PEND_NMI,
+	VAI_PEND_EXTINT,
+	VAI_PEND_EXCP,
+	VAI_PEND_INTINFO,
 };
 
 static bool
-vmm_read_arch_field(struct vm *vm, uint32_t ident, uint64_t *valp)
+vmm_read_arch_field(struct vm *vm, int vcpuid, uint32_t ident, uint64_t *valp)
 {
 	ASSERT(valp != NULL);
 
-	switch (ident) {
-	case VAI_TSC_BOOT_OFFSET:
-		*valp = vm->boot_tsc_offset;
-		return (true);
-	case VAI_BOOT_HRTIME:
-		*valp = vm->boot_hrtime;
-		return (true);
-	case VAI_TSC_FREQ:
-		/*
-		 * Since the system TSC calibration is not public, just derive
-		 * it from the scaling functions available.
-		 */
-		*valp = unscalehrtime(NANOSEC);
-		return (true);
-	default:
-		break;
+	if (vcpuid == -1) {
+		switch (ident) {
+		case VAI_VM_IS_PAUSED:
+			*valp = vm->is_paused ? 1 : 0;
+			return (true);
+		default:
+			break;
+		}
+	} else {
+		VERIFY(vcpuid >= 0 && vcpuid <= VM_MAXCPU);
+
+		struct vcpu *vcpu = &vm->vcpu[vcpuid];
+		switch (ident) {
+		case VAI_PEND_NMI:
+			*valp = vcpu->nmi_pending != 0 ? 1 : 0;
+			return (true);
+		case VAI_PEND_EXTINT:
+			*valp = vcpu->extint_pending != 0 ? 1 : 0;
+			return (true);
+		case VAI_PEND_EXCP:
+			*valp = vcpu->exc_pending;
+			return (true);
+		case VAI_PEND_INTINFO:
+			*valp = vcpu->exit_intinfo;
+			return (true);
+		default:
+			break;
+		}
 	}
 	return (false);
 }
 
 static int
-vmm_data_read_vmm_arch(void *arg, const vmm_data_req_t *req)
+vmm_data_read_varch(struct vm *vm, int vcpuid, const vmm_data_req_t *req)
 {
-	struct vm *vm = arg;
-
 	VERIFY3U(req->vdr_class, ==, VDC_VMM_ARCH);
 	VERIFY3U(req->vdr_version, ==, 1);
+
+	/* per-vCPU fields are handled separately from VM-wide ones */
+	if (vcpuid != -1 && (vcpuid < 0 || vcpuid >= VM_MAXCPU)) {
+		return (EINVAL);
+	}
 
 	struct vdi_field_entry_v1 *entryp = req->vdr_data;
 
@@ -4115,7 +4268,7 @@ vmm_data_read_vmm_arch(void *arg, const vmm_data_req_t *req)
 		    req->vdr_len / sizeof (struct vdi_field_entry_v1);
 
 		for (uint_t i = 0; i < count; i++, entryp++) {
-			if (!vmm_read_arch_field(vm, entryp->vfe_ident,
+			if (!vmm_read_arch_field(vm, vcpuid, entryp->vfe_ident,
 			    &entryp->vfe_value)) {
 				return (EINVAL);
 			}
@@ -4126,49 +4279,112 @@ vmm_data_read_vmm_arch(void *arg, const vmm_data_req_t *req)
 	}
 
 	/* Emit all of the possible values */
-	const uint32_t total_size = nitems(vmm_arch_v1_fields) *
-	    sizeof (struct vdi_field_entry_v1);
+	const uint32_t *idents;
+	uint_t ident_count;
+
+	if (vcpuid == -1) {
+		idents = vmm_arch_v1_fields;
+		ident_count = nitems(vmm_arch_v1_fields);
+	} else {
+		idents = vmm_arch_v1_vcpu_fields;
+		ident_count = nitems(vmm_arch_v1_vcpu_fields);
+
+	}
+
+	const uint32_t total_size =
+	    ident_count * sizeof (struct vdi_field_entry_v1);
+
 	*req->vdr_result_len = total_size;
 	if (req->vdr_len < total_size) {
 		return (ENOSPC);
 	}
-	for (uint_t i = 0; i < nitems(vmm_arch_v1_fields); i++, entryp++) {
-		entryp->vfe_ident = vmm_arch_v1_fields[i];
-		VERIFY(vmm_read_arch_field(vm, entryp->vfe_ident,
+	for (uint_t i = 0; i < ident_count; i++, entryp++) {
+		entryp->vfe_ident = idents[i];
+		VERIFY(vmm_read_arch_field(vm, vcpuid, entryp->vfe_ident,
 		    &entryp->vfe_value));
 	}
 	return (0);
 }
 
 static int
-vmm_data_write_vmm_arch(void *arg, const vmm_data_req_t *req)
+vmm_data_write_varch_vcpu(struct vm *vm, int vcpuid, const vmm_data_req_t *req)
 {
-	struct vm *vm = arg;
-
 	VERIFY3U(req->vdr_class, ==, VDC_VMM_ARCH);
 	VERIFY3U(req->vdr_version, ==, 1);
+
+	if (vcpuid < 0 || vcpuid >= VM_MAXCPU) {
+		return (EINVAL);
+	}
 
 	const struct vdi_field_entry_v1 *entryp = req->vdr_data;
 	const uint_t entry_count =
 	    req->vdr_len / sizeof (struct vdi_field_entry_v1);
+	struct vcpu *vcpu = &vm->vcpu[vcpuid];
 
 	for (uint_t i = 0; i < entry_count; i++, entryp++) {
 		const uint64_t val = entryp->vfe_value;
 
 		switch (entryp->vfe_ident) {
-		case VAI_TSC_BOOT_OFFSET:
-			vm->boot_tsc_offset = val;
+		case VAI_PEND_NMI:
+			vcpu->nmi_pending = (val != 0);
 			break;
-		case VAI_BOOT_HRTIME:
-			vm->boot_hrtime = val;
+		case VAI_PEND_EXTINT:
+			vcpu->extint_pending = (val != 0);
 			break;
-		case VAI_TSC_FREQ:
-			/* Guest TSC frequency not (currently) adjustable */
-			return (EPERM);
+		case VAI_PEND_EXCP:
+			if (!VM_INTINFO_PENDING(val)) {
+				vcpu->exc_pending = 0;
+			} else if (VM_INTINFO_TYPE(val) != VM_INTINFO_HWEXCP ||
+			    (val & VM_INTINFO_MASK_RSVD) != 0) {
+				/* reject improperly-formed hw exception */
+				return (EINVAL);
+			} else {
+				vcpu->exc_pending = val;
+			}
+			break;
+		case VAI_PEND_INTINFO:
+			if (vm_exit_intinfo(vm, vcpuid, val) != 0) {
+				return (EINVAL);
+			}
+			break;
 		default:
 			return (EINVAL);
 		}
 	}
+
+	*req->vdr_result_len = entry_count * sizeof (struct vdi_field_entry_v1);
+	return (0);
+}
+
+static int
+vmm_data_write_varch(struct vm *vm, int vcpuid, const vmm_data_req_t *req)
+{
+	VERIFY3U(req->vdr_class, ==, VDC_VMM_ARCH);
+	VERIFY3U(req->vdr_version, ==, 1);
+
+	/* per-vCPU fields are handled separately from VM-wide ones */
+	if (vcpuid != -1) {
+		return (vmm_data_write_varch_vcpu(vm, vcpuid, req));
+	}
+
+	const struct vdi_field_entry_v1 *entryp = req->vdr_data;
+	const uint_t entry_count =
+	    req->vdr_len / sizeof (struct vdi_field_entry_v1);
+
+	if (entry_count > 0) {
+		if (entryp->vfe_ident == VAI_VM_IS_PAUSED) {
+			/*
+			 * The VM_PAUSE and VM_RESUME ioctls are the officially
+			 * sanctioned mechanisms for setting the is-paused state
+			 * of the VM.
+			 */
+			return (EPERM);
+		} else {
+			/* no other valid arch entries at this time */
+			return (EINVAL);
+		}
+	}
+
 	*req->vdr_result_len = entry_count * sizeof (struct vdi_field_entry_v1);
 	return (0);
 }
@@ -4177,10 +4393,578 @@ static const vmm_data_version_entry_t vmm_arch_v1 = {
 	.vdve_class = VDC_VMM_ARCH,
 	.vdve_version = 1,
 	.vdve_len_per_item = sizeof (struct vdi_field_entry_v1),
-	.vdve_readf = vmm_data_read_vmm_arch,
-	.vdve_writef = vmm_data_write_vmm_arch,
+	.vdve_vcpu_readf = vmm_data_read_varch,
+	.vdve_vcpu_writef = vmm_data_write_varch,
+
+	/*
+	 * Handlers for VMM_ARCH can process VM-wide (vcpuid == -1) entries in
+	 * addition to vCPU specific ones.
+	 */
+	.vdve_vcpu_wildcard = true,
 };
 VMM_DATA_VERSION(vmm_arch_v1);
+
+
+/*
+ * GUEST TIME SUPPORT
+ *
+ * Broadly, there are two categories of functionality related to time passing in
+ * the guest: the guest's TSC and timers used by emulated devices.
+ *
+ * ---------------------------
+ * GUEST TSC "VIRTUALIZATION"
+ * ---------------------------
+ *
+ * The TSC can be read either via an instruction (rdtsc/rdtscp) or by reading
+ * the TSC MSR.
+ *
+ * When a guest reads the TSC via its MSR, the guest will exit and we emulate
+ * the rdmsr. More typically, the guest reads the TSC via a rdtsc(p)
+ * instruction. Both SVM and VMX support virtualizing the guest TSC in hardware
+ * -- that is, a guest will not generally exit on a rdtsc instruction.
+ *
+ * To support hardware-virtualized guest TSC, both SVM and VMX provide two knobs
+ * for the hypervisor to adjust the guest's view of the TSC:
+ * - TSC offset
+ * - TSC frequency multiplier (also called "frequency ratio")
+ *
+ * When a guest calls rdtsc(p), the TSC value it sees is the sum of:
+ *     guest_tsc = (host TSC, scaled according to frequency multiplier)
+ *		    + (TSC offset, programmed by hypervisor)
+ *
+ * See the discussions of the TSC offset and frequency multiplier below for more
+ * details on each of these.
+ *
+ * --------------------
+ * TSC OFFSET OVERVIEW
+ * --------------------
+ *
+ * The TSC offset is a value added to the host TSC (which may be scaled first)
+ * to provide the guest TSC. This offset addition is generally done by hardware,
+ * but may be used in emulating the TSC if necessary.
+ *
+ * Recall that general formula for calculating the guest TSC is:
+ *
+ *	guest_tsc = (host TSC, scaled if needed) + TSC offset
+ *
+ * Intuitively, the TSC offset is simply an offset of the host's TSC to make the
+ * guest's view of the TSC appear correct: The guest TSC should be 0 at boot and
+ * monotonically increase at a roughly constant frequency. Thus in the simplest
+ * case, the TSC offset is just the negated value of the host TSC when the guest
+ * was booted, assuming they have the same frequencies.
+ *
+ * In practice, there are several factors that can make calculating the TSC
+ * offset more complicated, including:
+ *
+ * (1) the physical CPU the guest is running on
+ * (2) whether the guest has written to the TSC of that vCPU
+ * (3) differing host and guest frequencies, like after a live migration
+ * (4) a guest running on a different system than where it was booted, like
+ *     after a live migration
+ *
+ * We will explore each of these factors individually. See below for a
+ * summary.
+ *
+ *
+ * (1) Physical CPU offsets
+ *
+ * The system maintains a set of per-CPU offsets to the TSC to provide a
+ * consistent view of the TSC regardless of the CPU a thread is running on.
+ * These offsets are included automatically as a part of rdtsc_offset().
+ *
+ * The per-CPU offset must be included as a part reading the host TSC when
+ * calculating the offset before running the guest on a given CPU.
+ *
+ *
+ * (2) Guest TSC writes (vCPU offsets)
+ *
+ * The TSC is a writable MSR. When a guest writes to the TSC, this operation
+ * should result in the TSC, when read from that vCPU, shows the value written,
+ * plus whatever time has elapsed since the read.
+ *
+ * To support this, when the guest writes to the TSC, we store an additional
+ * vCPU offset calculated to make future reads of the TSC map to what the guest
+ * expects.
+ *
+ *
+ * (3) Differing host and guest frequencies (host TSC scaling)
+ *
+ * A guest has the same frequency of its host when it boots, but it may be
+ * migrated to a machine with a different TSC frequency. Systems expect that
+ * their TSC frequency does not change. To support this fiction in which a guest
+ * is running on hardware of a different TSC frequency, the hypervisor  can
+ * program a "frequency multiplier" that represents the ratio of guest/host
+ * frequency.
+ *
+ * Any time a host TSC is used in calculations for the offset, it should be
+ * "scaled" according to this multiplier, and the hypervisor should program the
+ * multiplier before running a guest so that the hardware virtualization of the
+ * TSC functions properly. Similarly, the multiplier should be used in any TSC
+ * emulation.
+ *
+ * See below for more details about the frequency multiplier.
+ *
+ *
+ * (4) Guest running on a system it did not boot on ("base guest TSC")
+ *
+ * When a guest boots, its TSC offset is simply the negated host TSC at the time
+ * it booted. If a guest is migrated from a source host to a target host, the
+ * TSC offset from the source host is no longer useful for several reasons:
+ * - the target host TSC has no relationship to the source host TSC
+ * - the guest did not boot on the target system, so the TSC of the target host
+ *   is not sufficient to describe how long the guest has been running prior to
+ *   migration
+ * - the target system may have a different TSC frequency than the source system
+ *
+ * Ignoring the issue of frequency differences for a moment, let's consider how
+ * to re-align the guest TSC with the host TSC of the target host. Intuitively,
+ * for the guest to see the correct TSC, we still want to add some offset to the
+ * host TSC that offsets how long this guest has been running on
+ * the system.
+ *
+ * An example here might be helpful. Consider a source host and target host,
+ * both with TSC frequencies of 1GHz. On the source host, the guest and host TSC
+ * values might look like:
+ *
+ *  +----------------------------------------------------------------------+
+ *  | Event                 | source host TSC  | guest TSC                 |
+ *  ------------------------------------------------------------------------
+ *  | guest boot  (t=0s)    | 5000000000       | 5000000000 + -5000000000  |
+ *  |                       |                  | 0			   |
+ *  ------------------------------------------------------------------------
+ *  | guest rdtsc (t=10s))  | 15000000000      | 15000000000 + -5000000000 |
+ *  |                       |                  | 10000000000		   |
+ *  ------------------------------------------------------------------------
+ *  | migration   (t=15s)   | 20000000000      | 20000000000 + -5000000000 |
+ *  |                       |                  | 15000000000		   |
+ *  +----------------------------------------------------------------------+
+ *
+ * Ignoring the time it takes for a guest to physically migrate machines, on the
+ * target host, we would expect the TSC to continue functioning as such:
+ *
+ *  +----------------------------------------------------------------------+
+ *  | Event                 | target host TSC  | guest TSC                 |
+ *  ------------------------------------------------------------------------
+ *  | guest migrate (t=15s) | 300000000000     | 15000000000		   |
+ *  ------------------------------------------------------------------------
+ *  | guest rdtsc (t=20s))  | 305000000000     | 20000000000		   |
+ *  ------------------------------------------------------------------------
+ *
+ * In order to produce a correct TSC value here, we can calculate a new
+ * "effective" boot TSC that maps to what the host TSC would've been had it been
+ * booted on the target. We add that to the guest TSC when it began to run on
+ * this machine, and negate them both to get a new offset. In this example, the
+ * effective boot TSC is: -(300000000000 - 15000000000) = -285000000000.
+ *
+ *  +-------------------------------------------------------------------------+
+ *  | Event                 | target host TSC  | guest TSC                    |
+ *  ---------------------------------------------------------------------------
+ *  | guest "boot" (t=0s)   | 285000000000     | 285000000000 + -285000000000 |
+ *  |                       |                  | 0			      |
+ *  ---------------------------------------------------------------------------
+ *  | guest migrate (t=15s) | 300000000000     | 300000000000 + -285000000000 |
+ *  |                       |                  | 15000000000		      |
+ *  ---------------------------------------------------------------------------
+ *  | guest rdtsc (t=20s))  | 305000000000     | 305000000000 + -285000000000 |
+ *  |                       |                  | 20000000000		      |
+ *  --------------------------------------------------------------------------+
+ *
+ * To support the offset calculation following a migration, the VMM data time
+ * interface allows callers to set a "base guest TSC", which is the TSC value of
+ * the guest when it began running on the host. The current guest TSC can be
+ * requested via a read of the time data. See below for details on that
+ * interface.
+ *
+ * Frequency differences between the host and the guest are accounted for when
+ * scaling the host TSC. See below for details on the frequency multiplier.
+ *
+ *
+ * --------------------
+ * TSC OFFSET SUMMARY
+ * --------------------
+ *
+ * Factoring in all of the components to the TSC above, the TSC offset that is
+ * programmed by the hypervisor before running a given vCPU is:
+ *
+ * offset = -((base host TSC, scaled if needed) - base_guest_tsc) + vCPU offset
+ *
+ * This offset is stored in two pieces. Per-vCPU offsets are stored with the
+ * given vCPU and added in when programming the offset. The rest of the offset
+ * is stored as a VM-wide offset, and computed either at boot or when the time
+ * data is written to.
+ *
+ * It is safe to add the vCPU offset and the VM-wide offsets together because
+ * the vCPU offset is in terms of the guest TSC. The host TSC is scaled before
+ * using it in calculations, so all TSC values are applicable to the same
+ * frequency.
+ *
+ * Note: Though both the VM-wide offset and per-vCPU offsets may be negative, we
+ * store them as unsigned values and perform all offsetting math unsigned. This
+ * is to avoid UB from signed overflow.
+ *
+ * -------------------------
+ * TSC FREQUENCY MULTIPLIER
+ * -------------------------
+ *
+ * In order to account for frequency differences between the host and guest, SVM
+ * and VMX provide an interface to set a "frequency multiplier" (or "frequency
+ * ratio") representing guest to host frequency. In a hardware-virtualized read
+ * of the TSC, the host TSC is scaled using this multiplier prior to adding the
+ * programmed TSC offset.
+ *
+ * Both platforms represent the ratio as a fixed point number, where the lower
+ * bits are used as a fractional component, and some number of the upper bits
+ * are used as the integer component.
+ *
+ * Some example multipliers, for a platform with FRAC fractional bits in the
+ * multiplier:
+ * - guest frequency == host: 1 << FRAC
+ * - guest frequency is 2x host: 1 << (FRAC + 1)
+ * - guest frequency is 0.5x host: 1 << (FRAC - 1), as the highest-order
+ *   fractional bit represents 1/2
+ * - guest frequency is 2.5x host: (1 << FRAC) | (1 << (FRAC - 1))
+ * and so on.
+ *
+ * In general, the frequency multiplier is calculated as follows:
+ *		(guest_hz * (1 << FRAC_SIZE)) / host_hz
+ *
+ * The multiplier should be used any time the host TSC value is used in
+ * calculations with the guest TSC (and their frequencies differ). The function
+ * `vmm_scale_tsc` is intended to be used for these purposes, as it will scale
+ * the host TSC only if needed.
+ *
+ * The multiplier should also be programmed by the hypervisor before the guest
+ * is run.
+ *
+ *
+ * ----------------------------
+ * DEVICE TIMERS (BOOT_HRTIME)
+ * ----------------------------
+ *
+ * Emulated devices use timers to do things such as scheduling periodic events.
+ * These timers are scheduled relative to the hrtime of the host. When device
+ * state is exported or imported, we use boot_hrtime to normalize these timers
+ * against the host hrtime. The boot_hrtime represents the hrtime of the host
+ * when the guest was booted.
+ *
+ * If a guest is migrated to a different machine, boot_hrtime must be adjusted
+ * to match the hrtime of when the guest was effectively booted on the target
+ * host. This allows timers to continue functioning when device state is
+ * imported on the target.
+ *
+ *
+ * ------------------------
+ * VMM DATA TIME INTERFACE
+ * ------------------------
+ *
+ * In order to facilitate live migrations of guests, we provide an interface,
+ * via the VMM data read/write ioctls, for userspace to make changes to the
+ * guest's view of the TSC and device timers, allowing these features to
+ * continue functioning after a migration.
+ *
+ * The interface was designed to expose the minimal amount of data needed for a
+ * userspace component to make adjustments to the guest's view of time (e.g., to
+ * account for time passing in a live migration). At a minimum, such a program
+ * needs:
+ * - the current guest TSC
+ * - guest TSC frequency
+ * - guest's boot_hrtime
+ * - timestamps of when this data was taken (hrtime for hrtime calculations, and
+ *   wall clock time for computing time deltas between machines)
+ *
+ * The wall clock time is provided for consumers to make adjustments to the
+ * guest TSC and boot_hrtime based on deltas observed during migrations. It may
+ * be prudent for consumers to use this data only in circumstances where the
+ * source and target have well-synchronized wall clocks, but nothing in the
+ * interface depends on this assumption.
+ *
+ * On writes, consumers write back:
+ * - the base guest TSC (used for TSC offset calculations)
+ * - desired boot_hrtime
+ * - guest_frequency (cannot change)
+ * - hrtime of when this data was adjusted
+ * - (wall clock time on writes is ignored)
+ *
+ * The interface will adjust the input guest TSC slightly, based on the input
+ * hrtime, to account for latency between userspace calculations and application
+ * of the data on the kernel side. This amounts to adding a small amount of
+ * additional "uptime" for the guest.
+ *
+ * After the adjustments, the interface updates the VM-wide TSC offset and
+ * boot_hrtime. Per-vCPU offsets are not adjusted, as those are already in terms
+ * of the guest TSC and can be exported/imported via the MSR VMM data interface.
+ *
+ *
+ * --------------------------------
+ * SUPPORTED PLATFORMS AND CAVEATS
+ * --------------------------------
+ *
+ * While both VMX and SVM offer TSC scaling as a feature, at this time only SVM
+ * is supported by bhyve.
+ *
+ * The time data interface is designed such that Intel support can be added
+ * easily, and all other aspects of the time interface should work on Intel.
+ * (Without frequency control though, in practice, doing live migrations of
+ * guests on Intel will not work for time-related things, as two machines
+ * rarely have exactly the same frequency).
+ *
+ * Additionally, while on both SVM and VMX the frequency multiplier is a fixed
+ * point number, each uses a different number of fractional and integer bits for
+ * the multiplier. As such, calculating the multiplier and fractional bit size
+ * is requested via the vmm_ops.
+ *
+ * Care should be taken to set reasonable limits for ratios based on the
+ * platform, as the difference in fractional bits can lead to slightly different
+ * tradeoffs in terms of representable ratios and potentially overflowing
+ * calculations.
+ */
+
+/*
+ * Scales the TSC if needed, based on the input frequency multiplier.
+ */
+static uint64_t
+vmm_scale_tsc(uint64_t tsc, uint64_t mult)
+{
+	const uint32_t frac_size = ops->fr_fracsize;
+
+	if (mult != VM_TSCM_NOSCALE) {
+		VERIFY3U(frac_size, >, 0);
+		return (scale_tsc(tsc, mult, frac_size));
+	} else {
+		return (tsc);
+	}
+}
+
+/*
+ * Calculate the frequency multiplier, which represents the ratio of
+ * guest_hz / host_hz. The frequency multiplier is a fixed point number with
+ * `frac_sz` fractional bits (fractional bits begin at bit 0).
+ *
+ * See comment for "calc_freq_multiplier" in "vmm_time_support.S" for more
+ * information about valid input to this function.
+ */
+uint64_t
+vmm_calc_freq_multiplier(uint64_t guest_hz, uint64_t host_hz,
+    uint32_t frac_size)
+{
+	VERIFY3U(guest_hz, !=, 0);
+	VERIFY3U(frac_size, >, 0);
+	VERIFY3U(frac_size, <, 64);
+
+	return (calc_freq_multiplier(guest_hz, host_hz, frac_size));
+}
+
+/*
+ * Calculate the guest VM-wide TSC offset.
+ *
+ * offset = - ((base host TSC, scaled if needed) - base_guest_tsc)
+ *
+ * The base_host_tsc and the base_guest_tsc are the TSC values of the host
+ * (read on the system) and the guest (calculated) at the same point in time.
+ * This allows us to fix the guest TSC at this point in time as a base, either
+ * following boot (guest TSC = 0), or a change to the guest's time data from
+ * userspace (such as in the case of a migration).
+ */
+static uint64_t
+calc_tsc_offset(uint64_t base_host_tsc, uint64_t base_guest_tsc, uint64_t mult)
+{
+	const uint64_t htsc_scaled = vmm_scale_tsc(base_host_tsc, mult);
+	if (htsc_scaled > base_guest_tsc) {
+		return ((uint64_t)(- (int64_t)(htsc_scaled - base_guest_tsc)));
+	} else {
+		return (base_guest_tsc - htsc_scaled);
+	}
+}
+
+/*
+ * Calculate an estimate of the guest TSC.
+ *
+ * guest_tsc = (host TSC, scaled if needed) + offset
+ */
+static uint64_t
+calc_guest_tsc(uint64_t host_tsc, uint64_t mult, uint64_t offset)
+{
+	return (vmm_scale_tsc(host_tsc, mult) + offset);
+}
+
+/*
+ * Take a non-atomic "snapshot" of the current:
+ * - TSC
+ * - hrtime
+ * - wall clock time
+ */
+static void
+vmm_time_snapshot(uint64_t *tsc, hrtime_t *hrtime, timespec_t *hrestime)
+{
+	/*
+	 * Disable interrupts while we take the readings: In the absence of a
+	 * mechanism to convert hrtime to hrestime, we want the time between
+	 * each of these measurements to be as small as possible.
+	 */
+	ulong_t iflag = intr_clear();
+
+	hrtime_t hrt = gethrtimeunscaledf();
+	*tsc = (uint64_t)hrt;
+	*hrtime = hrt;
+	scalehrtime(hrtime);
+	gethrestime(hrestime);
+
+	intr_restore(iflag);
+}
+
+/*
+ * Read VMM Time data
+ *
+ * Provides:
+ * - the current guest TSC and TSC frequency
+ * - guest boot_hrtime
+ * - timestamps of the read (hrtime and wall clock time)
+ */
+static int
+vmm_data_read_vmm_time(void *arg, const vmm_data_req_t *req)
+{
+	VERIFY3U(req->vdr_class, ==, VDC_VMM_TIME);
+	VERIFY3U(req->vdr_version, ==, 1);
+	VERIFY3U(req->vdr_len, >=, sizeof (struct vdi_time_info_v1));
+
+	struct vm *vm = arg;
+	struct vdi_time_info_v1 *out = req->vdr_data;
+
+	/* Take a snapshot of this point in time */
+	uint64_t tsc;
+	hrtime_t hrtime;
+	timespec_t hrestime;
+	vmm_time_snapshot(&tsc, &hrtime, &hrestime);
+
+	/* Write the output values */
+	out->vt_guest_freq = vm->guest_freq;
+
+	/*
+	 * Use only the VM-wide TSC offset for calculating the guest TSC,
+	 * ignoring per-vCPU offsets. This value is provided as a "base" guest
+	 * TSC at the time of the read; per-vCPU offsets are factored in as
+	 * needed elsewhere, either when running the vCPU or if the guest reads
+	 * the TSC via rdmsr.
+	 */
+	out->vt_guest_tsc = calc_guest_tsc(tsc, vm->freq_multiplier,
+	    vm->tsc_offset);
+	out->vt_boot_hrtime = vm->boot_hrtime;
+	out->vt_hrtime = hrtime;
+	out->vt_hres_sec = hrestime.tv_sec;
+	out->vt_hres_ns = hrestime.tv_nsec;
+
+	return (0);
+}
+
+/*
+ * Modify VMM Time data related values
+ *
+ * This interface serves to allow guests' TSC and device timers to continue
+ * functioning across live migrations. On a successful write, the VM-wide TSC
+ * offset and boot_hrtime of the guest are updated.
+ *
+ * The interface requires an hrtime of the system at which the caller wrote
+ * this data; this allows us to adjust the TSC and boot_hrtime slightly to
+ * account for time passing between the userspace call and application
+ * of the data here.
+ *
+ * There are several possibilities for invalid input, including:
+ * - a requested guest frequency of 0, or a frequency otherwise unsupported by
+ *   the underlying platform
+ * - hrtime or boot_hrtime values that appear to be from the future
+ * - the requested frequency does not match the host, and this system does not
+ *   have hardware TSC scaling support
+ */
+static int
+vmm_data_write_vmm_time(void *arg, const vmm_data_req_t *req)
+{
+	VERIFY3U(req->vdr_class, ==, VDC_VMM_TIME);
+	VERIFY3U(req->vdr_version, ==, 1);
+	VERIFY3U(req->vdr_len, >=, sizeof (struct vdi_time_info_v1));
+
+	struct vm *vm = arg;
+	const struct vdi_time_info_v1 *src = req->vdr_data;
+
+	/*
+	 * Platform-specific checks will verify the requested frequency against
+	 * the supported range further, but a frequency of 0 is never valid.
+	 */
+	if (src->vt_guest_freq == 0) {
+		return (EINVAL);
+	}
+
+	/*
+	 * Check whether the request frequency is supported and get the
+	 * frequency multiplier.
+	 */
+	uint64_t mult = VM_TSCM_NOSCALE;
+	freqratio_res_t res = ops->vmfreqratio(src->vt_guest_freq,
+	    vmm_host_freq, &mult);
+	switch (res) {
+	case FR_SCALING_NOT_SUPPORTED:
+		/*
+		 * This system doesn't support TSC scaling, and the guest/host
+		 * frequencies differ
+		 */
+		return (EPERM);
+	case FR_OUT_OF_RANGE:
+		/* Requested frequency ratio is too small/large */
+		return (EINVAL);
+	case FR_SCALING_NOT_NEEDED:
+		/* Host and guest frequencies are the same */
+		VERIFY3U(mult, ==, VM_TSCM_NOSCALE);
+		break;
+	case FR_VALID:
+		VERIFY3U(mult, !=, VM_TSCM_NOSCALE);
+		break;
+	}
+
+	/*
+	 * Find (and validate) the hrtime delta between the input request and
+	 * when we received it so that we can bump the TSC to account for time
+	 * passing.
+	 *
+	 * We ignore the hrestime as input, as this is a field that
+	 * exists for reads.
+	 */
+	uint64_t tsc;
+	hrtime_t hrtime;
+	timespec_t hrestime;
+	vmm_time_snapshot(&tsc, &hrtime, &hrestime);
+	if ((src->vt_hrtime > hrtime) || (src->vt_boot_hrtime > hrtime)) {
+		/*
+		 * The caller has passed in an hrtime / boot_hrtime from the
+		 * future.
+		 */
+		return (EINVAL);
+	}
+	hrtime_t hrt_delta = hrtime - src->vt_hrtime;
+
+	/* Calculate guest TSC adjustment */
+	const uint64_t host_ticks = unscalehrtime(hrt_delta);
+	const uint64_t guest_ticks = vmm_scale_tsc(host_ticks,
+	    vm->freq_multiplier);
+	const uint64_t base_guest_tsc = src->vt_guest_tsc + guest_ticks;
+
+	/* Update guest time data */
+	vm->freq_multiplier = mult;
+	vm->guest_freq = src->vt_guest_freq;
+	vm->boot_hrtime = src->vt_boot_hrtime;
+	vm->tsc_offset = calc_tsc_offset(tsc, base_guest_tsc,
+	    vm->freq_multiplier);
+
+	return (0);
+}
+
+static const vmm_data_version_entry_t vmm_time_v1 = {
+	.vdve_class = VDC_VMM_TIME,
+	.vdve_version = 1,
+	.vdve_len_expect = sizeof (struct vdi_time_info_v1),
+	.vdve_readf = vmm_data_read_vmm_time,
+	.vdve_writef = vmm_data_write_vmm_time,
+};
+VMM_DATA_VERSION(vmm_time_v1);
+
 
 static int
 vmm_data_read_versions(void *arg, const vmm_data_req_t *req)
@@ -4232,44 +5016,29 @@ vmm_data_read(struct vm *vm, int vcpuid, const vmm_data_req_t *req)
 {
 	int err = 0;
 
-	if (vmm_data_is_cpu_specific(req->vdr_class)) {
-		if (vcpuid >= VM_MAXCPU) {
-			return (EINVAL);
-		}
-	}
-
 	const vmm_data_version_entry_t *entry = NULL;
-	err = vmm_data_find(req, &entry);
+	err = vmm_data_find(req, vcpuid, &entry);
 	if (err != 0) {
 		return (err);
 	}
 	ASSERT(entry != NULL);
 
-	void *datap = vmm_data_from_class(req, vm, vcpuid);
-	if (datap != NULL) {
-		err = entry->vdve_readf(datap, req);
+	if (entry->vdve_readf != NULL) {
+		void *datap = vmm_data_from_class(req, vm);
 
-		/*
-		 * Successful reads of fixed-length data should populate the
-		 * length of that result.
-		 */
-		if (err == 0 && entry->vdve_len_expect != 0) {
-			*req->vdr_result_len = entry->vdve_len_expect;
-		}
+		err = entry->vdve_readf(datap, req);
+	} else if (entry->vdve_vcpu_readf != NULL) {
+		err = entry->vdve_vcpu_readf(vm, vcpuid, req);
 	} else {
-		switch (req->vdr_class) {
-		case VDC_MSR:
-			err = vmm_data_read_msrs(vm, vcpuid, req);
-			break;
-		case VDC_FPU:
-			/* TODO: wire up to xsave export via hma_fpu iface */
-			err = EINVAL;
-			break;
-		case VDC_REGISTER:
-		default:
-			err = EINVAL;
-			break;
-		}
+		err = EINVAL;
+	}
+
+	/*
+	 * Successful reads of fixed-length data should populate the length of
+	 * that result.
+	 */
+	if (err == 0 && entry->vdve_len_expect != 0) {
+		*req->vdr_result_len = entry->vdve_len_expect;
 	}
 
 	return (err);
@@ -4280,43 +5049,29 @@ vmm_data_write(struct vm *vm, int vcpuid, const vmm_data_req_t *req)
 {
 	int err = 0;
 
-	if (vmm_data_is_cpu_specific(req->vdr_class)) {
-		if (vcpuid >= VM_MAXCPU) {
-			return (EINVAL);
-		}
-	}
-
 	const vmm_data_version_entry_t *entry = NULL;
-	err = vmm_data_find(req, &entry);
+	err = vmm_data_find(req, vcpuid, &entry);
 	if (err != 0) {
 		return (err);
 	}
 	ASSERT(entry != NULL);
 
-	void *datap = vmm_data_from_class(req, vm, vcpuid);
-	if (datap != NULL) {
+	if (entry->vdve_writef != NULL) {
+		void *datap = vmm_data_from_class(req, vm);
+
 		err = entry->vdve_writef(datap, req);
-		/*
-		 * Successful writes of fixed-length data should populate the
-		 * length of that result.
-		 */
-		if (err == 0 && entry->vdve_len_expect != 0) {
-			*req->vdr_result_len = entry->vdve_len_expect;
-		}
+	} else if (entry->vdve_vcpu_writef != NULL) {
+		err = entry->vdve_vcpu_writef(vm, vcpuid, req);
 	} else {
-		switch (req->vdr_class) {
-		case VDC_MSR:
-			err = vmm_data_write_msrs(vm, vcpuid, req);
-			break;
-		case VDC_FPU:
-			/* TODO: wire up to xsave import via hma_fpu iface */
-			err = EINVAL;
-			break;
-		case VDC_REGISTER:
-		default:
-			err = EINVAL;
-			break;
-		}
+		err = EINVAL;
+	}
+
+	/*
+	 * Successful writes of fixed-length data should populate the length of
+	 * that result.
+	 */
+	if (err == 0 && entry->vdve_len_expect != 0) {
+		*req->vdr_result_len = entry->vdve_len_expect;
 	}
 
 	return (err);

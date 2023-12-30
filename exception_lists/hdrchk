@@ -27,7 +27,6 @@ usr/src/cmd/pools/poold/libjkstat/jkstat.h
 usr/src/cmd/pools/poold/libjlgrp/jlgrp.h
 usr/src/cmd/pools/poold/libjpool/jpool.h
 usr/src/cmd/pools/poold/libjsyslog/jsyslog.h
-usr/src/cmd/print/printmgr/com/sun/admin/pm/server/com_sun_admin_pm_server_DoPrinterNS.h
 usr/src/common/ficl/ficltokens.h
 usr/src/contrib
 usr/src/grub/grub-0.97/stage2/shared.h
@@ -381,7 +380,7 @@ usr/src/uts/common/io/nfp/i21285.h
 usr/src/uts/common/io/udmf/dm9601reg.h
 usr/src/uts/common/io/upf/adm8511reg.h
 usr/src/uts/common/io/urf/rtl8150reg.h
-usr/src/uts/common/sys/scsi/adapters/mpt_sas/mpi/*
+usr/src/uts/common/sys/scsi/adapters/mpi/*
 usr/src/uts/intel/sys/acpi/acdebug.h
 usr/src/uts/intel/sys/acpi/acdisasm.h
 usr/src/uts/intel/sys/acpi/acevents.h
@@ -400,6 +399,7 @@ usr/src/cmd/bhyve/acpi.h
 usr/src/cmd/bhyve/ahci.h
 usr/src/cmd/bhyve/atkbdc.h
 usr/src/cmd/bhyve/audio.h
+usr/src/cmd/bhyve/basl.h
 usr/src/cmd/bhyve/bhyvegc.h
 usr/src/cmd/bhyve/bhyverun.h
 usr/src/cmd/bhyve/block_if.h

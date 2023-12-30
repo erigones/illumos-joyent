@@ -22,7 +22,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2019 Joyent, Inc.
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 /*
@@ -501,10 +501,6 @@
 /* Local functions prototypes */
 static void pcie_init_pfd(dev_info_t *);
 static void pcie_fini_pfd(dev_info_t *);
-
-#if defined(__x86)
-static void pcie_check_io_mem_range(ddi_acc_handle_t, boolean_t *, boolean_t *);
-#endif /* defined(__x86) */
 
 #ifdef DEBUG
 uint_t pcie_debug_flags = 0;
@@ -1119,29 +1115,6 @@ pcie_initchild(dev_info_t *cdip)
 	/* Setup the device's command register */
 	reg16 = PCIE_GET(16, bus_p, PCI_CONF_COMM);
 	tmp16 = (reg16 & pcie_command_default_fw) | pcie_command_default;
-
-#if defined(__x86)
-	boolean_t empty_io_range = B_FALSE;
-	boolean_t empty_mem_range = B_FALSE;
-	/*
-	 * Check for empty IO and Mem ranges on bridges. If so disable IO/Mem
-	 * access as it can cause a hang if enabled.
-	 */
-	pcie_check_io_mem_range(bus_p->bus_cfg_hdl, &empty_io_range,
-	    &empty_mem_range);
-	if ((empty_io_range == B_TRUE) &&
-	    (pcie_command_default & PCI_COMM_IO)) {
-		tmp16 &= ~PCI_COMM_IO;
-		PCIE_DBG("No I/O range found for %s, bdf 0x%x\n",
-		    ddi_driver_name(cdip), bus_p->bus_bdf);
-	}
-	if ((empty_mem_range == B_TRUE) &&
-	    (pcie_command_default & PCI_COMM_MAE)) {
-		tmp16 &= ~PCI_COMM_MAE;
-		PCIE_DBG("No Mem range found for %s, bdf 0x%x\n",
-		    ddi_driver_name(cdip), bus_p->bus_bdf);
-	}
-#endif /* defined(__x86) */
 
 	if (pcie_serr_disable_flag && PCIE_IS_PCIE(bus_p))
 		tmp16 &= ~PCI_COMM_SERR_ENABLE;
@@ -2319,31 +2292,29 @@ out:
 void
 pcie_fab_init_bus(dev_info_t *rcdip, uint8_t flags)
 {
-	int		circular_count;
 	dev_info_t	*dip = ddi_get_child(rcdip);
 	pcie_bus_arg_t	arg;
 
 	arg.init = B_TRUE;
 	arg.flags = flags;
 
-	ndi_devi_enter(rcdip, &circular_count);
+	ndi_devi_enter(rcdip);
 	ddi_walk_devs(dip, pcie_fab_do_init_fini, &arg);
-	ndi_devi_exit(rcdip, circular_count);
+	ndi_devi_exit(rcdip);
 }
 
 void
 pcie_fab_fini_bus(dev_info_t *rcdip, uint8_t flags)
 {
-	int		circular_count;
 	dev_info_t	*dip = ddi_get_child(rcdip);
 	pcie_bus_arg_t	arg;
 
 	arg.init = B_FALSE;
 	arg.flags = flags;
 
-	ndi_devi_enter(rcdip, &circular_count);
+	ndi_devi_enter(rcdip);
 	ddi_walk_devs(dip, pcie_fab_do_init_fini, &arg);
-	ndi_devi_exit(rcdip, circular_count);
+	ndi_devi_exit(rcdip);
 }
 
 void
@@ -3077,35 +3048,6 @@ pcie_dbg(char *fmt, ...)
 }
 #endif	/* DEBUG */
 
-#if defined(__x86)
-static void
-pcie_check_io_mem_range(ddi_acc_handle_t cfg_hdl, boolean_t *empty_io_range,
-    boolean_t *empty_mem_range)
-{
-	uint8_t	class, subclass;
-	uint_t	val;
-
-	class = pci_config_get8(cfg_hdl, PCI_CONF_BASCLASS);
-	subclass = pci_config_get8(cfg_hdl, PCI_CONF_SUBCLASS);
-
-	if ((class == PCI_CLASS_BRIDGE) && (subclass == PCI_BRIDGE_PCI)) {
-		val = (((uint_t)pci_config_get8(cfg_hdl, PCI_BCNF_IO_BASE_LOW) &
-		    PCI_BCNF_IO_MASK) << 8);
-		/*
-		 * Assuming that a zero based io_range[0] implies an
-		 * invalid I/O range.  Likewise for mem_range[0].
-		 */
-		if (val == 0)
-			*empty_io_range = B_TRUE;
-		val = (((uint_t)pci_config_get16(cfg_hdl, PCI_BCNF_MEM_BASE) &
-		    PCI_BCNF_MEM_MASK) << 16);
-		if (val == 0)
-			*empty_mem_range = B_TRUE;
-	}
-}
-
-#endif /* defined(__x86) */
-
 boolean_t
 pcie_link_bw_supported(dev_info_t *dip)
 {
@@ -3197,10 +3139,9 @@ pcie_link_bw_taskq(void *arg)
 	sysevent_value_t se_val;
 	sysevent_id_t eid;
 	sysevent_attr_list_t *ev_attr_list;
-	int circular;
 
 top:
-	ndi_devi_enter(dip, &circular);
+	ndi_devi_enter(dip);
 	se = NULL;
 	ev_attr_list = NULL;
 	mutex_enter(&bus_p->bus_lbw_mutex);
@@ -3251,7 +3192,7 @@ top:
 	se_val.value.sv_string = bus_p->bus_lbw_pbuf;
 	if (sysevent_add_attr(&ev_attr_list, PCIE_EV_DETECTOR_PATH, &se_val,
 	    SE_SLEEP) != 0) {
-		ndi_devi_exit(dip, circular);
+		ndi_devi_exit(dip);
 		goto err;
 	}
 
@@ -3269,7 +3210,7 @@ top:
 		    &se_val, SE_SLEEP);
 	}
 
-	ndi_devi_exit(dip, circular);
+	ndi_devi_exit(dip);
 
 	/*
 	 * Before we generate and send down a sysevent, we need to tell the
@@ -3708,7 +3649,6 @@ pcie_fabric_setup(dev_info_t *dip)
 	pcie_bus_t *bus_p;
 	pcie_fabric_data_t *fab;
 	dev_info_t *pdip;
-	int circular_count;
 
 	bus_p = PCIE_DIP2BUS(dip);
 	if (bus_p == NULL || !PCIE_IS_RP(bus_p)) {
@@ -3732,7 +3672,7 @@ pcie_fabric_setup(dev_info_t *dip)
 	 */
 	pdip = ddi_get_parent(dip);
 	VERIFY3P(pdip, !=, NULL);
-	ndi_devi_enter(pdip, &circular_count);
+	ndi_devi_enter(pdip);
 	fab->pfd_flags |= PCIE_FABRIC_F_SCANNING;
 
 	/*
@@ -3756,5 +3696,5 @@ pcie_fabric_setup(dev_info_t *dip)
 	ddi_walk_devs(dip, pcie_fabric_feature_set, fab);
 
 	fab->pfd_flags &= ~PCIE_FABRIC_F_SCANNING;
-	ndi_devi_exit(pdip, circular_count);
+	ndi_devi_exit(pdip);
 }

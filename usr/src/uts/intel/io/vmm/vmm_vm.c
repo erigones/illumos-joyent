@@ -12,7 +12,7 @@
 
 /*
  * Copyright 2019 Joyent, Inc.
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  * Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
  */
 
@@ -196,6 +196,9 @@ struct vm_object {
 	uint8_t		vmo_attr;
 };
 
+/* Convenience consolidation of all flag(s) for validity checking */
+#define	VPF_ALL		(VPF_DEFER_DIRTY)
+
 struct vm_page {
 	vm_client_t	*vmp_client;
 	list_node_t	vmp_node;
@@ -204,7 +207,8 @@ struct vm_page {
 	pfn_t		vmp_pfn;
 	uint64_t	*vmp_ptep;
 	vm_object_t	*vmp_obj_ref;
-	int		vmp_prot;
+	uint8_t		vmp_prot;
+	uint8_t		vmp_flags;
 };
 
 static vmspace_mapping_t *vm_mapping_find(vmspace_t *, uintptr_t, size_t);
@@ -656,7 +660,7 @@ vmspace_map(vmspace_t *vms, vm_object_t *vmo, uintptr_t obj_off, uintptr_t addr,
 		 * Make sure the GPT has tables ready for leaf entries across
 		 * the entire new mapping.
 		 */
-		vmm_gpt_populate_region(vms->vms_gpt, addr, addr + len);
+		vmm_gpt_populate_region(vms->vms_gpt, addr, len);
 	}
 	vmspace_hold_exit(vms, false);
 	return (res);
@@ -669,19 +673,19 @@ vmspace_map(vmspace_t *vms, vm_object_t *vmo, uintptr_t obj_off, uintptr_t addr,
  * call to vmspace_map().
  */
 int
-vmspace_unmap(vmspace_t *vms, uintptr_t start, uintptr_t end)
+vmspace_unmap(vmspace_t *vms, uintptr_t addr, uintptr_t len)
 {
-	const size_t size = (size_t)(end - start);
+	const uintptr_t end = addr + len;
 	vmspace_mapping_t *vmsm;
 	vm_client_t *vmc;
 	uint64_t gen = 0;
 
-	ASSERT(start < end);
+	ASSERT3U(addr, <, end);
 
 	vmspace_hold_enter(vms);
 	/* expect to match existing mapping exactly */
-	if ((vmsm = vm_mapping_find(vms, start, size)) == NULL ||
-	    vmsm->vmsm_addr != start || vmsm->vmsm_len != size) {
+	if ((vmsm = vm_mapping_find(vms, addr, len)) == NULL ||
+	    vmsm->vmsm_addr != addr || vmsm->vmsm_len != len) {
 		vmspace_hold_exit(vms, false);
 		return (ENOENT);
 	}
@@ -689,16 +693,16 @@ vmspace_unmap(vmspace_t *vms, uintptr_t start, uintptr_t end)
 	/* Prepare clients (and their held pages) for the unmap. */
 	for (vmc = list_head(&vms->vms_clients); vmc != NULL;
 	    vmc = list_next(&vms->vms_clients, vmc)) {
-		vmc_space_unmap(vmc, start, size, vmsm->vmsm_object);
+		vmc_space_unmap(vmc, addr, len, vmsm->vmsm_object);
 	}
 
 	/* Clear all PTEs for region */
-	if (vmm_gpt_unmap_region(vms->vms_gpt, start, end) != 0) {
+	if (vmm_gpt_unmap_region(vms->vms_gpt, addr, len) != 0) {
 		vms->vms_pt_gen++;
 		gen = vms->vms_pt_gen;
 	}
 	/* ... and the intermediate (directory) PTEs as well */
-	vmm_gpt_vacate_region(vms->vms_gpt, start, end);
+	vmm_gpt_vacate_region(vms->vms_gpt, addr, len);
 
 	/*
 	 * If pages were actually unmapped from the GPT, provide clients with
@@ -707,7 +711,7 @@ vmspace_unmap(vmspace_t *vms, uintptr_t start, uintptr_t end)
 	if (gen != 0) {
 		for (vmc = list_head(&vms->vms_clients); vmc != NULL;
 		    vmc = list_next(&vms->vms_clients, vmc)) {
-			vmc_space_invalidate(vmc, start, size, vms->vms_pt_gen);
+			vmc_space_invalidate(vmc, addr, len, vms->vms_pt_gen);
 		}
 	}
 
@@ -782,15 +786,13 @@ vmspace_lookup_map(vmspace_t *vms, uintptr_t gpa, int req_prot, pfn_t *pfnp,
  * call to vmspace_map().
  */
 int
-vmspace_populate(vmspace_t *vms, uintptr_t start, uintptr_t end)
+vmspace_populate(vmspace_t *vms, uintptr_t addr, uintptr_t len)
 {
-	const size_t size = end - start;
 	vmspace_mapping_t *vmsm;
-
 	mutex_enter(&vms->vms_lock);
 
 	/* For the time being, only exact-match mappings are expected */
-	if ((vmsm = vm_mapping_find(vms, start, size)) == NULL) {
+	if ((vmsm = vm_mapping_find(vms, addr, len)) == NULL) {
 		mutex_exit(&vms->vms_lock);
 		return (FC_NOMAP);
 	}
@@ -799,7 +801,8 @@ vmspace_populate(vmspace_t *vms, uintptr_t start, uintptr_t end)
 	const int prot = vmsm->vmsm_prot;
 	const uint8_t attr = vmo->vmo_attr;
 	size_t populated = 0;
-	for (uintptr_t gpa = start & PAGEMASK; gpa < end; gpa += PAGESIZE) {
+	const size_t end = addr + len;
+	for (uintptr_t gpa = addr & PAGEMASK; gpa < end; gpa += PAGESIZE) {
 		const pfn_t pfn = vm_object_pfn(vmo, VMSM_OFFSET(vmsm, gpa));
 		VERIFY(pfn != PFN_INVALID);
 
@@ -1112,7 +1115,7 @@ vmc_space_orphan(vm_client_t *vmc, vmspace_t *vms)
  * Attempt to hold a page at `gpa` inside the referenced vmspace.
  */
 vm_page_t *
-vmc_hold(vm_client_t *vmc, uintptr_t gpa, int prot)
+vmc_hold_ext(vm_client_t *vmc, uintptr_t gpa, int prot, int flags)
 {
 	vmspace_t *vms = vmc->vmc_space;
 	vm_page_t *vmp;
@@ -1121,6 +1124,8 @@ vmc_hold(vm_client_t *vmc, uintptr_t gpa, int prot)
 
 	ASSERT0(gpa & PAGEOFFSET);
 	ASSERT((prot & (PROT_READ | PROT_WRITE)) != PROT_NONE);
+	ASSERT0(prot & ~PROT_ALL);
+	ASSERT0(flags & ~VPF_ALL);
 
 	vmp = kmem_alloc(sizeof (*vmp), KM_SLEEP);
 	if (vmc_activate(vmc) != 0) {
@@ -1141,11 +1146,21 @@ vmc_hold(vm_client_t *vmc, uintptr_t gpa, int prot)
 	vmp->vmp_pfn = pfn;
 	vmp->vmp_ptep = ptep;
 	vmp->vmp_obj_ref = NULL;
-	vmp->vmp_prot = prot;
+	vmp->vmp_prot = (uint8_t)prot;
+	vmp->vmp_flags = (uint8_t)flags;
 	list_insert_tail(&vmc->vmc_held_pages, vmp);
 	vmc_deactivate(vmc);
 
 	return (vmp);
+}
+
+/*
+ * Attempt to hold a page at `gpa` inside the referenced vmspace.
+ */
+vm_page_t *
+vmc_hold(vm_client_t *vmc, uintptr_t gpa, int prot)
+{
+	return (vmc_hold_ext(vmc, gpa, prot, VPF_DEFAULT));
 }
 
 int
@@ -1296,6 +1311,18 @@ vmp_get_pfn(const vm_page_t *vmp)
 }
 
 /*
+ * If this page was deferring dirty-marking in the corresponding vmspace page
+ * tables, clear such a state so it is considered dirty from now on.
+ */
+void
+vmp_mark_dirty(vm_page_t *vmp)
+{
+	ASSERT((vmp->vmp_prot & PROT_WRITE) != 0);
+
+	atomic_and_8(&vmp->vmp_flags, ~VPF_DEFER_DIRTY);
+}
+
+/*
  * Store a pointer to `to_chain` in the page-chaining slot of `vmp`.
  */
 void
@@ -1331,7 +1358,17 @@ vmp_release_inner(vm_page_t *vmp, vm_client_t *vmc)
 	} else {
 		ASSERT3P(vmp->vmp_ptep, !=, NULL);
 
-		if ((vmp->vmp_prot & PROT_WRITE) != 0 && vmc->vmc_track_dirty) {
+		/*
+		 * Track appropriate (accessed/dirty) bits for the guest-virtual
+		 * address corresponding to this page, if it is from the vmspace
+		 * rather than a direct reference to an underlying object.
+		 *
+		 * The protection and/or configured flags may obviate the need
+		 * for such an update.
+		 */
+		if ((vmp->vmp_prot & PROT_WRITE) != 0 &&
+		    (vmp->vmp_flags & VPF_DEFER_DIRTY) == 0 &&
+		    vmc->vmc_track_dirty) {
 			vmm_gpt_t *gpt = vmc->vmc_space->vms_gpt;
 			(void) vmm_gpt_reset_dirty(gpt, vmp->vmp_ptep, true);
 		}

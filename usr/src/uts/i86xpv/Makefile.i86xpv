@@ -103,16 +103,14 @@ COPTIMIZE		= $(COPTFLAG_$(CLASS))
 CFLAGS			= $(CFLAGS_XARCH)
 CFLAGS			+= $(COPTIMIZE)
 CFLAGS			+= -D_ASM_INLINES
-CFLAGS			+= $(CCMODE)
-CFLAGS			+= $(SPACEFLAG)
-CFLAGS			+= $(CCUNBOUND)
 CFLAGS			+= $(CFLAGS_uts)
 
 ASFLAGS_XARCH_32	= $(i386_ASFLAGS)
 ASFLAGS_XARCH_64	= $(amd64_ASFLAGS)
 ASFLAGS_XARCH		= $(ASFLAGS_XARCH_$(CLASS))
 
-ASFLAGS			+= $(ASFLAGS_XARCH)
+ASFLAGS			= $(ASFLAGS_XARCH)
+ASFLAGS			+= $(ASFLAGS_uts)
 
 AS_INC_PATH		+= -I$(DSF_DIR)/$(OBJS_DIR)
 
@@ -124,7 +122,7 @@ AS_INC_PATH		+= -I$(DSF_DIR)/$(OBJS_DIR)
 #	GENASSYM_SRC:	genassym.c
 
 UNIX_MAPFILE	= $(UTSBASE)/$(PLATFORM)/conf/Mapfile
-MODSTUBS	= $(UTSBASE)/intel/ml/modstubs.s
+MODSTUBS	= $(UTSBASE)/intel/ml/modstubs.S
 GENASSYM_SRC	= $(UTSBASE)/i86pc/ml/genassym.c
 OFFSETS_SRC	= $(UTSBASE)/i86pc/ml/offsets.in
 
@@ -282,7 +280,7 @@ SYS_KMODS	+=
 #
 #	'Misc' Modules (/kernel/misc):
 #
-MISC_KMODS	+= xpv_autoconfig gfx_private xnb
+MISC_KMODS	+= xpv_autoconfig gfx_private xnb pcie pci_prd
 
 #	'Dacf' modules (/kernel/dacf)
 #

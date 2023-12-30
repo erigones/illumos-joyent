@@ -108,6 +108,7 @@ _MANFILES=	Intro.5				\
 		magic.5				\
 		mailer.conf.5			\
 		mech.5				\
+		menu.lst.5				\
 		mnttab.5			\
 		mpapi.conf.5			\
 		ndmp.5				\
@@ -196,8 +197,6 @@ _MANFILES=	Intro.5				\
 		yppasswdd.5			\
 		ypserv.5			\
 		zoneinfo.5
-
-sparc_MANFILES=	sbus.5
 
 i386_MANFILES=	bhyve_config.5			\
 		loader.conf.5			\

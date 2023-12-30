@@ -350,7 +350,7 @@ int arc_grow_retry = 60;
 int arc_kmem_cache_reap_retry_ms = 1000;
 
 /* shift of arc_c for calculating overflow limit in arc_get_data_impl */
-int zfs_arc_overflow_shift = 3;
+int zfs_arc_overflow_shift = 8;
 
 /* shift of arc_c for calculating both min and max arc_p */
 int arc_p_min_shift = 4;
@@ -1333,52 +1333,8 @@ arc_cksum_verify(arc_buf_t *buf)
 static boolean_t
 arc_cksum_is_equal(arc_buf_hdr_t *hdr, zio_t *zio)
 {
-	enum zio_compress compress = BP_GET_COMPRESS(zio->io_bp);
-	boolean_t valid_cksum;
-
 	ASSERT(!BP_IS_EMBEDDED(zio->io_bp));
 	VERIFY3U(BP_GET_PSIZE(zio->io_bp), ==, HDR_GET_PSIZE(hdr));
-
-	/*
-	 * We rely on the blkptr's checksum to determine if the block
-	 * is valid or not. When compressed arc is enabled, the l2arc
-	 * writes the block to the l2arc just as it appears in the pool.
-	 * This allows us to use the blkptr's checksum to validate the
-	 * data that we just read off of the l2arc without having to store
-	 * a separate checksum in the arc_buf_hdr_t. However, if compressed
-	 * arc is disabled, then the data written to the l2arc is always
-	 * uncompressed and won't match the block as it exists in the main
-	 * pool. When this is the case, we must first compress it if it is
-	 * compressed on the main pool before we can validate the checksum.
-	 */
-	if (!HDR_COMPRESSION_ENABLED(hdr) && compress != ZIO_COMPRESS_OFF) {
-		ASSERT3U(HDR_GET_COMPRESS(hdr), ==, ZIO_COMPRESS_OFF);
-		uint64_t lsize = HDR_GET_LSIZE(hdr);
-		uint64_t csize;
-
-		abd_t *cdata = abd_alloc_linear(HDR_GET_PSIZE(hdr), B_TRUE);
-		csize = zio_compress_data(compress, zio->io_abd,
-		    abd_to_buf(cdata), lsize);
-
-		ASSERT3U(csize, <=, HDR_GET_PSIZE(hdr));
-		if (csize < HDR_GET_PSIZE(hdr)) {
-			/*
-			 * Compressed blocks are always a multiple of the
-			 * smallest ashift in the pool. Ideally, we would
-			 * like to round up the csize to the next
-			 * spa_min_ashift but that value may have changed
-			 * since the block was last written. Instead,
-			 * we rely on the fact that the hdr's psize
-			 * was set to the psize of the block when it was
-			 * last written. We set the csize to that value
-			 * and zero out any part that should not contain
-			 * data.
-			 */
-			abd_zero_off(cdata, csize, HDR_GET_PSIZE(hdr) - csize);
-			csize = HDR_GET_PSIZE(hdr);
-		}
-		zio_push_transform(zio, cdata, csize, HDR_GET_PSIZE(hdr), NULL);
-	}
 
 	/*
 	 * Block pointers always store the checksum for the logical data.
@@ -1393,11 +1349,9 @@ arc_cksum_is_equal(arc_buf_hdr_t *hdr, zio_t *zio)
 	 * generated using the correct checksum algorithm and accounts for the
 	 * logical I/O size and not just a gang fragment.
 	 */
-	valid_cksum = (zio_checksum_error_impl(zio->io_spa, zio->io_bp,
+	return (zio_checksum_error_impl(zio->io_spa, zio->io_bp,
 	    BP_GET_CHECKSUM(zio->io_bp), zio->io_abd, zio->io_size,
 	    zio->io_offset, NULL) == 0);
-	zio_pop_transforms(zio);
-	return (valid_cksum);
 }
 
 /*
@@ -6188,8 +6142,6 @@ arc_freed(spa_t *spa, const blkptr_t *bp)
 void
 arc_release(arc_buf_t *buf, void *tag)
 {
-	arc_buf_hdr_t *hdr = buf->b_hdr;
-
 	/*
 	 * It would be nice to assert that if its DMU metadata (level >
 	 * 0 || it's the dnode file), then it must be syncing context.
@@ -6197,6 +6149,8 @@ arc_release(arc_buf_t *buf, void *tag)
 	 */
 
 	mutex_enter(&buf->b_evict_lock);
+
+	arc_buf_hdr_t *hdr = buf->b_hdr;
 
 	ASSERT(HDR_HAS_L1HDR(hdr));
 
@@ -6236,6 +6190,16 @@ arc_release(arc_buf_t *buf, void *tag)
 
 	kmutex_t *hash_lock = HDR_LOCK(hdr);
 	mutex_enter(hash_lock);
+
+	/*
+	 * Wait for any other IO for this hdr, as additional
+	 * buf(s) could be about to appear, in which case
+	 * we would not want to transition hdr to arc_anon.
+	 */
+	while (HDR_IO_IN_PROGRESS(hdr)) {
+		DTRACE_PROBE1(arc_release__io, arc_buf_hdr_t *, hdr);
+		cv_wait(&hdr->b_l1hdr.b_cv, hash_lock);
+	}
 
 	/*
 	 * This assignment is only valid as long as the hash_lock is
@@ -7125,8 +7089,18 @@ arc_init(void)
 	mutex_init(&arc_adjust_lock, NULL, MUTEX_DEFAULT, NULL);
 	cv_init(&arc_adjust_waiters_cv, NULL, CV_DEFAULT, NULL);
 
-	/* set min cache to 1/32 of all memory, or 64MB, whichever is more */
-	arc_c_min = MAX(allmem / 32, 64 << 20);
+	/*
+	 * Set the minimum cache size to 1/64 of all memory, with a hard
+	 * minimum of 64MB.
+	 */
+	arc_c_min = MAX(allmem / 64, 64 << 20);
+	/*
+	 * In a system with a lot of physical memory this will still result in
+	 * an ARC size floor that is quite large in absolute terms.  Cap the
+	 * growth of the value at 1GB.
+	 */
+	arc_c_min = MIN(arc_c_min, 1 << 30);
+
 	/* set max to 3/4 of all memory, or all but 1GB, whichever is more */
 	if (allmem >= 1 << 30)
 		arc_c_max = allmem - (1 << 30);
@@ -7173,13 +7147,6 @@ arc_init(void)
 	/* Allow the tunable to override if it is reasonable */
 	if (zfs_arc_meta_limit > 0 && zfs_arc_meta_limit <= arc_c_max)
 		arc_meta_limit = zfs_arc_meta_limit;
-
-	if (arc_c_min < arc_meta_limit / 2 && zfs_arc_min == 0)
-		arc_c_min = arc_meta_limit / 2;
-
-	/* On larger-memory machines, we clamp the minimum at 1GB */
-	if (zfs_arc_min == 0)
-		arc_c_min = MIN(arc_c_min, (1 << 30));
 
 	if (zfs_arc_meta_min > 0) {
 		arc_meta_min = zfs_arc_meta_min;

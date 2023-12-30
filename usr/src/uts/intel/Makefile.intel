@@ -25,9 +25,9 @@
 # Copyright 2021 Joyent, Inc.
 # Copyright 2022 Garrett D'Amore <garrett@damore.org>
 # Copyright 2018 Nexenta Systems, Inc.
-# Copyright 2019 RackTop Systems
 # Copyright 2019 Peter Tribble.
 # Copyright 2022 Oxide Computer Company
+# Copyright 2023 Racktop Systems, Inc.
 #
 
 #
@@ -98,7 +98,7 @@ include $(UTSBASE)/Makefile.uts
 #
 #	The following must be defined for all implementations:
 #
-MODSTUBS		= $(UTSBASE)/intel/ml/modstubs.s
+MODSTUBS		= $(UTSBASE)/intel/ml/modstubs.S
 
 #
 #	Define supported builds
@@ -121,18 +121,15 @@ COPTIMIZE		= $(COPTFLAG_$(CLASS))
 CFLAGS			= $(CFLAGS_XARCH)
 CFLAGS			+= $(COPTIMIZE)
 CFLAGS			+= -D_ASM_INLINES
-CFLAGS			+= $(CCMODE)
-CFLAGS			+= $(SPACEFLAG)
-CFLAGS			+= $(CCUNBOUND)
 CFLAGS			+= $(CFLAGS_uts)
-CFLAGS			+= -xstrconst
 CFLAGS			+= $(STACKPROTECT_$(STACKPROTECT))
 
 ASFLAGS_XARCH_32	= $(i386_ASFLAGS)
 ASFLAGS_XARCH_64	= $(amd64_ASFLAGS)
 ASFLAGS_XARCH		= $(ASFLAGS_XARCH_$(CLASS))
 
-ASFLAGS			+= $(ASFLAGS_XARCH)
+ASFLAGS			= $(ASFLAGS_XARCH)
+ASFLAGS			+= $(ASFLAGS_uts)
 AS_INC_PATH		+= -I$(GENASSYM_DIR)/$(OBJS_DIR)
 
 #
@@ -281,6 +278,7 @@ DRV_KMODS	+= mm
 DRV_KMODS	+= mouse8042
 DRV_KMODS	+= mpt_sas
 DRV_KMODS	+= mr_sas
+DRV_KMODS	+= lmrc
 DRV_KMODS	+= mwl
 DRV_KMODS	+= nfp
 DRV_KMODS	+= nsmb
@@ -323,8 +321,9 @@ DRV_KMODS	+= sdhost
 DRV_KMODS	+= sgen
 DRV_KMODS	+= si3124
 DRV_KMODS	+= signalfd
-DRV_KMODS	+= smbios
 DRV_KMODS	+= skd
+DRV_KMODS	+= smartpqi
+DRV_KMODS	+= smbios
 DRV_KMODS	+= softmac
 DRV_KMODS	+= spdsock
 DRV_KMODS	+= smbsrv
@@ -648,8 +647,10 @@ MISC_KMODS	+= qlc_fw_2200
 MISC_KMODS	+= qlc_fw_2300
 MISC_KMODS	+= qlc_fw_2400
 MISC_KMODS	+= qlc_fw_2500
+MISC_KMODS	+= qlc_fw_2700
 MISC_KMODS	+= qlc_fw_6322
 MISC_KMODS	+= qlc_fw_8100
+MISC_KMODS	+= qlc_fw_8301fc
 MISC_KMODS	+= uathfw
 
 MISC_KMODS	+= klmmod klmops

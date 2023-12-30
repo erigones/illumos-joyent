@@ -1033,10 +1033,6 @@ include ../../Makefile.lib.64
 
 CFLAGS64 += $(CTF_FLAGS)
 
-# This is necessary to avoid problems with calling _ex_unwind().
-# We probably don't want any inlining anyway.
-CFLAGS64 += -xinline=
-
 CERRWARN += -_gcc=-Wno-parentheses
 CERRWARN += -_gcc=-Wno-switch
 CERRWARN += $(CNOWARN_UNINIT)
@@ -1060,9 +1056,6 @@ SMATCH=off
 THREAD_DEBUG =
 $(NOT_RELEASE_BUILD)THREAD_DEBUG = -DTHREAD_DEBUG
 
-# Make string literals read-only to save memory
-CFLAGS64 += $(XSTRCONST)
-
 ALTPICS= $(TRACEOBJS:%=pics/%)
 
 $(DYNLIB) := BUILD.SO = $(LD) -o $@ $(GSHARED) $(DYNFLAGS) $(PICS) $(ALTPICS) $(EXTPICS)
@@ -1071,8 +1064,13 @@ MAPFILES =	$(LIBCDIR)/port/mapfile-vers
 
 CPPFLAGS=	-D_REENTRANT -D$(MACH64) -D__$(MACH64) $(THREAD_DEBUG) \
 		-I. -I$(LIBCBASE)/inc -I$(LIBCDIR)/inc $(CPPFLAGS.master)
-ASFLAGS=	$(AS_PICFLAGS) -P -D__STDC__ -D_ASM $(CPPFLAGS) \
-		$(amd64_AS_XARCH)
+
+# __XOPEN_OR_POSIX is necessary to avoid implicit _LARGEFILE_SOURCE which
+# breaks the libc compilation environment.
+ASFLAGS=	$(AS_PICFLAGS) -D_ASM \
+		$(CPPFLAGS) $(amd64_XARCH) -D__XOPEN_OR_POSIX=1
+ASFLAGS64=	$(AS_PICFLAGS) -D_ASM \
+		$(CPPFLAGS) $(amd64_XARCH) -D__XOPEN_OR_POSIX=1
 
 # As a favor to the dtrace syscall provider, libc still calls the
 # old syscall traps that have been obsoleted by the *at() interfaces.
@@ -1091,7 +1089,7 @@ DYNFLAGS +=	$(RTLDINFO)
 # are marked 'protected' in the mapfiles, this is a minimal set (15 to 20).
 DYNFLAGS +=	-znow
 
-BUILD.s=	$(AS) $(ASFLAGS) $< -o $@
+BUILD.s=	$(AS) $(ASFLAGS) $< -c -o $@
 
 # Override this top level flag so the compiler builds in its native
 # C99 mode.  This has been enabled to support the complex arithmetic

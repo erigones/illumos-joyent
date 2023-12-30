@@ -322,6 +322,7 @@
 #include <sys/cpupart.h>
 #include <inet/wifi_ioctl.h>
 #include <net/wpa.h>
+#include <sys/mac_ether.h>
 
 #define	IMPL_HASHSZ	67	/* prime */
 
@@ -3346,10 +3347,10 @@ mac_prop_check_size(mac_prop_id_t id, uint_t valsize, boolean_t is_range)
 	case MAC_PROP_EN_FEC_CAP:
 		minsize = sizeof (link_fec_t);
 		break;
-	case MAC_PROP_ADV_5000FDX_CAP:
-	case MAC_PROP_EN_5000FDX_CAP:
-	case MAC_PROP_ADV_2500FDX_CAP:
-	case MAC_PROP_EN_2500FDX_CAP:
+	case MAC_PROP_ADV_400GFDX_CAP:
+	case MAC_PROP_EN_400GFDX_CAP:
+	case MAC_PROP_ADV_200GFDX_CAP:
+	case MAC_PROP_EN_200GFDX_CAP:
 	case MAC_PROP_ADV_100GFDX_CAP:
 	case MAC_PROP_EN_100GFDX_CAP:
 	case MAC_PROP_ADV_50GFDX_CAP:
@@ -3360,18 +3361,22 @@ mac_prop_check_size(mac_prop_id_t id, uint_t valsize, boolean_t is_range)
 	case MAC_PROP_EN_25GFDX_CAP:
 	case MAC_PROP_ADV_10GFDX_CAP:
 	case MAC_PROP_EN_10GFDX_CAP:
+	case MAC_PROP_ADV_5000FDX_CAP:
+	case MAC_PROP_EN_5000FDX_CAP:
+	case MAC_PROP_ADV_2500FDX_CAP:
+	case MAC_PROP_EN_2500FDX_CAP:
 	case MAC_PROP_ADV_1000HDX_CAP:
 	case MAC_PROP_EN_1000HDX_CAP:
 	case MAC_PROP_ADV_100FDX_CAP:
 	case MAC_PROP_EN_100FDX_CAP:
+	case MAC_PROP_ADV_100T4_CAP:
+	case MAC_PROP_EN_100T4_CAP:
 	case MAC_PROP_ADV_100HDX_CAP:
 	case MAC_PROP_EN_100HDX_CAP:
 	case MAC_PROP_ADV_10FDX_CAP:
 	case MAC_PROP_EN_10FDX_CAP:
 	case MAC_PROP_ADV_10HDX_CAP:
 	case MAC_PROP_EN_10HDX_CAP:
-	case MAC_PROP_ADV_100T4_CAP:
-	case MAC_PROP_EN_100T4_CAP:
 		minsize = sizeof (uint8_t);
 		break;
 	case MAC_PROP_PVID:
@@ -3457,6 +3462,14 @@ mac_prop_check_size(mac_prop_id_t id, uint_t valsize, boolean_t is_range)
 		break;
 	case MAC_PROP_VN_PROMISC_FILTERED:
 		minsize = sizeof (boolean_t);
+		break;
+	case MAC_PROP_MEDIA:
+		/*
+		 * Our assumption is that each class of device uses an enum and
+		 * that all enums will be the same size so it is OK to use a
+		 * single one.
+		 */
+		minsize = sizeof (mac_ether_media_t);
 		break;
 	}
 
@@ -3821,6 +3834,7 @@ mac_prop_info(mac_handle_t mh, mac_prop_id_t id, char *name,
 		return (0);
 
 	case MAC_PROP_STATUS:
+	case MAC_PROP_MEDIA:
 		if (perm != NULL)
 			*perm = MAC_PROP_PERM_READ;
 		return (0);

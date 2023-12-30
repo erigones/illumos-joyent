@@ -22,6 +22,7 @@
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2020 Nexenta by DDN, Inc.  All rights reserved.
+ * Copyright 2023 RackTop Systems, Inc.
  */
 
 /*
@@ -104,6 +105,8 @@
 #include <locale.h>
 #include <sys/processor.h>
 #include <smbsrv/smb_kstat.h>
+#include <smbsrv/smb.h>
+#include <smbsrv/smb2.h>
 
 #if !defined(TEXT_DOMAIN)
 #define	TEXT_DOMAIN "SYS_TEST"
@@ -215,8 +218,8 @@ typedef struct smbstat_srv_info {
 	/*
 	 * Latency & Throughput per request
 	 */
-	smbstat_req_info_t	si_reqs1[SMB_COM_NUM];
-	smbstat_req_info_t	si_reqs2[SMB2__NCMDS];
+	smbstat_req_info_t	si_reqs1[SMBSRV_KS_NREQS1];
+	smbstat_req_info_t	si_reqs2[SMBSRV_KS_NREQS2];
 } smbstat_srv_info_t;
 
 static void smbstat_init(void);
@@ -558,7 +561,7 @@ smbstat_print_requests(void)
 	(void) printf(SMBSRV_REQUESTS_BANNER, "       ");
 
 	prq = smbstat_srv_info.si_reqs1;
-	for (i = 0; i < SMB_COM_NUM; i++) {
+	for (i = 0; i < SMBSRV_KS_NREQS1; i++) {
 		if (!smbstat_opt_a &&
 		    strncmp(prq[i].ri_name, "Invalid", sizeof ("Invalid")) == 0)
 			continue;
@@ -577,7 +580,7 @@ smbstat_print_requests(void)
 	}
 
 	prq = smbstat_srv_info.si_reqs2;
-	for (i = 0; i < SMB2__NCMDS; i++) {
+	for (i = 0; i < SMBSRV_KS_NREQS2; i++) {
 		if (!smbstat_opt_a && i == SMB2_INVALID_CMD)
 			continue;
 
@@ -665,7 +668,7 @@ smbstat_cpu_snapshot(void)
 		curr->cs_id = SMBSTAT_ID_NO_CPU;
 		curr->cs_state = p_online(i, P_STATUS);
 		/* If no valid CPU is present, move on to the next one */
-		if (curr->cs_state == -1)
+		if (curr->cs_state != P_ONLINE && curr->cs_state != P_NOINTR)
 			continue;
 
 		curr->cs_id = i;
@@ -1033,10 +1036,10 @@ smbstat_srv_process_requests(
 	int			i, idx;
 	boolean_t	firstcall = (prev->ss_snaptime == 0);
 
-	for (i = 0; i < SMB_COM_NUM; i++) {
+	for (i = 0; i < SMBSRV_KS_NREQS1; i++) {
 		info = &smbstat_srv_info.si_reqs1[i];
 		idx = info->ri_opcode;
-		if (idx >= SMB_COM_NUM)
+		if (idx >= SMBSRV_KS_NREQS1)
 			continue;
 		curr_req = &curr->ss_data.ks_reqs1[idx];
 		prev_req = &prev->ss_data.ks_reqs1[idx];
@@ -1044,10 +1047,10 @@ smbstat_srv_process_requests(
 		    info, curr_req, prev_req, firstcall);
 	}
 
-	for (i = 0; i < SMB2__NCMDS; i++) {
+	for (i = 0; i < SMBSRV_KS_NREQS2; i++) {
 		info = &smbstat_srv_info.si_reqs2[i];
 		idx = info->ri_opcode;
-		if (idx >= SMB2__NCMDS)
+		if (idx >= SMBSRV_KS_NREQS2)
 			continue;
 		curr_req = &curr->ss_data.ks_reqs2[idx];
 		prev_req = &prev->ss_data.ks_reqs2[idx];
@@ -1284,24 +1287,24 @@ smbstat_req_order(void)
 
 	reqs = ss->ss_data.ks_reqs1;
 	info = smbstat_srv_info.si_reqs1;
-	for (i = 0; i < SMB_COM_NUM; i++) {
+	for (i = 0; i < SMBSRV_KS_NREQS1; i++) {
 		(void) strlcpy(info[i].ri_name, reqs[i].kr_name,
 		    sizeof (reqs[i].kr_name));
 		info[i].ri_opcode = i;
 	}
 	if (smbstat_opt_n)
-		qsort(info, SMB_COM_NUM, sizeof (smbstat_req_info_t),
+		qsort(info, SMBSRV_KS_NREQS1, sizeof (smbstat_req_info_t),
 		    smbstat_req_cmp_name);
 
 	reqs = ss->ss_data.ks_reqs2;
 	info = smbstat_srv_info.si_reqs2;
-	for (i = 0; i < SMB2__NCMDS; i++) {
+	for (i = 0; i < SMBSRV_KS_NREQS2; i++) {
 		(void) strlcpy(info[i].ri_name, reqs[i].kr_name,
 		    sizeof (reqs[i].kr_name));
 		info[i].ri_opcode = i;
 	}
 	if (smbstat_opt_n)
-		qsort(info, SMB2__NCMDS, sizeof (smbstat_req_info_t),
+		qsort(info, SMBSRV_KS_NREQS2, sizeof (smbstat_req_info_t),
 		    smbstat_req_cmp_name);
 }
 

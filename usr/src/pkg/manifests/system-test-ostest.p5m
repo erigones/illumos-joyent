@@ -13,9 +13,9 @@
 # Copyright (c) 2012, 2016 by Delphix. All rights reserved.
 # Copyright 2014, OmniTI Computer Consulting, Inc. All rights reserved.
 # Copyright 2020 Joyent, Inc.
-# Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2022 OmniOS Community Edition (OmniOSce) Association.
 # Copyright 2021 Tintri by DDN, Inc. All rights reserved.
-# Copyright 2022 Oxide Computer Company
+# Copyright 2023 Oxide Computer Company
 # Copyright 2022 MNX Cloud, Inc.
 #
 
@@ -66,11 +66,15 @@ file path=opt/os-tests/tests/file-locking/acquire-lock.32 mode=0555
 file path=opt/os-tests/tests/file-locking/acquire-lock.64 mode=0555
 file path=opt/os-tests/tests/file-locking/runtests.32 mode=0555
 file path=opt/os-tests/tests/file-locking/runtests.64 mode=0555
+file path=opt/os-tests/tests/getcontext_extd.32 mode=0555
+file path=opt/os-tests/tests/getcontext_extd.64 mode=0555
 $(i386_ONLY)dir path=opt/os-tests/tests/i386
 $(i386_ONLY)file path=opt/os-tests/tests/i386/badseg mode=0555
 $(i386_ONLY)file path=opt/os-tests/tests/i386/badseg_exec mode=0555
 $(i386_ONLY)file path=opt/os-tests/tests/i386/ldt mode=0555
-file path=opt/os-tests/tests/imc_test mode=0555
+dir  path=opt/os-tests/tests/ilstr
+file path=opt/os-tests/tests/ilstr/ilstr_basic.32 mode=0555
+file path=opt/os-tests/tests/ilstr/ilstr_basic.64 mode=0555
 $(i386_ONLY)file path=opt/os-tests/tests/imc_test mode=0555
 dir  path=opt/os-tests/tests/ksensor
 file path=opt/os-tests/tests/ksensor/ksensor_basic.32 mode=0555
@@ -83,6 +87,9 @@ file path=opt/os-tests/tests/ksensor/ksensor_sread.32 mode=0555
 file path=opt/os-tests/tests/ksensor/ksensor_sread.64 mode=0555
 file path=opt/os-tests/tests/ksensor/ksensor_stress mode=0555
 file path=opt/os-tests/tests/ksensor/ksensor_unload mode=0555
+dir  path=opt/os-tests/tests/ksid
+file path=opt/os-tests/tests/ksid/ksid.32 mode=0555
+file path=opt/os-tests/tests/ksid/ksid.64 mode=0555
 dir  path=opt/os-tests/tests/libtopo
 file path=opt/os-tests/tests/libtopo/digraph-test mode=0555
 file path=opt/os-tests/tests/libtopo/digraph-test-in-badedge.xml mode=0444
@@ -126,6 +133,10 @@ file path=opt/os-tests/tests/secflags/secflags_syscall mode=0555
 file path=opt/os-tests/tests/secflags/secflags_truss mode=0555
 file path=opt/os-tests/tests/secflags/secflags_zonecfg mode=0555
 file path=opt/os-tests/tests/secflags/stacky mode=0555
+dir  path=opt/os-tests/tests/signalfd
+file path=opt/os-tests/tests/signalfd/basic_args mode=0555
+file path=opt/os-tests/tests/signalfd/basic_read mode=0555
+file path=opt/os-tests/tests/signalfd/multipoll mode=0555
 dir  path=opt/os-tests/tests/sigqueue
 file path=opt/os-tests/tests/sigqueue/sigqueue_queue_size mode=0555
 dir  path=opt/os-tests/tests/sockfs
@@ -168,8 +179,61 @@ file path=opt/os-tests/tests/uccid/txn-pollerr mode=0555
 file path=opt/os-tests/tests/uccid/yk mode=0555
 file path=opt/os-tests/tests/uccid/yk-poll mode=0555
 file path=opt/os-tests/tests/uccid/yk-readonly mode=0555
+file path=opt/os-tests/tests/ucontext.32 mode=0555
+file path=opt/os-tests/tests/ucontext.64 mode=0555
 file path=opt/os-tests/tests/writev.32 mode=0555
 file path=opt/os-tests/tests/writev.64 mode=0555
+$(i386_ONLY)dir path=opt/os-tests/tests/xsave
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/bad_xregs.32 mode=0555
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/bad_xregs.64 mode=0555
+$(i386_ONLY)dir path=opt/os-tests/tests/xsave/data
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/data/mdb_xregs.ymm.32 mode=0444
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/data/mdb_xregs.ymm.64 mode=0444
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/data/mdb_xregs.zmm.32 mode=0444
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/data/mdb_xregs.zmm.64 mode=0444
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/data/proc_writes.fpregs.ymm.32 \
+    mode=0444
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/data/proc_writes.fpregs.ymm.64 \
+    mode=0444
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/data/proc_writes.fpregs.zmm.32 \
+    mode=0444
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/data/proc_writes.fpregs.zmm.64 \
+    mode=0444
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/data/proc_writes.xregs.ymm.32 \
+    mode=0444
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/data/proc_writes.xregs.ymm.64 \
+    mode=0444
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/data/proc_writes.xregs.zmm.32 \
+    mode=0444
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/data/proc_writes.xregs.zmm.64 \
+    mode=0444
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/fpregs.32 mode=0555
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/fpregs.64 mode=0555
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/fpregs_xbv.32 mode=0555
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/fpregs_xbv.64 mode=0555
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/mdb_xregs mode=0555
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/proc_writes mode=0555
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/proc_xregs_set.32 mode=0555
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/proc_xregs_set.64 mode=0555
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/setcontext_replace.32 mode=0555
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/setcontext_replace.64 mode=0555
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/setcontext_restore.32 mode=0555
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/setcontext_restore.64 mode=0555
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/signal_restore.32 mode=0555
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/signal_restore.64 mode=0555
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/swapcontext_extd.32 mode=0555
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/swapcontext_extd.64 mode=0555
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/xregs_dump.32 mode=0555
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/xregs_dump.64 mode=0555
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/xregs_roundtrip.32 mode=0555
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/xregs_roundtrip.64 mode=0555
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/xregs_set.32 mode=0555
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/xregs_set.64 mode=0555
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/xsave_baducontext mode=0555
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/xsave_baducontext.32 mode=0555
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/xsave_baducontext.64 mode=0555
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/xsu_hwtype.32 mode=0555
+$(i386_ONLY)file path=opt/os-tests/tests/xsave/xsu_hwtype.64 mode=0555
 file path=opt/os-tests/tests/zen_umc_test mode=0555
 license cr_Sun license=cr_Sun
 license lic_CDDL license=lic_CDDL

@@ -9,7 +9,7 @@
 # http://www.illumos.org/license/CDDL.
 #
 
-# Copyright 2022 Oxide Computer Company
+# Copyright 2023 Oxide Computer Company
 
 include $(SRC)/cmd/Makefile.cmd
 include $(SRC)/cmd/Makefile.cmd.64
@@ -24,10 +24,14 @@ PROG =	rdmsr \
 # in-guest payloads, it is easier to build them here.
 PROG +=	triple_fault \
 	exit_paging \
-	page_dirty
+	page_dirty \
+	exit_consistent \
+	suspend_info \
+	vcpu_barrier
 
 # C-based payloads need additional utils object
-CPAYLOADS =	cpuid
+CPAYLOADS =	cpuid \
+		suspend_info
 
 PAYLOADS = $(PROG)
 include ../Makefile.in_guest
@@ -51,8 +55,8 @@ CPPFLAGS =	-I$(COMPAT)/bhyve -I$(CONTRIB)/bhyve \
 		-I$(SRC)/uts/intel \
 		-I../common
 
-ASFLAGS += -P -D__STDC__ -D_ASM
-
+ASFLAGS +=	-D_ASM
+ASFLAGS64 +=	-D_ASM
 
 $(PROG) :=	LDLIBS += -lvmmapi
 

@@ -23,7 +23,7 @@
 .\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 .\" SUCH DAMAGE.
 .\"
-.Dd January 25, 2022
+.Dd March 30, 2023
 .Dt LOADER 7
 .Os
 .Sh NAME
@@ -195,7 +195,9 @@ is loaded.
 .Pp
 .It Ic chain Ar device
 Chain load another boot loader from the specified device.
-Device can be either disk name or partition.
+Device can be either disk name, partition or file name.
+In case of x86 BIOS boot, the file must be copy of MBR or PBR.
+For UEFI boot, the file is efi application.
 .Pp
 .It Ic echo Xo
 .Op Fl n
@@ -293,8 +295,16 @@ A prompt may also be displayed through the
 .Fl p
 flag.
 .Pp
-.It Ic reboot
+.It Ic reboot Op Fl f
 Immediately reboots the system.
+On a
+.Sy UEFI
+system, if the
+.Fl f
+flag is set, or the
+.Va BOOT_TO_FW_UI
+environment variable exists, and the firmware supports this feature,
+the system will automatically enter the firmware setup after reboot.
 .Pp
 .It Ic set Ar variable
 .It Ic set Ar variable Ns = Ns Ar value
@@ -440,6 +450,16 @@ value to set boot prefixed variables listed above, any unrecognized options
 are added to kernel command line verbatim.
 .It Va bootfile
 The name of the kernel.
+.It Va chain_disk
+If set, contains the device or file name used with
+.Cm chain
+command and will cause chain command menu entry to appear on
+.Nm
+main menu.
+The alternate method to use chain loader is to add menu entries
+into
+.Xr menu.lst 5
+file.
 .It Va console
 Defines the current console or consoles.
 Multiple consoles may be specified.
@@ -475,6 +495,18 @@ If set, the value is used to set
 .Xr kernel 8
 .Va console
 property.
+.It Va twiddle_divisor
+Throttles the output of the
+.Sq twiddle
+I/O progress indicator displayed while loading the kernel and modules.
+This is useful on slow serial consoles where the time spent waiting for
+these characters to be written can add up to many seconds.
+The spinner is updated only once every
+.Va twiddle_divisor
+operations.
+The default value for
+.Va twiddle_divisor
+is 16.
 .El
 .Pp
 Other variables are used for loader or to set kernel properties or for
@@ -873,6 +905,7 @@ environment.
 .Sh SEE ALSO
 .Xr btxld 1onbld ,
 .Xr loader.conf 5 ,
+.Xr menu.lst 5 ,
 .Xr boot 8
 .Sh STANDARDS
 For the purposes of ANS Forth compliance, loader is an

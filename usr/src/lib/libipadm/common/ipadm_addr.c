@@ -24,6 +24,7 @@
  * Copyright (c) 2013 by Delphix. All rights reserved.
  * Copyright (c) 2016-2017, Chris Fraire <cfraire@me.com>.
  * Copyright 2021 Tintri by DDN, Inc. All rights reserved.
+ * Copyright 2023 Oxide Computer Company
  */
 
 /*
@@ -2154,10 +2155,19 @@ i_ipadm_lookupadd_addrobj(ipadm_handle_t iph, ipadm_addrobj_t ipaddr)
 	rvalp = &rval;
 	err = ipadm_door_call(iph, &larg, sizeof (larg), (void **)&rvalp,
 	    sizeof (rval), B_FALSE);
-	if (err == 0 && ipaddr->ipadm_aobjname[0] == '\0') {
-		/* copy the daemon generated `aobjname' into `ipadddr' */
-		(void) strlcpy(ipaddr->ipadm_aobjname, rval.ir_aobjname,
-		    sizeof (ipaddr->ipadm_aobjname));
+	if (err == 0) {
+		/*
+		 * Save daemon-generated state.  Copy the `lnum` from
+		 * the daemon if this is not a legacy case, and copy
+		 * `aobjname' if we did not give a name.
+		 */
+		if ((iph->iph_flags & IPH_LEGACY) == 0)
+			ipaddr->ipadm_lifnum = rval.ir_lnum;
+		if (ipaddr->ipadm_aobjname[0] == '\0') {
+			(void) strlcpy(ipaddr->ipadm_aobjname,
+			    rval.ir_aobjname,
+			    sizeof (ipaddr->ipadm_aobjname));
+		}
 	}
 	if (err == EEXIST)
 		return (IPADM_ADDROBJ_EXISTS);
@@ -2556,14 +2566,13 @@ i_ipadm_addr_exists_on_if(ipadm_handle_t iph, const char *ifname,
  * control. On success, it sets the lifnum in the address object `addr'.
  */
 ipadm_status_t
-i_ipadm_do_addif(ipadm_handle_t iph, ipadm_addrobj_t addr)
+i_ipadm_do_addif(ipadm_handle_t iph, ipadm_addrobj_t addr, boolean_t *added)
 {
 	ipadm_status_t	status;
 	boolean_t	addif;
 	struct lifreq	lifr;
 	int		sock;
 
-	addr->ipadm_lifnum = 0;
 	status = i_ipadm_addr_exists_on_if(iph, addr->ipadm_ifname,
 	    addr->ipadm_af, &addif);
 	if (status != IPADM_SUCCESS)
@@ -2581,6 +2590,14 @@ i_ipadm_do_addif(ipadm_handle_t iph, ipadm_addrobj_t addr)
 		if (ioctl(sock, SIOCLIFADDIF, (caddr_t)&lifr) < 0)
 			return (ipadm_errno2status(errno));
 		addr->ipadm_lifnum = i_ipadm_get_lnum(lifr.lifr_name);
+		if (added != NULL)
+			*added = B_TRUE;
+	} else {
+		/*
+		 * The first logical interface (0) has a zero address, and is
+		 * not under DHCP control, use it.
+		 */
+		addr->ipadm_lifnum = 0;
 	}
 	return (IPADM_SUCCESS);
 }
@@ -2638,7 +2655,7 @@ ipadm_create_addr(ipadm_handle_t iph, ipadm_addrobj_t addr, uint32_t flags)
 	ipadm_addr_type_t	type;
 	char			*ifname = addr->ipadm_ifname;
 	boolean_t		legacy = (iph->iph_flags & IPH_LEGACY);
-	boolean_t		aobjfound;
+	boolean_t		aobjfound = B_FALSE;
 	boolean_t		is_6to4;
 	struct lifreq		lifr;
 	uint64_t		ifflags;
@@ -2895,7 +2912,7 @@ i_ipadm_create_addr(ipadm_handle_t iph, ipadm_addrobj_t ipaddr, uint32_t flags)
 	 * use the 0th logical interface.
 	 */
 	if (!(iph->iph_flags & IPH_LEGACY)) {
-		status = i_ipadm_do_addif(iph, ipaddr);
+		status = i_ipadm_do_addif(iph, ipaddr, NULL);
 		if (status != IPADM_SUCCESS)
 			return (status);
 	}
@@ -3121,7 +3138,7 @@ i_ipadm_create_dhcp(ipadm_handle_t iph, ipadm_addrobj_t addr, uint32_t flags)
 	 * use the 0th logical interface.
 	 */
 retry:
-	status = i_ipadm_do_addif(iph, addr);
+	status = i_ipadm_do_addif(iph, addr, NULL);
 	if (status != IPADM_SUCCESS)
 		return (status);
 	/*
@@ -3226,8 +3243,7 @@ i_ipadm_op_dhcp(ipadm_addrobj_t addr, dhcp_ipc_type_t type, int *dhcperror)
 	switch (DHCP_IPC_CMD(type)) {
 	case DHCP_START:
 	case DHCP_EXTEND:
-		if (addr->ipadm_af == AF_INET && addr->ipadm_reqhost != NULL &&
-		    *addr->ipadm_reqhost != '\0') {
+		if (addr->ipadm_af == AF_INET && *addr->ipadm_reqhost != '\0') {
 			entry = inittab_getbycode(ITAB_CAT_STANDARD,
 			    ITAB_CONS_INFO, CD_HOSTNAME);
 			if (entry == NULL) {

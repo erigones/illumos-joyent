@@ -11,6 +11,7 @@
 
 /*
  * Copyright 2017-2022 Tintri by DDN, Inc. All rights reserved.
+ * Copyright 2021-2023 RackTop Systems, Inc.
  */
 
 /*
@@ -56,7 +57,10 @@ uint32_t smb2_res_max_timeout = 300 * MILLISEC;	/* mSec. */
 
 uint32_t smb2_persist_timeout = 300 * MILLISEC;	/* mSec. */
 
-/* Max. size of the file used to store a CA handle. */
+/*
+ * Max. size of the file used to store a CA handle.
+ * Don't adjust this while the server is running.
+ */
 static uint32_t smb2_dh_max_cah_size = 64 * 1024;
 static uint32_t smb2_ca_info_version = 1;
 
@@ -77,8 +81,9 @@ struct nvlk {
 
 static void smb2_dh_import_share(void *);
 static smb_ofile_t *smb2_dh_import_handle(smb_request_t *, smb_node_t *,
-    uint64_t);
-static int smb2_dh_read_nvlist(smb_request_t *, smb_node_t *, struct nvlist **);
+    char *, uint64_t);
+static int smb2_dh_read_nvlist(smb_request_t *, smb_node_t *,
+    char *, struct nvlist **);
 static int smb2_dh_import_cred(smb_ofile_t *, char *);
 
 #define	DH_SN_SIZE 24	/* size of DH stream name buffers */
@@ -250,6 +255,7 @@ smb2_dh_new_ca_share(smb_server_t *sv, smb_kshare_t *shr)
 {
 	smb_kshare_t	*shr2;
 	smb_request_t	*sr;
+	taskqid_t	tqid;
 
 	ASSERT(STYPE_ISDSK(shr->shr_type));
 
@@ -284,9 +290,9 @@ smb2_dh_new_ca_share(smb_server_t *sv, smb_kshare_t *shr)
 	 * which releases it when it's done.
 	 */
 	sr->arg.tcon.si = shr;	/* hold from above */
-	(void) taskq_dispatch(
-	    sv->sv_worker_pool,
+	tqid = taskq_dispatch(sv->sv_worker_pool,
 	    smb2_dh_import_share, sr, TQ_SLEEP);
+	VERIFY(tqid != TASKQID_INVALID);
 
 	return (0);
 }
@@ -301,6 +307,7 @@ smb2_dh_import_share(void *arg)
 	smb_node_t	*snode;
 	cred_t		*kcr = zone_kcred();
 	smb_streaminfo_t *str_info = NULL;
+	char		*nvl_buf = NULL;
 	uint64_t	id;
 	smb_node_t	*str_node;
 	smb_odir_t	*od = NULL;
@@ -327,7 +334,6 @@ smb2_dh_import_share(void *arg)
 	/*
 	 * Create a temporary tree connect
 	 */
-	sr->arg.tcon.path = shr->shr_name;
 	sr->tid_tree = smb_tree_alloc(sr, shr, shr->shr_root_node,
 	    ACE_ALL_PERMS, 0);
 	if (sr->tid_tree == NULL) {
@@ -339,11 +345,9 @@ smb2_dh_import_share(void *arg)
 
 	/*
 	 * Get the buffers we'll use to read CA handle data.
-	 * Stash in sr_request_buf for smb2_dh_import_handle().
-	 * Also a buffer for the stream name info.
+	 * Also get a buffer for the stream name info.
 	 */
-	sr->sr_req_length = smb2_dh_max_cah_size;
-	sr->sr_request_buf = kmem_alloc(sr->sr_req_length, KM_SLEEP);
+	nvl_buf = kmem_alloc(smb2_dh_max_cah_size, KM_SLEEP);
 	str_info = kmem_alloc(sizeof (smb_streaminfo_t), KM_SLEEP);
 
 	/*
@@ -397,14 +401,14 @@ smb2_dh_import_share(void *arg)
 			    shr->shr_name, str_info->si_name, rc);
 			continue;
 		}
-		of = smb2_dh_import_handle(sr, str_node, id);
+		of = smb2_dh_import_handle(sr, str_node, nvl_buf, id);
 		smb_node_release(str_node);
 		if (of != NULL) {
 			smb_ofile_release(of);
 			of = NULL;
 		}
 		sr->fid_ofile = NULL;
-		smb_llist_flush(&sr->tid_tree->t_ofile_list);
+		smb_lavl_flush(&sr->tid_tree->t_ofile_list);
 
 	} while (!eof);
 
@@ -416,7 +420,8 @@ out:
 
 	if (str_info != NULL)
 		kmem_free(str_info, sizeof (smb_streaminfo_t));
-	/* Let smb_request_free clean up sr->sr_request_buf */
+	if (nvl_buf != NULL)
+		kmem_free(nvl_buf, smb2_dh_max_cah_size);
 
 	/*
 	 * We did a (temporary, internal) tree connect above,
@@ -445,7 +450,7 @@ out:
  */
 static smb_ofile_t *
 smb2_dh_import_handle(smb_request_t *sr, smb_node_t *str_node,
-    uint64_t persist_id)
+    char *nvl_buf, uint64_t persist_id)
 {
 	uint8_t		client_uuid[UUID_LEN];
 	smb_tree_t	*tree = sr->tid_tree;
@@ -478,7 +483,7 @@ smb2_dh_import_handle(smb_request_t *sr, smb_node_t *str_node,
 	/*
 	 * Read and unpack the NVL
 	 */
-	rc = smb2_dh_read_nvlist(sr, str_node, &nvl);
+	rc = smb2_dh_read_nvlist(sr, str_node, nvl_buf, &nvl);
 	if (rc != 0)
 		return (NULL);
 
@@ -821,7 +826,7 @@ errout:
 
 static int
 smb2_dh_read_nvlist(smb_request_t *sr, smb_node_t *node,
-    struct nvlist **nvlpp)
+    char *fbuf, struct nvlist **nvlpp)
 {
 	smb_attr_t	attr;
 	iovec_t		iov;
@@ -841,7 +846,7 @@ smb2_dh_read_nvlist(smb_request_t *sr, smb_node_t *node,
 	}
 
 	if (attr.sa_vattr.va_size < 4 ||
-	    attr.sa_vattr.va_size > sr->sr_req_length) {
+	    attr.sa_vattr.va_size > smb2_dh_max_cah_size) {
 		cmn_err(CE_NOTE, "CA import (%s/%s) bad size=%" PRIu64,
 		    tree->t_resource, node->od_name,
 		    (uint64_t)attr.sa_vattr.va_size);
@@ -850,7 +855,7 @@ smb2_dh_read_nvlist(smb_request_t *sr, smb_node_t *node,
 	flen = (size_t)attr.sa_vattr.va_size;
 
 	bzero(&uio, sizeof (uio));
-	iov.iov_base = sr->sr_request_buf;
+	iov.iov_base = fbuf;
 	iov.iov_len = flen;
 	uio.uio_iov = &iov;
 	uio.uio_iovcnt = 1;
@@ -869,7 +874,7 @@ smb2_dh_read_nvlist(smb_request_t *sr, smb_node_t *node,
 		return (EIO);
 	}
 
-	rc = nvlist_unpack(sr->sr_request_buf, flen, nvlpp, KM_SLEEP);
+	rc = nvlist_unpack(fbuf, flen, nvlpp, KM_SLEEP);
 	if (rc != 0) {
 		cmn_err(CE_NOTE, "CA import (%s/%s) unpack, rc=%d",
 		    tree->t_resource, node->od_name, rc);
@@ -1417,16 +1422,16 @@ smb2_dh_reconnect(smb_request_t *sr)
 	of->f_tree = tree;
 	of->f_fid = fid;
 
-	smb_llist_enter(&tree->t_ofile_list, RW_WRITER);
-	smb_llist_insert_tail(&tree->t_ofile_list, of);
-	smb_llist_exit(&tree->t_ofile_list);
+	smb_lavl_enter(&tree->t_ofile_list, RW_WRITER);
+	smb_lavl_insert(&tree->t_ofile_list, of);
+	smb_lavl_exit(&tree->t_ofile_list);
 	atomic_inc_32(&tree->t_open_files);
 	atomic_inc_32(&sr->session->s_file_cnt);
 
 	/*
 	 * The ofile is now in the caller's session & tree.
 	 *
-	 * In case smb_ofile_hold or smb_oplock_send_brk() are
+	 * In case smb_ofile_hold or smb_oplock_send_break() are
 	 * waiting for state RECONNECT to complete, wakeup.
 	 */
 	mutex_enter(&of->f_mutex);
@@ -1493,6 +1498,18 @@ smb2_dh_expire(void *arg)
 	smb_ofile_release(of);
 }
 
+/*
+ * Called once a minute to do expiration of durable handles.
+ *
+ * Normally expired durable handles should be in state "orphaned",
+ * having transitioned from state SAVE_DH through SAVING to state
+ * ORPHANED after all ofile references go away.  If an ofile has
+ * leaked references and the client disconnects, it will be found
+ * here still in state SAVE_DH and past it's expiration time.
+ * Call smb2_dh_expire for these as well, which will move them
+ * from state SAVE_DH to state CLOSING, so they can no longer
+ * cause sharing violations for new opens.
+ */
 void
 smb2_durable_timers(smb_server_t *sv)
 {
@@ -1521,13 +1538,16 @@ smb2_durable_timers(smb_server_t *sv)
 			 * not have needed to, or we miss some DH in
 			 * this pass and get it on the next.
 			 */
-			if (of->f_state != SMB_OFILE_STATE_ORPHANED)
+			if (of->f_state != SMB_OFILE_STATE_ORPHANED &&
+			    of->f_state != SMB_OFILE_STATE_SAVE_DH)
 				continue;
 
 			mutex_enter(&of->f_mutex);
-			/* STATE_ORPHANED implies dh_expire_time != 0 */
-			if (of->f_state == SMB_OFILE_STATE_ORPHANED &&
+			if ((of->f_state == SMB_OFILE_STATE_ORPHANED ||
+			    of->f_state == SMB_OFILE_STATE_SAVE_DH) &&
+			    of->dh_expire_time != 0 &&
 			    of->dh_expire_time <= now) {
+
 				of->f_state = SMB_OFILE_STATE_EXPIRED;
 				/* inline smb_ofile_hold_internal() */
 				of->f_refcnt++;
@@ -1579,7 +1599,8 @@ smb2_dh_close_my_orphans(smb_request_t *sr, smb_ofile_t *new_of)
 			continue;
 
 		mutex_enter(&of->f_mutex);
-		if (of->f_state == SMB_OFILE_STATE_ORPHANED) {
+		if (of->f_state == SMB_OFILE_STATE_ORPHANED ||
+		    of->f_state == SMB_OFILE_STATE_SAVE_DH) {
 			of->f_state = SMB_OFILE_STATE_EXPIRED;
 			/* inline smb_ofile_hold_internal() */
 			of->f_refcnt++;
@@ -1634,6 +1655,7 @@ smb2_dh_cleanup(void *arg)
 void
 smb2_dh_shutdown(smb_server_t *sv)
 {
+	static const smb_oplock_grant_t og0 = { 0 };
 	smb_hash_t *hash;
 	smb_llist_t *bucket;
 	smb_ofile_t *of;
@@ -1651,12 +1673,24 @@ smb2_dh_shutdown(smb_server_t *sv)
 
 			switch (of->f_state) {
 			case SMB_OFILE_STATE_ORPHANED:
+			case SMB_OFILE_STATE_SAVE_DH:
 				of->f_state = SMB_OFILE_STATE_EXPIRED;
 				/* inline smb_ofile_hold_internal() */
 				of->f_refcnt++;
 				smb_llist_post(bucket, of, smb2_dh_cleanup);
 				break;
+
 			default:
+				/*
+				 * Should not be possible, but try to
+				 * make this zombie ofile harmless.
+				 */
+				cmn_err(CE_NOTE, "!dh_shutdown found "
+				    "of = %p with invalid state = %d",
+				    (void *)of, of->f_state);
+				DTRACE_PROBE1(bad_ofile, smb_ofile_t *, of);
+				ASSERT(0);
+				of->f_oplock = og0;
 				break;
 			}
 			mutex_exit(&of->f_mutex);

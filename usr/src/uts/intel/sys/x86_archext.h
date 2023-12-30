@@ -32,7 +32,7 @@
  * Copyright 2012 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
  * Copyright 2014 Josef 'Jeff' Sipek <jeffpc@josefsipek.net>
  * Copyright 2018 Nexenta Systems, Inc.
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 #ifndef _SYS_X86_ARCHEXT_H
@@ -219,14 +219,121 @@ extern "C" {
 /*
  * AMD SVM features (extended function 0x8000000A).
  */
-#define	CPUID_AMD_EDX_NESTED_PAGING	0x000000001 /* AMD: SVM NP */
-#define	CPUID_AMD_EDX_LBR_VIRT		0x000000002 /* AMD: LBR virt. */
-#define	CPUID_AMD_EDX_SVML		0x000000004 /* AMD: SVM lock */
-#define	CPUID_AMD_EDX_NRIPS		0x000000008 /* AMD: NRIP save */
-#define	CPUID_AMD_EDX_TSC_RATE_MSR	0x000000010 /* AMD: MSR TSC ctrl */
-#define	CPUID_AMD_EDX_VMCB_CLEAN	0x000000020 /* AMD: VMCB clean bits */
-#define	CPUID_AMD_EDX_FLUSH_ASID	0x000000040 /* AMD: flush by ASID */
-#define	CPUID_AMD_EDX_DECODE_ASSISTS	0x000000080 /* AMD: decode assists */
+#define	CPUID_AMD_EDX_NESTED_PAGING	(1 << 0) /* AMD: Nested paging */
+#define	CPUID_AMD_EDX_LBR_VIRT		(1 << 1) /* AMD: LBR virt. */
+#define	CPUID_AMD_EDX_SVML		(1 << 2) /* AMD: SVM lock */
+#define	CPUID_AMD_EDX_NRIPS		(1 << 3) /* AMD: NRIP save */
+#define	CPUID_AMD_EDX_TSC_RATE_MSR	(1 << 4) /* AMD: TSC ratio ctrl */
+#define	CPUID_AMD_EDX_VMCB_CLEAN	(1 << 5) /* AMD: VMCB clean bits */
+#define	CPUID_AMD_EDX_FLUSH_ASID	(1 << 6) /* AMD: flush by ASID */
+#define	CPUID_AMD_EDX_DECODE_ASSISTS	(1 << 7) /* AMD: decode assists */
+#define	CPUID_AMD_EDX_PAUSE_INCPT	(1 << 8) /* AMD: pause intercept */
+#define	CPUID_AMD_EDX_PAUSE_TRSH	(1 << 9) /* AMD: pause threshold */
+#define	CPUID_AMD_EDX_AVIC		(1 << 10) /* AMD: AVIC */
+
+/*
+ * AMD Encrypted Memory Capabilities -- 0x8000_001F
+ *
+ * %ecx is the number of encrypted guests.
+ * %edx is the minimum ASID value for SEV enabled, SEV-ES disabled guests
+ */
+#define	CPUID_AMD_8X1F_EAX_NVS		(1 << 29) /* VIRT_RMPUPDATE MSR */
+#define	CPUID_AMD_8X1F_EAX_SCP		(1 << 28) /* SVSM Comm Page MSR */
+#define	CPUID_AMD_8X1F_EAX_SMT_PROT	(1 << 25) /* SMT Protection */
+#define	CPUID_AMD_8X1F_EAX_VMSAR_PROT	(1 << 24) /* VMSA Reg Protection */
+#define	CPUID_AMD_8X1F_EAX_IBSVGC	(1 << 19) /* IBS Virt. for SEV-ES */
+#define	CPUID_AMD_8X1F_EAX_VIRT_TOM	(1 << 18) /* Virt TOM MSR */
+#define	CPUID_AMD_8X1F_EAX_VMGEXIT	(1 << 17) /* VMGEXIT Parameter */
+#define	CPUID_AMD_8X1F_EAX_VTE		(1 << 16) /* Virt Transparent Enc. */
+#define	CPUID_AMD_8X1F_EAX_NO_IBS	(1 << 15) /* No IBS by host */
+#define	CPUID_AMD_8X1F_EAX_DBGSWP	(1 << 14) /* Debug state for SEV-ES */
+#define	CPUID_AMD_8X1F_EAX_ALT_INJ	(1 << 13) /* Alternate Injection */
+#define	CPUID_AMD_8X1F_EAX_RES_INJ	(1 << 12) /* Restricted Injection */
+#define	CPUID_AMD_8X1F_EAX_64B_HOST	(1 << 11) /* SEV requires amd64 */
+#define	CPUID_AMD_8X1F_EAX_HWECC	(1 << 10) /* HW cache coherency req */
+#define	CPUID_AMD_8X1F_EAX_TSC_AUX	(1 << 9) /* TSC AUX Virtualization */
+#define	CPUID_AMD_8X1F_EAX_SEC_TSC	(1 << 8) /* Secure TSC */
+#define	CPUID_AMD_8X1F_EAX_VSSS		(1 << 7) /* VMPL Super. Shadow Stack */
+#define	CPUID_AMD_8X1F_EAX_RMPQUERY	(1 << 6) /* RMPQUERY Instr */
+#define	CPUID_AMD_8X1F_EAX_VMPL		(1 << 5) /* VM Permission Levels */
+#define	CPUID_AMD_8X1F_EAX_SEV_SNP	(1 << 4) /* SEV Secure Nested Paging */
+#define	CPUID_AMD_8X1F_EAX_SEV_ES	(1 << 3) /* SEV Encrypted State */
+#define	CPUID_AMD_8X1F_EAX_PAGE_FLUSH	(1 << 2) /* Page Flush MSR */
+#define	CPUID_AMD_8X1F_EAX_SEV		(1 << 1) /* Secure Encrypted Virt. */
+#define	CPUID_AMD_8X1F_EAX_SME		(1 << 0) /* Secure Memory Encrypt. */
+
+#define	CPUID_AMD_8X1F_EBX_NVMPL(r)	bitx32(r, 15, 12) /* num VM Perm lvl */
+#define	CPUID_AMD_8X1F_EBX_PAR(r)	bitx32(r, 11, 6) /* paddr bit rem */
+#define	CPUID_AMD_8X1F_EBX_CBIT(r)	bitx32(r, 5, 0)	/* C-bit loc in PTE */
+
+/*
+ * AMD Platform QoS Extended Features -- 0x8000_0020
+ */
+#define	CPUID_AMD_8X20_EBX_L3RR		(1 << 4) /* L3 Range Reservations */
+
+/*
+ * AMD Extended Feature 2 -- 0x8000_0021
+ */
+#define	CPUID_AMD_8X21_EAX_CPUID_DIS	(1 << 17) /* CPUID dis for CPL > 0 */
+#define	CPUID_AMD_8X21_EAX_PREFETCH	(1 << 13) /* Prefetch control MSR  */
+#define	CPUID_AMD_8X21_EAX_NO_SMMCTL	(1 << 9) /* No SMM_CTL MSR */
+#define	CPUID_AMD_8X21_EAX_AIBRS	(1 << 8) /* Automatic IBRS */
+#define	CPUID_AMD_8X21_EAX_UAI		(1 << 7) /* Upper Address Ignore */
+#define	CPUID_AMD_8X21_EAX_SMM_PGLK	(1 << 3) /* SMM Page config lock */
+#define	CPUID_AMD_8X21_EAX_LFENCE_SER	(1 << 2) /* LFENCE is dispatch serial */
+#define	CPUID_AMD_8X21_EAX_NO_NDBP	(1 << 0) /* No nested data #BP */
+
+#define	CPUID_AMD_8X21_EBX_MPS(r)	bitx32(11, 0) /* MCU Patch size x 16B */
+
+/*
+ * AMD Extended Performance Monitoring and Debug -- 0x8000_0022
+ */
+#define	CPUID_AMD_8X22_LBR_FRZ	(1 << 2)	/* Freeze PMC / LBR on ovflw */
+#define	CPUID_AMD_8X22_LBR_STK	(1 << 1)	/* Last Branch Record Stack */
+#define	CPUID_AMD_8X22_EAX_PMV2	(1 << 0)	/* Perfmon v2 */
+
+#define	CPUID_AMD_8X22_EBX_NPMC_NB(r)	bitx32(r, 15, 10) /* # NB PMC */
+#define	CPUID_AMD_8X22_EBX_LBR_SZ(r)	bitx32(r, 9, 4) /* # LBR Stack ents. */
+#define	CPUID_AMD_8X22_EBX_NPMC_CORE(r)	bitx32(r, 3, 0)	/* # core PMC */
+
+/*
+ * AMD Secure Multi-key Encryption -- 0x8000_00023
+ */
+#define	CPUID_AMD_8X23_EAX_MEMHMK	(1 << 0) /* Secure Host Multi-Key Mem */
+
+#define	CPUID_AMD_8X23_EBX_MAX_HMK(r)	bitx32(r, 15, 0) /* Max HMK IDs */
+
+/*
+ * AMD Extended CPU Topology -- 0x8000_0026
+ *
+ * This is AMD's version of extended CPU topology. The topology level is placed
+ * in %ecx and also contains information about the heterogeneity of the CPUs at
+ * the core level. Note, this is similar to, but not the same as Intel's 0x1f.
+ *
+ * The %eax values other than the APIC shift are only available when the type is
+ * a core. The %ebx values other than the number of logical processors are only
+ * available when the type is a core. The core and native model ID values are
+ * processor specific.
+ *
+ * %edx is the entire extended APIC ID of the logical processor we're on.
+ */
+#define	CPUID_AMD_8X26_EAX_ASYM_TOPO(r)		bitx32(r, 31, 31)
+#define	CPUID_AMD_8x26_EAX_HET_CORES(r)		bitx32(r, 30, 30)
+#define	CPUID_AMD_8X26_EAX_EFF_AVAIL(r)		bitx32(r, 29, 29)
+#define	CPUID_AMD_8X26_EAX_APIC_SHIFT(r)	bitx32(r, 4, 0)
+
+#define	CPUID_AMD_8X26_EBX_CORE_TYPE(r)		bitx32(r, 31, 28)
+#define	CPUID_AMD_8X26_EBX_MODEL_ID(r)		bitx32(r, 27, 24)
+#define	CPUID_AMD_8X26_EBX_PWR_EFF(r)		bitx32(r, 23, 16)
+#define	CPUID_AMD_8X26_EBX_NLOG_PROC(r)		bitx32(r, 15, 0)
+
+#define	CPUID_AMD_8X26_ECX_TYPE(r)		bitx32(r, 15, 8)
+#define	CPUID_AMD_8X26_TYPE_DONE	0	/* Technically reserved */
+#define	CUPID_AMD_8X26_TYPE_CORE	1
+#define	CUPID_AMD_8X26_TYPE_COMPLEX	2
+#define	CUPID_AMD_8X26_TYPE_DIE		3
+#define	CUPID_AMD_8X26_TYPE_SOCK	4
+#define	CPUID_AMD_8X26_ECX_INPUT(r)		bitx32(r, 7, 0)
 
 /*
  * Intel now seems to have claimed part of the "extended" function
@@ -796,6 +903,7 @@ extern "C" {
 #define	X86FSET_AVX512_BITALG	105
 #define	X86FSET_AVX512_VBMI2	106
 #define	X86FSET_AVX512_BF16	107
+#define	X86FSET_AUTO_IBRS	108
 
 /*
  * Intel Deep C-State invariant TSC in leaf 0x80000007.
@@ -962,6 +1070,8 @@ typedef enum x86_processor_family {
 	X86_PF_AMD_REMBRANDT,
 	X86_PF_AMD_CEZANNE,
 	X86_PF_AMD_RAPHAEL,
+	X86_PF_AMD_PHOENIX,
+	X86_PF_AMD_BERGAMO,
 
 	X86_PF_ANY = 0xff
 } x86_processor_family_t;
@@ -1100,6 +1210,7 @@ typedef enum x86_chiprev {
 	_DECL_CHIPREV(AMD, GENOA, A0, 0x0002),
 	_DECL_CHIPREV(AMD, GENOA, A1, 0x0004),
 	_DECL_CHIPREV(AMD, GENOA, B0, 0x0008),
+	_DECL_CHIPREV(AMD, GENOA, B1, 0x0010),
 	_DECL_CHIPREV(AMD, GENOA, ANY, _X86_CHIPREV_REV_MATCH_ALL),
 
 	_DECL_CHIPREV(AMD, VERMEER, UNKNOWN, 0x0001),
@@ -1119,7 +1230,19 @@ typedef enum x86_chiprev {
 	_DECL_CHIPREV(AMD, CEZANNE, ANY, _X86_CHIPREV_REV_MATCH_ALL),
 
 	_DECL_CHIPREV(AMD, RAPHAEL, UNKNOWN, 0x0001),
+	_DECL_CHIPREV(AMD, RAPHAEL, B2, 0x0002),
 	_DECL_CHIPREV(AMD, RAPHAEL, ANY, _X86_CHIPREV_REV_MATCH_ALL),
+
+	_DECL_CHIPREV(AMD, PHOENIX, UNKNOWN, 0x0001),
+	_DECL_CHIPREV(AMD, PHOENIX, A0, 0x0002),
+	_DECL_CHIPREV(AMD, PHOENIX, A1, 0x0004),
+	_DECL_CHIPREV(AMD, PHOENIX, ANY, _X86_CHIPREV_REV_MATCH_ALL),
+
+	_DECL_CHIPREV(AMD, BERGAMO, UNKNOWN, 0x0001),
+	_DECL_CHIPREV(AMD, BERGAMO, A0, 0x0002),
+	_DECL_CHIPREV(AMD, BERGAMO, A1, 0x0004),
+	_DECL_CHIPREV(AMD, BERGAMO, A2, 0x0008),
+	_DECL_CHIPREV(AMD, BERGAMO, ANY, _X86_CHIPREV_REV_MATCH_ALL),
 
 	/* Keep at the end */
 	X86_CHIPREV_ANY = _X86_CHIPREV_MKREV(_X86_VENDOR_MATCH_ALL, X86_PF_ANY,
@@ -1264,7 +1387,12 @@ typedef enum x86_uarchrev {
 #define	X86_SOCKET_FP7		_X86_SOCKET_MKVAL(X86_VENDOR_AMD, 0x26)
 #define	X86_SOCKET_FP7R2	_X86_SOCKET_MKVAL(X86_VENDOR_AMD, 0x27)
 #define	X86_SOCKET_FF3		_X86_SOCKET_MKVAL(X86_VENDOR_AMD, 0x28)
-#define	X86_NUM_SOCKETS_AMD	0x28
+#define	X86_SOCKET_FT6		_X86_SOCKET_MKVAL(X86_VENDOR_AMD, 0x29)
+#define	X86_SOCKET_FP8		_X86_SOCKET_MKVAL(X86_VENDOR_AMD, 0x2a)
+#define	X86_SOCKET_FL1		_X86_SOCKET_MKVAL(X86_VENDOR_AMD, 0x2b)
+#define	X86_SOCKET_SP6		_X86_SOCKET_MKVAL(X86_VENDOR_AMD, 0x2c)
+#define	X86_SOCKET_TR5		_X86_SOCKET_MKVAL(X86_VENDOR_AMD, 0x2d)
+#define	X86_NUM_SOCKETS_AMD	0x2d
 
 /*
  * Hygon socket types
@@ -1349,7 +1477,7 @@ typedef enum x86_uarchrev {
 
 /*
  * xgetbv/xsetbv support
- * See section 13.3 in vol. 1 of the Intel devlopers manual.
+ * See section 13.3 in vol. 1 of the Intel Developer's manual.
  */
 
 #define	XFEATURE_ENABLED_MASK	0x0
@@ -1357,13 +1485,27 @@ typedef enum x86_uarchrev {
  * XFEATURE_ENABLED_MASK values (eax)
  * See setup_xfem().
  */
-#define	XFEATURE_LEGACY_FP	0x1
-#define	XFEATURE_SSE		0x2
-#define	XFEATURE_AVX		0x4
-#define	XFEATURE_MPX		0x18	/* 2 bits, both 0 or 1 */
-#define	XFEATURE_AVX512		0xe0	/* 3 bits, all 0 or 1 */
+#define	XFEATURE_LEGACY_FP	(1 << 0)
+#define	XFEATURE_SSE		(1 << 1)
+#define	XFEATURE_AVX		(1 << 2)
+/*
+ * MPX is meant to be all or nothing, therefore for most of the kernel prefer
+ * the XFEATURE_MPX definition over the individual state bits.
+ */
+#define	XFEATURE_MPX_BNDREGS	(1 << 3)
+#define	XFEATURE_MPX_BNDCSR	(1 << 4)
+#define	XFEATURE_MPX		(XFEATURE_MPX_BNDREGS | XFEATURE_MPX_BNDCSR)
+/*
+ * AX512 is meant to be all or nothing, therefore for most of the kernel prefer
+ * the XFEATURE_AVX512 definition over the individual state bits.
+ */
+#define	XFEATURE_AVX512_OPMASK	(1 << 5)
+#define	XFEATURE_AVX512_ZMM	(1 << 6)
+#define	XFEATURE_AVX512_HI_ZMM	(1 << 7)
+#define	XFEATURE_AVX512		(XFEATURE_AVX512_OPMASK | \
+	XFEATURE_AVX512_ZMM | XFEATURE_AVX512_HI_ZMM)
 	/* bit 8 unused */
-#define	XFEATURE_PKRU		0x200
+#define	XFEATURE_PKRU		(1 << 9)
 #define	XFEATURE_FP_ALL	\
 	(XFEATURE_LEGACY_FP | XFEATURE_SSE | XFEATURE_AVX | XFEATURE_MPX | \
 	XFEATURE_AVX512 | XFEATURE_PKRU)
@@ -1383,7 +1525,7 @@ typedef enum x86_uarchrev {
 
 #if defined(_KERNEL) || defined(_KMEMUSER)
 
-#define	NUM_X86_FEATURES	108
+#define	NUM_X86_FEATURES	109
 extern uchar_t x86_featureset[];
 
 extern void free_x86_featureset(void *featureset);
@@ -1488,8 +1630,9 @@ extern uint_t cpuid_get_procnodeid(struct cpu *cpu);
 extern uint_t cpuid_get_procnodes_per_pkg(struct cpu *cpu);
 extern uint_t cpuid_get_compunitid(struct cpu *cpu);
 extern uint_t cpuid_get_cores_per_compunit(struct cpu *cpu);
-extern size_t cpuid_get_xsave_size();
-extern boolean_t cpuid_need_fp_excp_handling();
+extern size_t cpuid_get_xsave_size(void);
+extern void cpuid_get_xsave_info(uint64_t, size_t *, size_t *);
+extern boolean_t cpuid_need_fp_excp_handling(void);
 extern int cpuid_is_cmt(struct cpu *);
 extern int cpuid_syscall32_insn(struct cpu *);
 extern int getl2cacheinfo(struct cpu *, int *, int *, int *);
@@ -1532,10 +1675,40 @@ extern x86_uarch_t uarchrev_uarch(const x86_uarchrev_t);
 extern boolean_t uarchrev_matches(const x86_uarchrev_t, const x86_uarchrev_t);
 extern boolean_t uarchrev_at_least(const x86_uarchrev_t, const x86_uarchrev_t);
 
+/*
+ * Cache information intended for topology and wider use.
+ */
+typedef enum {
+	X86_CACHE_TYPE_DATA,
+	X86_CACHE_TYPE_INST,
+	X86_CACHE_TYPE_UNIFIED
+} x86_cache_type_t;
+
+typedef enum {
+	X86_CACHE_F_FULL_ASSOC	= 1 << 0
+} x86_cache_flags_t;
+
+typedef struct x86_cache {
+	uint32_t		xc_level;
+	x86_cache_type_t	xc_type;
+	x86_cache_flags_t	xc_flags;
+	uint32_t		xc_nparts;
+	uint32_t		xc_nways;
+	uint32_t		xc_line_size;
+	uint64_t		xc_nsets;
+	uint64_t		xc_size;
+	uint64_t		xc_id;
+	uint32_t		xc_apic_shift;
+} x86_cache_t;
+
+extern int cpuid_getncaches(struct cpu *, uint32_t *);
+extern int cpuid_getcache(struct cpu *, uint32_t, x86_cache_t *);
+
 struct cpu_ucode_info;
 
 extern void ucode_alloc_space(struct cpu *);
 extern void ucode_free_space(struct cpu *);
+extern void ucode_init(void);
 extern void ucode_check(struct cpu *);
 extern void ucode_cleanup();
 

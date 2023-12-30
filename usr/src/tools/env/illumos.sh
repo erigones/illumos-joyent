@@ -25,6 +25,7 @@
 # Copyright 2016 RackTop Systems.
 # Copyright 2019 OmniOS Community Edition (OmniOSce) Association.
 # Copyright 2020 Joyent, Inc.
+# Copyright 2023 Bill Sommerfeld
 #
 # - This file is sourced by "bldenv" and "nightly" and should not
 #   be executed directly.
@@ -50,7 +51,7 @@ export NIGHTLY_OPTIONS='-FnCDAmprt'
 #export MAILTO=
 
 # CODEMGR_WS - where is your workspace at
-export CODEMGR_WS="`git rev-parse --show-toplevel`"
+export CODEMGR_WS="${CODEMGR_WS:-`git rev-parse --show-toplevel`}"
 
 # Compilers may be specified using the following variables:
 # PRIMARY_CC	- primary C compiler
@@ -65,9 +66,6 @@ export CODEMGR_WS="`git rev-parse --show-toplevel`"
 # the compiler, currently either gnu (or gcc) or sun (or cc), which is also
 # used by Makefiles to guard options.
 #
-# __SUNC and __GNUC must still be set to reflect the style of the primary
-# compiler (and to influence the default primary, otherwise)
-#
 # for example:
 # export PRIMARY_CC=gcc4,/opt/gcc/4.4.4/bin/gcc,gnu
 # export PRIMARY_CCC=gcc4,/opt/gcc/4.4.4/bin/g++,gnu
@@ -79,11 +77,11 @@ export CODEMGR_WS="`git rev-parse --show-toplevel`"
 #
 # To disable shadow compilation, unset SHADOW_* or set them to the empty string.
 #
-export GNUC_ROOT=/usr/gcc/7
-export PRIMARY_CC=gcc7,$GNUC_ROOT/bin/gcc,gnu
-export PRIMARY_CCC=gcc7,$GNUC_ROOT/bin/g++,gnu
-export SHADOW_CCS=gcc10,/usr/gcc/10/bin/gcc,gnu
-export SHADOW_CCCS=gcc10,/usr/gcc/10/bin/g++,gnu
+export GNUC_ROOT=/usr/gcc/10
+export PRIMARY_CC=gcc10,$GNUC_ROOT/bin/gcc,gnu
+export PRIMARY_CCC=gcc10,$GNUC_ROOT/bin/g++,gnu
+export SHADOW_CCS=gcc7,/usr/gcc/7/bin/gcc,gnu
+export SHADOW_CCCS=gcc7,/usr/gcc/7/bin/g++,gnu
 
 # comment to disable smatch
 export ENABLE_SMATCH=1
@@ -184,11 +182,11 @@ ONBLD_BIN='/opt/onbld/bin'
 # PARENT_WS is used to determine the parent of this workspace. This is
 # for the options that deal with the parent workspace (such as where the
 # proto area will go).
-export PARENT_WS=''
+export PARENT_WS="${PARENT_WS:-}"
 
 # CLONE_WS is the workspace nightly should do a bringover from.
 # The bringover, if any, is done as STAFFER.
-export CLONE_WS='ssh://anonhg@hg.illumos.org/illumos-gate'
+export CLONE_WS="${CLONE_WS:-}"
 
 # Set STAFFER to your own login as gatekeeper or developer
 # The point is to use group "staff" and avoid referencing the parent
@@ -233,7 +231,7 @@ export MULTI_PROTO="no"
 # when the release slips (nah) or you move an environment file to a new
 # release
 #
-export VERSION="`git describe --long --all HEAD | cut -d/ -f2-`"
+export VERSION="${VERSION:-`git describe --long --all HEAD | cut -d/ -f2-`}"
 
 #
 # the RELEASE and RELEASE_DATE variables are set in Makefile.master;
@@ -263,25 +261,19 @@ export PKGARCHIVE="${CODEMGR_WS}/packages/${MACH}/nightly"
 # Package manifest format version.
 export PKGFMT_OUTPUT='v2'
 
-# we want make to do as much as it can, just in case there's more than
+# We want make to do as much as it can, just in case there's more than
 # one problem.
-export MAKEFLAGS='k'
-
-# Magic variables to prevent the devpro compilers/teamware from checking
-# for updates or sending mail back to devpro on every use.
-export SUNW_NO_UPDATE_NOTIFY='1'
-export UT_NO_USAGE_TRACKING='1'
+# We also must set e in MAKEFLAGS as the makefiles depend on importing
+# the environment variables set here.
+export MAKEFLAGS='ke'
 
 # Build tools - don't change these unless you know what you're doing.  These
 # variables allows you to get the compilers and onbld files locally.
 # Set BUILD_TOOLS to pull everything from one location.
 # Alternately, you can set ONBLD_TOOLS to where you keep the contents of
-# SUNWonbld and SPRO_ROOT to where you keep the compilers.  SPRO_VROOT
-# exists to make it easier to test new versions of the compiler.
+# SUNWonbld.
 export BUILD_TOOLS='/opt'
 #export ONBLD_TOOLS='/opt/onbld'
-export SPRO_ROOT='/opt/SUNWspro'
-export SPRO_VROOT="$SPRO_ROOT"
 
 # Set this flag to 'n' to disable the use of 'checkpaths'.  The default,
 # if the 'N' option is not specified, is to run this test.

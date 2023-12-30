@@ -133,9 +133,9 @@ INCS +=		-I$(SRCDIR)
 INCS +=		-I$(SRC)/lib/hbaapi/common
 
 CCFLAGS +=	-D_POSIX_PTHREAD_SEMANTICS
-CCFLAGS +=	-compat=5 -_g++=-std=c++98
+CCFLAGS +=	-_g++=-std=c++98
 CCFLAGS64 +=	-D_POSIX_PTHREAD_SEMANTICS
-CCFLAGS64 +=	-compat=5 -_g++=-std=c++98
+CCFLAGS64 +=	-_g++=-std=c++98
 CPPFLAGS +=	$(INCS) -DBUILD_TIME='"Wed Sep 24 12:00:00 2008"'
 
 CCERRWARN +=	-_gcc=-Wno-reorder
@@ -148,7 +148,6 @@ CCERRWARN +=	-_gcc=-Wno-return-type
 LDLIBS			+= -ldevinfo
 LDLIBS			+= -lsysevent
 LDLIBS			+= -lnvpair
-$(__SUNC)CCNEEDED	= $(CCEXTNEEDED)
 LDLIBS			+= $(CCNEEDED)
 LDLIBS			+= -lc
 

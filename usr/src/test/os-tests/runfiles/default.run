@@ -12,9 +12,9 @@
 #
 # Copyright (c) 2012 by Delphix. All rights reserved.
 # Copyright 2020 Joyent, Inc.
-# Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2022 OmniOS Community Edition (OmniOSce) Association.
 # Copyright 2021 Tintri by DDN, Inc. All rights reserved.
-# Copyright 2022 Oxide Computer Company
+# Copyright 2023 Oxide Computer Company
 # Copyright 2022 MNX Cloud, Inc.
 #
 
@@ -39,6 +39,11 @@ tests = ['poll_test', 'epoll_test']
 [/opt/os-tests/tests/clock_gettime.32]
 [/opt/os-tests/tests/clock_gettime.64]
 
+[/opt/os-tests/tests/ucontext.32]
+[/opt/os-tests/tests/ucontext.64]
+[/opt/os-tests/tests/getcontext_extd.32]
+[/opt/os-tests/tests/getcontext_extd.64]
+
 [/opt/os-tests/tests/secflags]
 user = root
 tests = ['secflags_aslr',
@@ -53,6 +58,9 @@ tests = ['secflags_aslr',
          'secflags_syscall',
          'secflags_truss',
          'secflags_zonecfg']
+
+[/opt/os-tests/tests/signalfd]
+tests = ['basic_args', 'basic_read', 'multipoll']
 
 [/opt/os-tests/tests/sigqueue]
 tests = ['sigqueue_queue_size']
@@ -97,6 +105,9 @@ user = root
 tests = ['ufm-test-setup', 'ufm-test', 'ufm-test-cleanup']
 
 [/opt/os-tests/tests/definit/definit]
+
+[/opt/os-tests/tests/ksid]
+tests = ['ksid.32','ksid.64']
 
 [/opt/os-tests/tests/i386]
 user = root
@@ -153,3 +164,26 @@ tests = [
 	'illumos-15031',
 	'illumos-15036'
 	]
+
+#
+# The following tests all represent tests that require the xsave feature
+# set. These are all x86 specific. The use of arch=i86pc below doesn't
+# really represent things that can be run on x86 regardless of the
+# platform and when the test runner gains support for specifying that,
+# use that instead. This would be split into two groups, but that isn't
+# supported, so everything ends up being run as root for the sake of the
+# xsave_baducontext test.
+#
+[/opt/os-tests/tests/xsave]
+arch = i86pc
+pre = xsu_hwtype.64
+user = root
+tests = [ 'bad_xregs.32', 'bad_xregs.64', 'mdb_xregs', 'proc_writes',
+    'setcontext_replace.32', 'setcontext_replace.64', 'setcontext_restore.32',
+    'setcontext_restore.64', 'signal_restore.32', 'signal_restore.64',
+    'xregs_roundtrip.32', 'xregs_roundtrip.64', 'xsave_baducontext',
+    'fpregs_xbv.32', 'fpregs_xbv.64', 'swapcontext_extd.32',
+    'swapcontext_extd.64' ]
+
+[/opt/os-tests/tests/ilstr]
+tests = ['ilstr_basic.32', 'ilstr_basic.64']

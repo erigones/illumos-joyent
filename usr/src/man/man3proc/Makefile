@@ -180,9 +180,15 @@ MANLINKS=					\
 		Lclearsig.3proc			\
 		Ldstop.3proc			\
 		Lgetareg.3proc			\
+		Lgetfpregs.3proc		\
+		Lgetregs.3proc			\
+		Lgetxregs.3proc			\
 		Lmain_stack.3proc		\
 		Lputareg.3proc			\
+		Lsetfpregs.3proc		\
+		Lsetregs.3proc			\
 		Lsetrun.3proc			\
+		Lsetxregs.3proc			\
 		Lstack.3proc			\
 		Lstop.3proc			\
 		Lsync.3proc			\
@@ -201,6 +207,7 @@ MANLINKS=					\
 		Plmid_to_map.3proc		\
 		Plookup_by_name.3proc		\
 		Plwp_alt_stack.3proc		\
+		Plwp_freexregs.3proc		\
 		Plwp_getfpregs.3proc		\
 		Plwp_iter_all.3proc		\
 		Plwp_main_stack.3proc		\
@@ -234,6 +241,7 @@ MANLINKS=					\
 		proc_flushstdio.3proc		\
 		proc_free_priv.3proc		\
 		proc_get_ldt.3proc		\
+		proc_get_lwpstatus.3proc	\
 		proc_lwp_range_valid.3proc	\
 		proc_signame.3proc		\
 		proc_sigset2str.3proc		\
@@ -355,6 +363,10 @@ Pxlookup_by_name.3proc		:= LINKSRC = Plookup_by_addr.3proc
 Plwp_setregs.3proc		:= LINKSRC = Plwp_getregs.3proc
 Plwp_getfpregs.3proc		:= LINKSRC = Plwp_getregs.3proc
 Plwp_setfpregs.3proc		:= LINKSRC = Plwp_getregs.3proc
+Lgetfpregs.3proc		:= LINKSRC = Plwp_getregs.3proc
+Lsetfpregs.3proc		:= LINKSRC = Plwp_getregs.3proc
+Lgetregs.3proc			:= LINKSRC = Plwp_getregs.3proc
+Lsetregs.3proc			:= LINKSRC = Plwp_getregs.3proc
 
 Plwp_alt_stack.3proc		:= LINKSRC = Plwp_stack.3proc
 Plwp_main_stack.3proc		:= LINKSRC = Plwp_stack.3proc
@@ -421,6 +433,8 @@ proc_sysset2str.3proc		:= LINKSRC = proc_fltset2str.3proc
 
 proc_free_priv.3proc		:= LINKSRC = proc_get_priv.3proc
 
+proc_get_lwpstatus.3proc	:= LINKSRC = proc_get_lwpsinfo.3proc
+
 proc_lwp_range_valid.3proc	:= LINKSRC = proc_lwp_in_set.3proc
 
 proc_str2sig.3proc		:= LINKSRC = proc_str2flt.3proc
@@ -431,7 +445,10 @@ proc_str2sysset.3proc		:= LINKSRC = proc_str2fltset.3proc
 
 proc_get_ldt.3proc		:= LINKSRC = Pldt.3proc
 
+Plwp_freexregs.3proc		:= LINKSRC = Plwp_getxregs.3proc
 Plwp_setxregs.3proc		:= LINKSRC = Plwp_getxregs.3proc
+Lgetxregs.3proc			:= LINKSRC = Plwp_getxregs.3proc
+Lsetxregs.3proc			:= LINKSRC = Plwp_getxregs.3proc
 
 Plwp_setasrs.3proc		:= LINKSRC = Plwp_getasrs.3proc
 

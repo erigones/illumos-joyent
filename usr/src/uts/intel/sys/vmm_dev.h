@@ -39,7 +39,7 @@
  *
  * Copyright 2015 Pluribus Networks Inc.
  * Copyright 2019 Joyent, Inc.
- * Copyright 2021 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 #ifndef	_VMM_DEV_H_
@@ -212,9 +212,17 @@ struct vm_hpet_cap {
 
 struct vm_suspend {
 	enum vm_suspend_how how;
+	int source;
 };
 
-#define	VM_REINIT_F_FORCE_SUSPEND	(1 << 0)
+/*
+ * Deprecated flags for vm_reinit`flags:
+ *
+ * Suspend (by force) VM as part of reinit.  Effectively a no-op since
+ * suspension requirements during reinit have been lifted.
+ *
+ * #define VM_REINIT_F_FORCE_SUSPEND	(1 << 0)
+ */
 
 struct vm_reinit {
 	uint64_t	flags;
@@ -243,17 +251,16 @@ struct vm_cpuset {
 #endif
 };
 #define	VM_ACTIVE_CPUS		0
-#define	VM_SUSPENDED_CPUS	1
+/*
+ * Deprecated:
+ * #define VM_SUSPENDED_CPUS	1
+ */
 #define	VM_DEBUG_CPUS		2
 
 struct vm_intinfo {
 	int		vcpuid;
 	uint64_t	info1;
 	uint64_t	info2;
-};
-
-struct vm_rtc_time {
-	time_t		secs;
 };
 
 struct vm_rtc_data {
@@ -330,6 +337,23 @@ struct vmm_resv_query {
 	size_t	vrq_limit;
 };
 
+struct vmm_resv_target {
+	/* Target size for VMM reservoir */
+	size_t	vrt_target_sz;
+
+	/*
+	 * Change of reservoir size to meet target will be done in multiple
+	 * steps of chunk size (or smaller)
+	 */
+	size_t	vrt_chunk_sz;
+
+	/*
+	 * Resultant size of reservoir after operation.  Should match target
+	 * size, except when interrupted.
+	 */
+	size_t	vrt_result_sz;
+};
+
 /*
  * struct vmm_dirty_tracker is used for tracking dirty guest pages during
  * e.g. live migration.
@@ -402,7 +426,7 @@ struct vm_legacy_cpuid {
  * best-effort activity.  Nothing is to be inferred about the magnitude of a
  * change when the version is modified.  It follows no rules like semver.
  */
-#define	VMM_CURRENT_INTERFACE_VERSION	8
+#define	VMM_CURRENT_INTERFACE_VERSION	16
 
 
 #define	VMMCTL_IOC_BASE		(('V' << 16) | ('M' << 8))
@@ -418,8 +442,7 @@ struct vm_legacy_cpuid {
 #define	VMM_CHECK_IOMMU		(VMMCTL_IOC_BASE | 0x05)
 
 #define	VMM_RESV_QUERY		(VMMCTL_IOC_BASE | 0x10)
-#define	VMM_RESV_ADD		(VMMCTL_IOC_BASE | 0x11)
-#define	VMM_RESV_REMOVE		(VMMCTL_IOC_BASE | 0x12)
+#define	VMM_RESV_SET_TARGET	(VMMCTL_IOC_BASE | 0x11)
 
 /* Operations performed in the context of a given vCPU */
 #define	VM_RUN				(VMM_CPU_IOC_BASE | 0x01)
@@ -519,6 +542,8 @@ struct vm_legacy_cpuid {
 #define	VM_SET_AUTODESTRUCT		(VMM_IOC_BASE | 0x24)
 #define	VM_DESTROY_SELF			(VMM_IOC_BASE | 0x25)
 #define	VM_DESTROY_PENDING		(VMM_IOC_BASE | 0x26)
+
+#define	VM_VCPU_BARRIER			(VMM_IOC_BASE | 0x27)
 
 #define	VM_DEVMEM_GETOFFSET		(VMM_IOC_BASE | 0xff)
 

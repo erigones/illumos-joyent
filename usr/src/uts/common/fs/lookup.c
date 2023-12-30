@@ -23,10 +23,11 @@
  * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
  * Copyright (c) 1988, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2016 Joyent, Inc.
+ * Copyright 2023 RackTop Systems, Inc.
  */
 
 /*	Copyright (c) 1983, 1984, 1985, 1986, 1987, 1988, 1989 AT&T	*/
-/*	  All Rights Reserved  	*/
+/*	  All Rights Reserved   */
 
 /*
  * University Copyright- Copyright (c) 1982, 1986, 1988
@@ -65,7 +66,7 @@ int vfs_vnode_path = 1;
 
 int
 lookupname(
-	char *fnamep,
+	const char *fnamep,
 	enum uio_seg seg,
 	int followlink,
 	vnode_t **dirvpp,
@@ -81,7 +82,7 @@ lookupname(
  */
 int
 lookupnameatcred(
-	char *fnamep,			/* user pathname */
+	const char *fnamep,		/* user pathname */
 	enum uio_seg seg,		/* addr space that name is in */
 	int followlink,			/* follow sym links */
 	vnode_t **dirvpp,		/* ret for ptr to parent dir vnode */
@@ -113,7 +114,7 @@ lookupnameatcred(
 }
 
 int
-lookupnameat(char *fnamep, enum uio_seg seg, int followlink,
+lookupnameat(const char *fnamep, enum uio_seg seg, int followlink,
     vnode_t **dirvpp, vnode_t **compvpp, vnode_t *startvp)
 {
 	return (lookupnameatcred(fnamep, seg, followlink, dirvpp, compvpp,
@@ -243,6 +244,10 @@ lookuppnvp(
 		lookup_flags |= FIGNORECASE;
 		pn_alloc(&presrvd);
 		pp = &presrvd;
+	}
+	if ((flags & LOOKUP_NOACLCHECK) != 0) {
+		lookup_flags |= LOOKUP_NOACLCHECK;
+		flags &= ~LOOKUP_NOACLCHECK;
 	}
 
 	if (flags & __FLXNOAUTO)

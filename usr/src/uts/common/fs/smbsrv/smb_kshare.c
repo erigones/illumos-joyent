@@ -23,7 +23,7 @@
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2017 Joyent, Inc.
- * Copyright 2022 RackTop Systems.
+ * Copyright 2020-2023 RackTop Systems, Inc.
  */
 
 #include <smbsrv/smb_door.h>
@@ -319,7 +319,7 @@ int
 smb_kshare_start(smb_server_t *sv)
 {
 	smb_thread_init(&sv->sv_export.e_unexport_thread, "smb_kshare_unexport",
-	    smb_kshare_unexport_thread, sv, smbsrv_base_pri);
+	    smb_kshare_unexport_thread, sv, smbsrv_base_pri, sv);
 
 	return (smb_thread_start(&sv->sv_export.e_unexport_thread));
 }
@@ -517,6 +517,64 @@ smb_kshare_info(smb_ioc_shareinfo_t *ioc)
 		ioc->shortnames = sv->sv_cfg.skc_short_names;
 		smb_server_release(sv);
 	}
+	return (rc);
+}
+
+/*
+ * smb_kshare_access
+ *
+ * Does this user have access to the share?
+ * returns: 0 (access OK) or errno
+ *
+ * SMB users always have VEXEC (traverse) via privileges,
+ * so just check for READ or WRITE permissions.
+ */
+int
+smb_kshare_access(smb_ioc_shareaccess_t *ioc)
+{
+	smb_server_t	*sv = NULL;
+	smb_user_t	*user = NULL;
+	smb_kshare_t	*shr = NULL;
+	smb_node_t	*shroot = NULL;
+	vnode_t		*vp = NULL;
+	int		rc = EACCES;
+
+	if ((rc = smb_server_lookup(&sv)) != 0) {
+		rc = ESRCH;
+		goto out;
+	}
+
+	shr = smb_kshare_lookup(sv, ioc->shrname);
+	if (shr == NULL) {
+		rc = ENOENT;
+		goto out;
+	}
+	if ((shroot = shr->shr_root_node) == NULL) {
+		/* Only "file" shares have shr_root_node */
+		rc = 0;
+		goto out;
+	}
+	vp = shroot->vp;
+
+	user = smb_server_lookup_user(sv, ioc->session_id, ioc->user_id);
+	if (user == NULL) {
+		rc = EINVAL;
+		goto out;
+	}
+	ASSERT(user->u_cred != NULL);
+
+	rc = smb_vop_access(vp, VREAD, 0, NULL, user->u_cred);
+	if (rc != 0)
+		rc = smb_vop_access(vp, VWRITE, 0, NULL, user->u_cred);
+
+out:
+	if (user != NULL)
+		smb_user_release(user);
+	if (shr != NULL)
+		smb_kshare_release(sv, shr);
+	if (sv != NULL)
+		smb_server_release(sv);
+
 	return (rc);
 }
 

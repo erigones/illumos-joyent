@@ -188,7 +188,10 @@ struct seg_desc {
 	uint32_t	access;
 };
 #define	SEG_DESC_TYPE(access)		((access) & 0x001f)
-#define	SEG_DESC_DPL(access)		(((access) >> 5) & 0x3)
+#define	SEG_DESC_DPL_MASK		0x3
+#define	SEG_DESC_DPL_SHIFT		5
+#define	SEG_DESC_DPL(access)		\
+	(((access) >> SEG_DESC_DPL_SHIFT) & SEG_DESC_DPL_MASK)
 #define	SEG_DESC_PRESENT(access)	(((access) & 0x0080) ? 1 : 0)
 #define	SEG_DESC_DEF32(access)		(((access) & 0x4000) ? 1 : 0)
 #define	SEG_DESC_GRANULARITY(access)	(((access) & 0x8000) ? 1 : 0)
@@ -236,7 +239,7 @@ enum vm_exitcode {
 	VM_EXITCODE_MONITOR,
 	VM_EXITCODE_MWAIT,
 	VM_EXITCODE_SVM,
-	VM_EXITCODE_REQIDLE,
+	VM_EXITCODE_DEPRECATED2, /* formerly REQIDLE */
 	VM_EXITCODE_DEBUG,
 	VM_EXITCODE_VMINSN,
 	VM_EXITCODE_BPT,
@@ -374,6 +377,17 @@ struct vm_exit {
 		} ioapic_eoi;
 		struct {
 			enum vm_suspend_how how;
+			/*
+			 * Source vcpuid for suspend status.  Typically -1,
+			 * except for triple-fault events which occur on a
+			 * specific faulting vCPU.
+			 */
+			int source;
+			/*
+			 * When suspend status was set on VM, measured in
+			 * nanoseconds since VM boot.
+			 */
+			uint64_t when;
 		} suspended;
 		struct vm_task_switch task_switch;
 	} u;
@@ -384,6 +398,15 @@ enum vm_entry_cmds {
 	VEC_DISCARD_INSTR,	/* discard inst emul state */
 	VEC_FULFILL_MMIO,	/* entry includes result for mmio emul */
 	VEC_FULFILL_INOUT,	/* entry includes result for inout emul */
+
+	/* Below are flags which can be combined with the above commands: */
+
+	/*
+	 * Exit to userspace when vCPU is in consistent state: when any pending
+	 * instruction emulation tasks have been completed and committed to the
+	 * architecturally defined state.
+	 */
+	VEC_FLAG_EXIT_CONSISTENT	= 1 << 31,
 };
 
 struct vm_entry {

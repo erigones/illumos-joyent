@@ -24,8 +24,6 @@
  * Use is subject to license terms.
  */
 
-#pragma ident	"%Z%%M%	%I%	%E% SMI"
-
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
@@ -130,7 +128,7 @@ decode_filehdr()
 	ibuf = new char[infosize];
 	cnt = read(getfd(), ibuf, infosize);
 	if (cnt != infosize) {
-		delete ibuf;
+		delete[] ibuf;
 		return (RaiseError(AUDIO_UNIXERROR));
 	}
 	SetBlocking(saveblock);		// Restore the saved blocking i/o state
@@ -147,11 +145,11 @@ decode_filehdr()
 
 	err = SetHeader(hdr_local);
 	if (err != AUDIO_SUCCESS) {
-		delete ibuf;
+		delete[] ibuf;
 		return (RaiseError(err));
 	}
 	SetInfostring(ibuf, infosize);
-	delete ibuf;
+	delete[] ibuf;
 
 	// Only trust the file size for regular files
 	if (S_ISREG(st.st_mode)) {
@@ -534,7 +532,7 @@ seekread(
 	} while (icnt > 0);
 
 	SetBlocking(saveblock);		// Restore the saved blocking i/o state
-	delete bufp;			// Free the temporary buffer
+	delete[] bufp;			// Free the temporary buffer
 	return (RaiseError(err));
 }
 
@@ -599,6 +597,6 @@ seekwrite(
 	} while (ocnt > 0);
 
 	SetBlocking(saveblock);		// Restore the saved blocking i/o state
-	delete bufp;			// Free the temporary buffer
+	delete[] bufp;			// Free the temporary buffer
 	return (RaiseError(err));
 }

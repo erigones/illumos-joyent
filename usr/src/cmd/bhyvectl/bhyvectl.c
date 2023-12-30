@@ -39,7 +39,7 @@
  *
  * Copyright 2015 Pluribus Networks Inc.
  * Copyright 2019 Joyent, Inc.
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 #include <sys/cdefs.h>
@@ -119,6 +119,8 @@ usage(bool cpu_intel)
 	"       [--set-desc-idtr]\n"
 	"       [--get-desc-idtr]\n"
 	"       [--run]\n"
+	"       [--pause]\n"
+	"       [--resume]\n"
 	"       [--capname=<capname>]\n"
 	"       [--getcap]\n"
 	"       [--setcap=<0|1>]\n"
@@ -197,7 +199,6 @@ usage(bool cpu_intel)
 	"       [--set-rtc-nvram=<val>]\n"
 	"       [--rtc-nvram-offset=<offset>]\n"
 	"       [--get-active-cpus]\n"
-	"       [--get-suspended-cpus]\n"
 	"       [--get-intinfo]\n"
 	"       [--get-eptp]\n"
 	"       [--set-exception-bitmap]\n"
@@ -272,7 +273,7 @@ static int force_reset, force_poweroff;
 static const char *capname;
 static int create, destroy, get_memmap, get_memseg;
 static int get_intinfo;
-static int get_active_cpus, get_suspended_cpus;
+static int get_active_cpus;
 static uint64_t memsize;
 static int set_cr0, get_cr0, set_cr2, get_cr2, set_cr3, get_cr3;
 static int set_cr4, get_cr4;
@@ -302,6 +303,7 @@ static int get_cs, get_ds, get_es, get_fs, get_gs, get_ss, get_tr, get_ldtr;
 static int set_x2apic_state, get_x2apic_state;
 enum x2apic_state x2apic_state;
 static int run;
+static int do_pause, do_resume;
 static int get_cpu_topology;
 static int pmtmr_port;
 static int wrlock_cycle;
@@ -1326,13 +1328,14 @@ setup_options(bool cpu_intel)
 		{ "get-x2apic-state",	NO_ARG,	&get_x2apic_state, 	1 },
 		{ "get-all",		NO_ARG,	&get_all,		1 },
 		{ "run",		NO_ARG,	&run,			1 },
+		{ "pause",		NO_ARG,	&do_pause,		1 },
+		{ "resume",		NO_ARG,	&do_resume,		1 },
 		{ "create",		NO_ARG,	&create,		1 },
 		{ "destroy",		NO_ARG,	&destroy,		1 },
 		{ "inject-nmi",		NO_ARG,	&inject_nmi,		1 },
 		{ "force-reset",	NO_ARG,	&force_reset,		1 },
 		{ "force-poweroff", 	NO_ARG,	&force_poweroff, 	1 },
 		{ "get-active-cpus", 	NO_ARG,	&get_active_cpus, 	1 },
-		{ "get-suspended-cpus", NO_ARG,	&get_suspended_cpus, 	1 },
 		{ "get-intinfo", 	NO_ARG,	&get_intinfo,		1 },
 		{ "get-cpu-topology",	NO_ARG, &get_cpu_topology,	1 },
 		{ "pmtmr-port",		REQ_ARG,	0,	PMTMR_PORT },
@@ -2239,15 +2242,23 @@ main(int argc, char *argv[])
 		}
 	}
 
-	if (!error && set_rtc_time)
-		error = vm_rtc_settime(ctx, rtc_secs);
+	if (!error && set_rtc_time) {
+		timespec_t ts = {
+			.tv_sec = rtc_secs,
+			.tv_nsec = 0,
+		};
+
+		error = vm_rtc_settime(ctx, &ts);
+	}
 
 	if (!error && (get_rtc_time || get_all)) {
-		error = vm_rtc_gettime(ctx, &rtc_secs);
+		timespec_t ts;
+
+		error = vm_rtc_gettime(ctx, &ts);
 		if (error == 0) {
-			gmtime_r(&rtc_secs, &tm);
+			gmtime_r(&ts.tv_sec, &tm);
 			printf("rtc time %#lx: %s %s %02d %02d:%02d:%02d %d\n",
-			    rtc_secs, wday_str(tm.tm_wday), mon_str(tm.tm_mon),
+			    ts.tv_sec, wday_str(tm.tm_wday), mon_str(tm.tm_mon),
 			    tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec,
 			    1900 + tm.tm_year);
 		}
@@ -2283,12 +2294,6 @@ main(int argc, char *argv[])
 		error = vm_active_cpus(ctx, &cpus);
 		if (!error)
 			print_cpus("active cpus", &cpus);
-	}
-
-	if (!error && (get_suspended_cpus || get_all)) {
-		error = vm_suspended_cpus(ctx, &cpus);
-		if (!error)
-			print_cpus("suspended cpus", &cpus);
 	}
 
 	if (!error && (get_intinfo || get_all)) {
@@ -2333,6 +2338,21 @@ main(int argc, char *argv[])
 			dump_vm_run_exitcode(&vmexit, vcpu);
 		else
 			printf("vm_run error %d\n", error);
+	}
+
+	if (!error && do_pause) {
+		error = ioctl(vm_get_device_fd(ctx), VM_PAUSE, vcpu);
+
+		if (error != 0) {
+			printf("vm_pause error %d\n", errno);
+		}
+	}
+	if (!error && do_resume) {
+		error = ioctl(vm_get_device_fd(ctx), VM_RESUME, vcpu);
+
+		if (error != 0) {
+			printf("vm_resume error %d\n", errno);
+		}
 	}
 
 	if (!error && force_reset)

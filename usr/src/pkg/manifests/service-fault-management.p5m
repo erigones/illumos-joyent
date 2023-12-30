@@ -203,6 +203,7 @@ file path=usr/lib/fm/$(ARCH64)/libseslog.so.1
 link path=usr/lib/fm/$(ARCH64)/libtopo.so target=libtopo.so.1 \
     variant.opensolaris.zone=__NODEFAULT
 file path=usr/lib/fm/$(ARCH64)/libtopo.so.1 variant.opensolaris.zone=__NODEFAULT
+link path=usr/lib/fm/64 target=$(ARCH64) variant.opensolaris.zone=__NODEFAULT
 dir  path=usr/lib/fm/dict variant.opensolaris.zone=__NODEFAULT
 #
 # Dictionaries, whether they are hardware-specific or not, are
@@ -417,14 +418,17 @@ dir  path=usr/lib/fm/topo/maps variant.opensolaris.zone=__NODEFAULT
 #
 file path=usr/lib/fm/topo/maps/xfp-hc-topology.xml mode=0444
 dir  path=usr/lib/fm/topo/plugins variant.opensolaris.zone=__NODEFAULT
+file path=usr/lib/fm/topo/plugins/dimm.so mode=0555
 file path=usr/lib/fm/topo/plugins/disk.so mode=0555
 file path=usr/lib/fm/topo/plugins/fac_prov_ahci.so mode=0555
 file path=usr/lib/fm/topo/plugins/fac_prov_ipmi.so mode=0555
+file path=usr/lib/fm/topo/plugins/fac_prov_libhp.so mode=0555
 file path=usr/lib/fm/topo/plugins/fac_prov_mptsas.so mode=0555
 file path=usr/lib/fm/topo/plugins/ipmi.so mode=0555
 file path=usr/lib/fm/topo/plugins/nic.so mode=0555
 file path=usr/lib/fm/topo/plugins/ses.so mode=0555
 file path=usr/lib/fm/topo/plugins/smbios.so mode=0555
+file path=usr/lib/fm/topo/plugins/ufm.so mode=0555
 file path=usr/lib/fm/topo/plugins/usb.so mode=0555
 file path=usr/lib/fm/topo/plugins/xfp.so mode=0555
 dir  path=usr/lib/locale variant.opensolaris.zone=__NODEFAULT
@@ -674,6 +678,7 @@ $(i386_ONLY)file path=usr/platform/i86pc/lib/fm/topo/plugins/hostbridge.so \
     mode=0555
 $(i386_ONLY)file path=usr/platform/i86pc/lib/fm/topo/plugins/pcibus.so mode=0555
 $(i386_ONLY)file path=usr/platform/i86pc/lib/fm/topo/plugins/x86pi.so mode=0555
+$(i386_ONLY)file path=usr/platform/i86pc/lib/fm/topo/plugins/zen.so mode=0555
 #
 # Some directories common to both global and non-global zones:
 #

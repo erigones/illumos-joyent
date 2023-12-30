@@ -35,7 +35,8 @@
  *
  * Copyright 2015 Pluribus Networks Inc.
  * Copyright 2019 Joyent, Inc.
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2022 OmniOS Community Edition (OmniOSce) Association.
+ * Copyright 2023 Oxide Computer Company
  */
 
 /*
@@ -69,7 +70,7 @@
  *
  * Each viona link has two viona_vring_t entities, RX and TX, for handling data
  * transfers to and from the guest.  They represent an interface to the
- * standard virtio ring structures.  When intiailized and active, each ring is
+ * standard virtio ring structures.  When initialized and active, each ring is
  * backed by a kernel worker thread (parented to the bhyve process for the
  * instance) which handles ring events.  The RX worker has the simple task of
  * watching for ring shutdown conditions.  The TX worker does that in addition
@@ -246,6 +247,7 @@
 #include <sys/stat.h>
 
 #include <sys/dlpi.h>
+#include <sys/vlan.h>
 
 #include "viona_impl.h"
 
@@ -293,6 +295,7 @@ static int viona_ioc_create(viona_soft_state_t *, void *, int, cred_t *);
 static int viona_ioc_delete(viona_soft_state_t *, boolean_t);
 
 static int viona_ioc_set_notify_ioport(viona_link_t *, uint16_t);
+static int viona_ioc_set_promisc(viona_link_t *, viona_promisc_t);
 static int viona_ioc_ring_init(viona_link_t *, void *, int);
 static int viona_ioc_ring_set_state(viona_link_t *, void *, int);
 static int viona_ioc_ring_get_state(viona_link_t *, void *, int);
@@ -612,6 +615,9 @@ viona_ioctl(dev_t dev, int cmd, intptr_t data, int md, cred_t *cr, int *rv)
 		}
 		err = viona_ioc_set_notify_ioport(link, (uint16_t)data);
 		break;
+	case VNA_IOC_SET_PROMISC:
+		err = viona_ioc_set_promisc(link, (viona_promisc_t)data);
+		break;
 	default:
 		err = ENOTTY;
 		break;
@@ -700,6 +706,7 @@ viona_ioc_create(viona_soft_state_t *ss, void *dptr, int md, cred_t *cr)
 	vmm_hold_t	*hold = NULL;
 	viona_neti_t	*nip = NULL;
 	zoneid_t	zid;
+	mac_diag_t	mac_diag = MAC_DIAG_NONE;
 
 	ASSERT(MUTEX_NOT_HELD(&ss->ss_lock));
 
@@ -753,10 +760,24 @@ viona_ioc_create(viona_soft_state_t *ss, void *dptr, int md, cred_t *cr)
 		goto bail;
 	}
 
+	err = mac_unicast_add(link->l_mch, NULL, MAC_UNICAST_PRIMARY,
+	    &link->l_muh, VLAN_ID_NONE, &mac_diag);
+	if (err != 0) {
+		goto bail;
+	}
+
 	viona_ring_alloc(link, &link->l_vrings[VIONA_VQ_RX]);
 	viona_ring_alloc(link, &link->l_vrings[VIONA_VQ_TX]);
 
-	if ((err = viona_rx_set(link)) != 0) {
+	/*
+	 * Default to passing up all multicast traffic in addition to
+	 * classified unicast. Guests which have support will change this
+	 * if they need to via the virtio net control queue; guests without
+	 * support generally still want to see multicast.
+	 */
+	link->l_promisc = VIONA_PROMISC_MULTI;
+	if ((err = viona_rx_set(link, link->l_promisc)) != 0) {
+		viona_rx_clear(link);
 		viona_ring_free(&link->l_vrings[VIONA_VQ_RX]);
 		viona_ring_free(&link->l_vrings[VIONA_VQ_TX]);
 		goto bail;
@@ -775,6 +796,11 @@ viona_ioc_create(viona_soft_state_t *ss, void *dptr, int md, cred_t *cr)
 bail:
 	if (link != NULL) {
 		if (link->l_mch != NULL) {
+			if (link->l_muh != NULL) {
+				VERIFY0(mac_unicast_remove(link->l_mch,
+				    link->l_muh));
+				link->l_muh = NULL;
+			}
 			mac_client_close(link->l_mch, 0);
 		}
 		if (link->l_mh != NULL) {
@@ -839,6 +865,10 @@ viona_ioc_delete(viona_soft_state_t *ss, boolean_t on_close)
 	if (link->l_mch != NULL) {
 		/* Unhook the receive callbacks and close out the client */
 		viona_rx_clear(link);
+		if (link->l_muh != NULL) {
+			VERIFY0(mac_unicast_remove(link->l_mch, link->l_muh));
+			link->l_muh = NULL;
+		}
 		mac_client_close(link->l_mch, 0);
 	}
 	if (link->l_mh != NULL) {
@@ -1069,6 +1099,27 @@ viona_ioc_set_notify_ioport(viona_link_t *link, uint16_t ioport)
 		}
 	}
 	return (err);
+}
+
+static int
+viona_ioc_set_promisc(viona_link_t *link, viona_promisc_t mode)
+{
+	int err;
+
+	if (mode >= VIONA_PROMISC_MAX) {
+		return (EINVAL);
+	}
+
+	if (mode == link->l_promisc) {
+		return (0);
+	}
+
+	if ((err = viona_rx_set(link, mode)) != 0) {
+		return (err);
+	}
+
+	link->l_promisc = mode;
+	return (0);
 }
 
 static int

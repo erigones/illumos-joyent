@@ -21,6 +21,7 @@
 /*
  * Copyright (c) 2006, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2018 by Delphix. All rights reserved.
+ * Copyright 2023 Oxide Computer Company
  */
 
 #include <sys/note.h>
@@ -741,12 +742,11 @@ devid_cache_cleanup(void)
 static void
 e_devid_minor_to_devlist(
 	dev_info_t	*dip,
-	char		*minor_name,
+	const char	*minor_name,
 	int		ndevts_alloced,
 	int		*devtcntp,
 	dev_t		*devtsp)
 {
-	int			circ;
 	struct ddi_minor_data	*dmdp;
 	int			minor_all = 0;
 	int			ndevts = *devtcntp;
@@ -760,7 +760,7 @@ e_devid_minor_to_devlist(
 		minor_all = 1;
 
 	/* Find matching minor names */
-	ndi_devi_enter(dip, &circ);
+	ndi_devi_enter(dip);
 	for (dmdp = DEVI(dip)->devi_minor; dmdp; dmdp = dmdp->next) {
 
 		/* Skip non-minors, and non matching minor names */
@@ -780,7 +780,7 @@ e_devid_minor_to_devlist(
 			devtsp[ndevts] = dmdp->ddm_dev;
 		ndevts++;
 	}
-	ndi_devi_exit(dip, circ);
+	ndi_devi_exit(dip);
 
 	*devtcntp = ndevts;
 }
@@ -801,7 +801,6 @@ e_devid_cache_devi_path_lists(ddi_devid_t devid, int retmax,
 	nvp_devid_t *np;
 	int ndevis, npaths;
 	dev_info_t *dip, *pdip;
-	int circ;
 	int maxdevis = 0;
 	int maxpaths = 0;
 	list_t *listp;
@@ -835,10 +834,10 @@ e_devid_cache_devi_path_lists(ddi_devid_t devid, int retmax,
 			dip = NULL;
 			if (np->nvp_flags & NVP_DEVID_DIP) {
 				pdip = ddi_get_parent(np->nvp_dip);
-				if (ndi_devi_tryenter(pdip, &circ)) {
+				if (ndi_devi_tryenter(pdip)) {
 					dip = np->nvp_dip;
 					ndi_hold_devi(dip);
-					ndi_devi_exit(pdip, circ);
+					ndi_devi_exit(pdip);
 					ASSERT(!DEVI_IS_ATTACHING(dip));
 					ASSERT(!DEVI_IS_DETACHING(dip));
 				} else {
@@ -877,7 +876,7 @@ e_devid_cache_devi_path_lists(ddi_devid_t devid, int retmax,
  * Primary interface used by ddi_lyr_devid_to_devlist()
  */
 int
-e_devid_cache_to_devt_list(ddi_devid_t devid, char *minor_name,
+e_devid_cache_to_devt_list(ddi_devid_t devid, const char *minor_name,
     int *retndevts, dev_t **retdevts)
 {
 	char		*path, **paths;

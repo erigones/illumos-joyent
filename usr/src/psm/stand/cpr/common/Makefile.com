@@ -60,7 +60,7 @@ CPPFLAGS +=	$(CCYFLAG)$(SYSDIR)/common
 CSTD =	$(CSTD_GNU99)
 CFLAGS =	$(CCVERBOSE) -O $(CSTD)
 
-ASFLAGS =	-P -D_ASM $(CPPDEFS) -DLOCORE -D_LOCORE -D__STDC__
+ASFLAGS =	-D_ASM $(CPPDEFS) -DLOCORE -D_LOCORE -D__STDC__
 AS_CPPFLAGS =	$(CPPINCS) $(CPPFLAGS.master)
 
 # install values
@@ -91,7 +91,6 @@ support.o: $(COMDIR)/support.c
 cprboot: $(CPRBOOT_MAPFILE) $(CPRBOOTOBJ) $(SALIBS)
 	$(LD) $(LDFLAGS) -o $@ $(CPRBOOTOBJ) $(LDLIBS)
 	$(POST_PROCESS)
-	$(CHK4UBINARY)
 
 $(SALIBS): FRC
 	@cd $(@D); $(MAKE)

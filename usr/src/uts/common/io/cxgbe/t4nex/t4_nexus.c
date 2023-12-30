@@ -20,6 +20,10 @@
  * release for licensing terms and conditions.
  */
 
+/*
+ * Copyright 2023 Oxide Computer Company
+ */
+
 #include <sys/ddi.h>
 #include <sys/sunddi.h>
 #include <sys/sunndi.h>
@@ -38,17 +42,13 @@
 #include <sys/queue.h>
 #include <sys/containerof.h>
 #include <sys/sensors.h>
+#include <sys/firmload.h>
 
 #include "version.h"
 #include "common/common.h"
 #include "common/t4_msg.h"
 #include "common/t4_regs.h"
-#include "firmware/t4_fw.h"
-#include "firmware/t4_cfg.h"
-#include "firmware/t5_fw.h"
-#include "firmware/t5_cfg.h"
-#include "firmware/t6_fw.h"
-#include "firmware/t6_cfg.h"
+#include "common/t4_extra_regs.h"
 #include "t4_l2t.h"
 
 static int t4_cb_open(dev_t *devp, int flag, int otyp, cred_t *credp);
@@ -136,8 +136,6 @@ struct intrs_and_queues {
 	int nofldrxq1g;		/* # of TOE rxq's for each 1G port */
 #endif
 };
-
-struct fw_info fi[3];
 
 static int cpl_not_handled(struct sge_iq *iq, const struct rss_header *rss,
     mblk_t *m);
@@ -313,7 +311,7 @@ t4_devo_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	ddi_device_acc_attr_t da = {
 		.devacc_attr_version = DDI_DEVICE_ATTR_V0,
 		.devacc_attr_endian_flags = DDI_STRUCTURE_LE_ACC,
-		.devacc_attr_dataorder = DDI_STRICTORDER_ACC 
+		.devacc_attr_dataorder = DDI_STRICTORDER_ACC
 	};
 	ddi_device_acc_attr_t da1 = {
 		.devacc_attr_version = DDI_DEVICE_ATTR_V0,
@@ -1155,56 +1153,6 @@ getpf(struct adapter *sc)
 	return (pf);
 }
 
-
-static struct fw_info *
-find_fw_info(int chip)
-{
-	u32 i;
-
-	fi[0].chip = CHELSIO_T4;
-	fi[0].fw_hdr.chip = FW_HDR_CHIP_T4;
-	fi[0].fw_hdr.fw_ver = cpu_to_be32(FW_VERSION(T4));
-	fi[0].fw_hdr.intfver_nic = FW_INTFVER(T4, NIC);
-	fi[0].fw_hdr.intfver_vnic = FW_INTFVER(T4, VNIC);
-	fi[0].fw_hdr.intfver_ofld = FW_INTFVER(T4, OFLD);
-	fi[0].fw_hdr.intfver_ri = FW_INTFVER(T4, RI);
-	fi[0].fw_hdr.intfver_iscsipdu = FW_INTFVER(T4, ISCSIPDU);
-	fi[0].fw_hdr.intfver_iscsi = FW_INTFVER(T4, ISCSI);
-	fi[0].fw_hdr.intfver_fcoepdu = FW_INTFVER(T4, FCOEPDU);
-	fi[0].fw_hdr.intfver_fcoe = FW_INTFVER(T4, FCOE);
-
-	fi[1].chip = CHELSIO_T5;
-	fi[1].fw_hdr.chip = FW_HDR_CHIP_T5;
-	fi[1].fw_hdr.fw_ver = cpu_to_be32(FW_VERSION(T5));
-	fi[1].fw_hdr.intfver_nic = FW_INTFVER(T5, NIC);
-	fi[1].fw_hdr.intfver_vnic = FW_INTFVER(T5, VNIC);
-	fi[1].fw_hdr.intfver_ofld = FW_INTFVER(T5, OFLD);
-	fi[1].fw_hdr.intfver_ri = FW_INTFVER(T5, RI);
-	fi[1].fw_hdr.intfver_iscsipdu = FW_INTFVER(T5, ISCSIPDU);
-	fi[1].fw_hdr.intfver_iscsi = FW_INTFVER(T5, ISCSI);
-	fi[1].fw_hdr.intfver_fcoepdu = FW_INTFVER(T5, FCOEPDU);
-	fi[1].fw_hdr.intfver_fcoe = FW_INTFVER(T5, FCOE);
-
-	fi[2].chip = CHELSIO_T6;
-	fi[2].fw_hdr.chip = FW_HDR_CHIP_T6;
-	fi[2].fw_hdr.fw_ver = cpu_to_be32(FW_VERSION(T6));
-	fi[2].fw_hdr.intfver_nic = FW_INTFVER(T6, NIC);
-	fi[2].fw_hdr.intfver_vnic = FW_INTFVER(T6, VNIC);
-	fi[2].fw_hdr.intfver_ofld = FW_INTFVER(T6, OFLD);
-	fi[2].fw_hdr.intfver_ri = FW_INTFVER(T6, RI);
-	fi[2].fw_hdr.intfver_iscsipdu = FW_INTFVER(T6, ISCSIPDU);
-	fi[2].fw_hdr.intfver_iscsi = FW_INTFVER(T6, ISCSI);
-	fi[2].fw_hdr.intfver_fcoepdu = FW_INTFVER(T6, FCOEPDU);
-	fi[2].fw_hdr.intfver_fcoe = FW_INTFVER(T6, FCOE);
-
-	for (i = 0; i < ARRAY_SIZE(fi); i++) {
-		if (fi[i].chip == chip)
-			return &fi[i];
-	}
-
-	return NULL;
-}
-
 /*
  * Install a compatible firmware (if required), establish contact with it,
  * become the master, and reset the device.
@@ -1213,12 +1161,14 @@ static int
 prep_firmware(struct adapter *sc)
 {
 	int rc;
-	int fw_size;
+	size_t fw_size;
 	int reset = 1;
 	enum dev_state state;
 	unsigned char *fw_data;
-	struct fw_info *fw_info;
-	struct fw_hdr *card_fw;
+	struct fw_hdr *card_fw, *hdr;
+	const char *fw_file = NULL;
+	firmware_handle_t fw_hdl;
+	struct fw_info fi, *fw_info = &fi;
 
 	struct driver_properties *p = &sc->props;
 
@@ -1236,45 +1186,77 @@ prep_firmware(struct adapter *sc)
 
 	/* We may need FW version info for later reporting */
 	t4_get_version_info(sc);
-	fw_info = find_fw_info(CHELSIO_CHIP_VERSION(sc->params.chip));
-	/* allocate memory to read the header of the firmware on the
-	 * card
-	 */
-	if (!fw_info) {
-		cxgb_printf(sc->dip, CE_WARN,
-			    "unable to look up firmware information for chip %d.\n",
-			    CHELSIO_CHIP_VERSION(sc->params.chip));
-		return EINVAL;
-	}
-	card_fw = kmem_zalloc(sizeof(*card_fw), KM_SLEEP);
-	if(!card_fw) {
-		cxgb_printf(sc->dip, CE_WARN,
-			    "Memory allocation for card FW header failed\n");
-		return ENOMEM;
-	}
+
 	switch(CHELSIO_CHIP_VERSION(sc->params.chip)) {
 	case CHELSIO_T4:
-		fw_data = t4fw_data;
-		fw_size = t4fw_size;
+		fw_file = "t4fw.bin";
 		break;
 	case CHELSIO_T5:
-		fw_data = t5fw_data;
-		fw_size = t5fw_size;
+		fw_file = "t5fw.bin";
 		break;
 	case CHELSIO_T6:
-		fw_data = t6fw_data;
-		fw_size = t6fw_size;
+		fw_file = "t6fw.bin";
 		break;
 	default:
 		cxgb_printf(sc->dip, CE_WARN, "Adapter type not supported\n");
-		kmem_free(card_fw, sizeof(*card_fw));
-		return EINVAL;
+		return (EINVAL);
 	}
 
-	rc = -t4_prep_fw(sc, fw_info, fw_data, fw_size, card_fw,
-			 p->t4_fw_install, state, &reset);
+	if (firmware_open(T4_PORT_NAME, fw_file, &fw_hdl) != 0) {
+		cxgb_printf(sc->dip, CE_WARN, "Could not open %s\n", fw_file);
+		return (EINVAL);
+	}
 
-	kmem_free(card_fw, sizeof(*card_fw));
+	fw_size = firmware_get_size(fw_hdl);
+
+	if (fw_size < sizeof (struct fw_hdr)) {
+		cxgb_printf(sc->dip, CE_WARN, "%s is too small (%ld bytes)\n",
+		    fw_file, fw_size);
+		firmware_close(fw_hdl);
+		return (EINVAL);
+	}
+
+	if (fw_size > FLASH_FW_MAX_SIZE) {
+		cxgb_printf(sc->dip, CE_WARN,
+		    "%s is too large (%ld bytes, max allowed is %ld)\n",
+		    fw_file, fw_size, FLASH_FW_MAX_SIZE);
+		firmware_close(fw_hdl);
+		return (EFBIG);
+	}
+
+	fw_data = kmem_zalloc(fw_size, KM_SLEEP);
+	if (firmware_read(fw_hdl, 0, fw_data, fw_size) != 0) {
+		cxgb_printf(sc->dip, CE_WARN, "Failed to read from %s\n",
+		    fw_file);
+		firmware_close(fw_hdl);
+		kmem_free(fw_data, fw_size);
+		return (EINVAL);
+	}
+	firmware_close(fw_hdl);
+
+	bzero(fw_info, sizeof (*fw_info));
+	fw_info->chip = CHELSIO_CHIP_VERSION(sc->params.chip);
+
+	hdr = (struct fw_hdr *)fw_data;
+	fw_info->fw_hdr.fw_ver = hdr->fw_ver;
+	fw_info->fw_hdr.chip = hdr->chip;
+	fw_info->fw_hdr.intfver_nic = hdr->intfver_nic;
+	fw_info->fw_hdr.intfver_vnic = hdr->intfver_vnic;
+	fw_info->fw_hdr.intfver_ofld = hdr->intfver_ofld;
+	fw_info->fw_hdr.intfver_ri = hdr->intfver_ri;
+	fw_info->fw_hdr.intfver_iscsipdu = hdr->intfver_iscsipdu;
+	fw_info->fw_hdr.intfver_iscsi = hdr->intfver_iscsi;
+	fw_info->fw_hdr.intfver_fcoepdu = hdr->intfver_fcoepdu;
+	fw_info->fw_hdr.intfver_fcoe = hdr->intfver_fcoe;
+
+	/* allocate memory to read the header of the firmware on the card */
+	card_fw = kmem_zalloc(sizeof (*card_fw), KM_SLEEP);
+
+	rc = -t4_prep_fw(sc, fw_info, fw_data, fw_size, card_fw,
+	    p->t4_fw_install, state, &reset);
+
+	kmem_free(card_fw, sizeof (*card_fw));
+	kmem_free(fw_data, fw_size);
 
 	if (rc != 0) {
 		cxgb_printf(sc->dip, CE_WARN,
@@ -1410,11 +1392,14 @@ memwin_info(struct adapter *sc, int win, uint32_t *base, uint32_t *aperture)
 static int
 upload_config_file(struct adapter *sc, uint32_t *mt, uint32_t *ma)
 {
-	int rc = 0, cflen;
+	int rc = 0;
+	size_t cflen, cfbaselen;
 	u_int i, n;
 	uint32_t param, val, addr, mtype, maddr;
 	uint32_t off, mw_base, mw_aperture;
-	const uint32_t *cfdata;
+	uint32_t *cfdata, *cfbase;
+	firmware_handle_t fw_hdl;
+	const char *cfg_file = NULL;
 
 	/* Figure out where the firmware wants us to upload it. */
 	param = FW_PARAM_DEV(CF);
@@ -1430,42 +1415,60 @@ upload_config_file(struct adapter *sc, uint32_t *mt, uint32_t *ma)
 
 	switch (CHELSIO_CHIP_VERSION(sc->params.chip)) {
 	case CHELSIO_T4:
-		cflen = t4cfg_size & ~3;
-		/* LINTED: E_BAD_PTR_CAST_ALIGN */
-		cfdata = (const uint32_t *)t4cfg_data;
+		cfg_file = "t4fw_cfg.txt";
 		break;
 	case CHELSIO_T5:
-		cflen = t5cfg_size & ~3;
-		/* LINTED: E_BAD_PTR_CAST_ALIGN */
-		cfdata = (const uint32_t *)t5cfg_data;
+		cfg_file = "t5fw_cfg.txt";
 		break;
 	case CHELSIO_T6:
-		cflen = t6cfg_size & ~3;
-		/* LINTED: E_BAD_PTR_CAST_ALIGN */
-		cfdata = (const uint32_t *)t6cfg_data;
+		cfg_file = "t6fw_cfg.txt";
 		break;
 	default:
-		cxgb_printf(sc->dip, CE_WARN,
-			    "Invalid Adapter detected\n");
+		cxgb_printf(sc->dip, CE_WARN, "Invalid Adapter detected\n");
 		return EINVAL;
 	}
+
+	if (firmware_open(T4_PORT_NAME, cfg_file, &fw_hdl) != 0) {
+		cxgb_printf(sc->dip, CE_WARN, "Could not open %s\n", cfg_file);
+		return EINVAL;
+	}
+
+	cflen = firmware_get_size(fw_hdl);
+	/*
+	 * Truncate the length to a multiple of uint32_ts. The configuration
+	 * text files have trailing comments (and hopefully always will) so
+	 * nothing important is lost.
+	 */
+	cflen &= ~3;
 
 	if (cflen > FLASH_CFG_MAX_SIZE) {
 		cxgb_printf(sc->dip, CE_WARN,
 		    "config file too long (%d, max allowed is %d).  ",
 		    cflen, FLASH_CFG_MAX_SIZE);
+		firmware_close(fw_hdl);
 		return (EFBIG);
 	}
 
 	rc = validate_mt_off_len(sc, mtype, maddr, cflen, &addr);
 	if (rc != 0) {
-
 		cxgb_printf(sc->dip, CE_WARN,
 		    "%s: addr (%d/0x%x) or len %d is not valid: %d.  "
 		    "Will try to use the config on the card, if any.\n",
 		    __func__, mtype, maddr, cflen, rc);
+		firmware_close(fw_hdl);
 		return (EFAULT);
 	}
+
+	cfbaselen = cflen;
+	cfbase = cfdata = kmem_zalloc(cflen, KM_SLEEP);
+	if (firmware_read(fw_hdl, 0, cfdata, cflen) != 0) {
+		cxgb_printf(sc->dip, CE_WARN, "Failed to read from %s\n",
+		    cfg_file);
+		firmware_close(fw_hdl);
+		kmem_free(cfbase, cfbaselen);
+		return EINVAL;
+	}
+	firmware_close(fw_hdl);
 
 	memwin_info(sc, 2, &mw_base, &mw_aperture);
 	while (cflen) {
@@ -1476,6 +1479,8 @@ upload_config_file(struct adapter *sc, uint32_t *mt, uint32_t *ma)
 		cflen -= n;
 		addr += n;
 	}
+
+	kmem_free(cfbase, cfbaselen);
 
 	return (rc);
 }
@@ -2437,6 +2442,7 @@ print_port_speed(const struct port_info *pi)
 
 #define	KS_UINIT(x)	kstat_named_init(&kstatp->x, #x, KSTAT_DATA_ULONG)
 #define	KS_CINIT(x)	kstat_named_init(&kstatp->x, #x, KSTAT_DATA_CHAR)
+#define	KS_U64INIT(x)	kstat_named_init(&kstatp->x, #x, KSTAT_DATA_UINT64)
 #define	KS_U_SET(x, y)	kstatp->x.value.ul = (y)
 #define	KS_C_SET(x, ...)	\
 			(void) snprintf(kstatp->x.value.c, 16,  __VA_ARGS__)
@@ -2600,6 +2606,137 @@ update_wc_kstats(kstat_t *ksp, int rw)
 	return (0);
 }
 
+/*
+ * cxgbe:X:fec
+ *
+ * This provides visibility into the errors that have been found by the
+ * different FEC subsystems. While it's tempting to combine the two different
+ * FEC types logically, the data that the errors tell us are pretty different
+ * between the two. Firecode is strictly per-lane, but RS has parts that are
+ * related to symbol distribution to lanes and also to the overall channel.
+ */
+struct cxgbe_port_fec_kstats {
+	kstat_named_t rs_corr;
+	kstat_named_t rs_uncorr;
+	kstat_named_t rs_sym0_corr;
+	kstat_named_t rs_sym1_corr;
+	kstat_named_t rs_sym2_corr;
+	kstat_named_t rs_sym3_corr;
+	kstat_named_t fc_lane0_corr;
+	kstat_named_t fc_lane0_uncorr;
+	kstat_named_t fc_lane1_corr;
+	kstat_named_t fc_lane1_uncorr;
+	kstat_named_t fc_lane2_corr;
+	kstat_named_t fc_lane2_uncorr;
+	kstat_named_t fc_lane3_corr;
+	kstat_named_t fc_lane3_uncorr;
+};
+
+static uint32_t
+read_fec_pair(struct port_info *pi, uint32_t lo_reg, uint32_t high_reg)
+{
+	struct adapter *sc = pi->adapter;
+	uint8_t port = pi->tx_chan;
+	uint32_t low, high, ret;
+
+	low = t4_read_reg32(sc, T5_PORT_REG(port, lo_reg));
+	high = t4_read_reg32(sc, T5_PORT_REG(port, high_reg));
+	ret = low & 0xffff;
+	ret |= (high & 0xffff) << 16;
+	return (ret);
+}
+
+static int
+update_port_fec_kstats(kstat_t *ksp, int rw)
+{
+	struct cxgbe_port_fec_kstats *fec = ksp->ks_data;
+	struct port_info *pi = ksp->ks_private;
+
+	if (rw == KSTAT_WRITE) {
+		return (EACCES);
+	}
+
+	/*
+	 * First go ahead and gather RS related stats.
+	 */
+	fec->rs_corr.value.ui64 += read_fec_pair(pi, T6_RS_FEC_CCW_LO,
+	    T6_RS_FEC_CCW_HI);
+	fec->rs_uncorr.value.ui64 += read_fec_pair(pi, T6_RS_FEC_NCCW_LO,
+	    T6_RS_FEC_NCCW_HI);
+	fec->rs_sym0_corr.value.ui64 += read_fec_pair(pi, T6_RS_FEC_SYMERR0_LO,
+	    T6_RS_FEC_SYMERR0_HI);
+	fec->rs_sym1_corr.value.ui64 += read_fec_pair(pi, T6_RS_FEC_SYMERR1_LO,
+	    T6_RS_FEC_SYMERR1_HI);
+	fec->rs_sym2_corr.value.ui64 += read_fec_pair(pi, T6_RS_FEC_SYMERR2_LO,
+	    T6_RS_FEC_SYMERR2_HI);
+	fec->rs_sym3_corr.value.ui64 += read_fec_pair(pi, T6_RS_FEC_SYMERR3_LO,
+	    T6_RS_FEC_SYMERR3_HI);
+
+	/*
+	 * Now go through and try to grab Firecode/BASE-R stats.
+	 */
+	fec->fc_lane0_corr.value.ui64 += read_fec_pair(pi, T6_FC_FEC_L0_CERR_LO,
+	    T6_FC_FEC_L0_CERR_HI);
+	fec->fc_lane0_uncorr.value.ui64 += read_fec_pair(pi,
+	    T6_FC_FEC_L0_NCERR_LO, T6_FC_FEC_L0_NCERR_HI);
+	fec->fc_lane1_corr.value.ui64 += read_fec_pair(pi, T6_FC_FEC_L1_CERR_LO,
+	    T6_FC_FEC_L1_CERR_HI);
+	fec->fc_lane1_uncorr.value.ui64 += read_fec_pair(pi,
+	    T6_FC_FEC_L1_NCERR_LO, T6_FC_FEC_L1_NCERR_HI);
+	fec->fc_lane2_corr.value.ui64 += read_fec_pair(pi, T6_FC_FEC_L2_CERR_LO,
+	    T6_FC_FEC_L2_CERR_HI);
+	fec->fc_lane2_uncorr.value.ui64 += read_fec_pair(pi,
+	    T6_FC_FEC_L2_NCERR_LO, T6_FC_FEC_L2_NCERR_HI);
+	fec->fc_lane3_corr.value.ui64 += read_fec_pair(pi, T6_FC_FEC_L3_CERR_LO,
+	    T6_FC_FEC_L3_CERR_HI);
+	fec->fc_lane3_uncorr.value.ui64 += read_fec_pair(pi,
+	    T6_FC_FEC_L3_NCERR_LO, T6_FC_FEC_L3_NCERR_HI);
+
+	return (0);
+}
+
+static kstat_t *
+setup_port_fec_kstats(struct port_info *pi)
+{
+	kstat_t *ksp;
+	struct cxgbe_port_fec_kstats *kstatp;
+
+	if (!is_t6(pi->adapter->params.chip)) {
+		return (NULL);
+	}
+
+	ksp = kstat_create(T4_PORT_NAME, ddi_get_instance(pi->dip), "fec",
+	    "net", KSTAT_TYPE_NAMED, sizeof (struct cxgbe_port_fec_kstats) /
+	    sizeof (kstat_named_t), 0);
+	if (ksp == NULL) {
+		cxgb_printf(pi->dip, CE_WARN, "failed to initialize fec "
+		    "kstats.");
+		return (NULL);
+	}
+
+	kstatp = ksp->ks_data;
+	KS_U64INIT(rs_corr);
+	KS_U64INIT(rs_uncorr);
+	KS_U64INIT(rs_sym0_corr);
+	KS_U64INIT(rs_sym1_corr);
+	KS_U64INIT(rs_sym2_corr);
+	KS_U64INIT(rs_sym3_corr);
+	KS_U64INIT(fc_lane0_corr);
+	KS_U64INIT(fc_lane0_uncorr);
+	KS_U64INIT(fc_lane1_corr);
+	KS_U64INIT(fc_lane1_uncorr);
+	KS_U64INIT(fc_lane2_corr);
+	KS_U64INIT(fc_lane2_uncorr);
+	KS_U64INIT(fc_lane3_corr);
+	KS_U64INIT(fc_lane3_uncorr);
+
+	ksp->ks_update = update_port_fec_kstats;
+	ksp->ks_private = pi;
+	kstat_install(ksp);
+
+	return (ksp);
+}
+
 int
 adapter_full_init(struct adapter *sc)
 {
@@ -2699,6 +2836,11 @@ port_full_init(struct port_info *pi)
 		goto done;
 	}
 
+	/*
+	 * Initialize our per-port FEC kstats.
+	 */
+	pi->ksp_fec = setup_port_fec_kstats(pi);
+
 	pi->flags |= PORT_INIT_DONE;
 done:
 	if (rc != 0)
@@ -2716,6 +2858,10 @@ port_full_uninit(struct port_info *pi)
 
 	ASSERT(pi->flags & PORT_INIT_DONE);
 
+	if (pi->ksp_fec != NULL) {
+		kstat_delete(pi->ksp_fec);
+		pi->ksp_fec = NULL;
+	}
 	(void) t4_teardown_port_queues(pi);
 	pi->flags &= ~PORT_INIT_DONE;
 

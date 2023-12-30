@@ -149,7 +149,7 @@ ipmi_find_entity(topo_mod_t *mod, tnode_t *tn, ipmi_handle_t **ihpp,
 
 		if (ep == NULL) {
 			topo_mod_dprintf(mod,
-			    "Failed to get present state of %s=%d\n",
+			    "Failed to get present state of %s=%" PRIu64 "\n",
 			    topo_node_name(tn), topo_node_instance(tn));
 			topo_mod_ipmi_rele(mod);
 			return (-1);
@@ -711,7 +711,7 @@ ipmi_enum_sp(topo_mod_t *mod, tnode_t *pnode)
 	slotinfo.usi_active = B_TRUE;
 	slotinfo.usi_mode = TOPO_UFM_SLOT_MODE_NONE;
 	if (topo_node_range_create(mod, sp_node, UFM, 0, 0) != 0 ||
-	    topo_mod_create_ufm(mod, sp_node,
+	    topo_mod_create_ufm(mod, sp_node, 0,
 	    "Baseboard Management Controller firmware", &slotinfo) == NULL) {
 		topo_mod_dprintf(mod, "failed to create %s node", UFM);
 		goto out;
@@ -894,8 +894,8 @@ ipmi_enum(topo_mod_t *mod, tnode_t *rnode, const char *name,
 	if (strcmp(topo_node_name(rnode), CHASSIS) != 0 &&
 	    strcmp(topo_node_name(rnode), MOTHERBOARD) != 0) {
 		if (ipmi_post_process(mod, rnode) != 0) {
-			topo_mod_dprintf(mod, "post processing of node %s=%d "
-			    "failed!", topo_node_name(rnode),
+			topo_mod_dprintf(mod, "post processing of node %s=%"
+			    PRIu64 " failed!", topo_node_name(rnode),
 			    topo_node_instance(rnode));
 			return (-1);
 		}

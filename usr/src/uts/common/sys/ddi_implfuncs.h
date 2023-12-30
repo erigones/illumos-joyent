@@ -26,6 +26,7 @@
 /*
  * Copyright 2012 Garrett D'Amore <garrett@damore.org>.  All rights reserved.
  * Copyright 2020 Joshua M. Clulow <josh@sysmgr.org>
+ * Copyright 2023 Oxide Computer Company
  */
 
 #ifndef _SYS_DDI_IMPLFUNCS_H
@@ -89,8 +90,7 @@ extern void i_ddi_rootnex_init_events(dev_info_t *);
 extern int i_ddi_rootnex_get_eventcookie(dev_info_t *, dev_info_t *, char *,
     ddi_eventcookie_t *);
 extern int i_ddi_rootnex_add_eventcall(dev_info_t *, dev_info_t *,
-    ddi_eventcookie_t, void (*)(dev_info_t *, ddi_eventcookie_t, void *,
-    void *), void *, ddi_callback_id_t *);
+    ddi_eventcookie_t, ddi_event_cb_f, void *, ddi_callback_id_t *);
 extern int i_ddi_rootnex_remove_eventcall(dev_info_t *, ddi_callback_id_t);
 extern int i_ddi_rootnex_post_event(dev_info_t *, dev_info_t *,
     ddi_eventcookie_t, void *);
@@ -149,7 +149,7 @@ extern void impl_ddi_free_nodeid(int);
  * minorname/devtspectype conversions
  */
 extern char *i_ddi_devtspectype_to_minorname(dev_info_t *, dev_t, int);
-extern int i_ddi_minorname_to_devtspectype(dev_info_t *, char *, dev_t *,
+extern int i_ddi_minorname_to_devtspectype(dev_info_t *, const char *, dev_t *,
     int *);
 
 /*
@@ -183,7 +183,7 @@ struct devnames;
 extern void i_ddi_prop_list_hold(ddi_prop_list_t *, struct devnames *);
 extern void i_ddi_prop_list_rele(ddi_prop_list_t *, struct devnames *);
 extern ddi_prop_t *i_ddi_prop_search(dev_t, char *, uint_t, ddi_prop_t **);
-extern int resolve_pathname(char *, dev_info_t **, dev_t *, int *);
+extern int resolve_pathname(const char *, dev_info_t **, dev_t *, int *);
 extern int i_ddi_prompath_to_devfspath(char *, char *);
 extern int i_ddi_attach_node_hierarchy(dev_info_t *);
 extern dev_info_t *i_ddi_attach_pseudo_node(char *);
@@ -215,7 +215,8 @@ extern int i_ddi_devi_get_devid(dev_t, dev_info_t *, ddi_devid_t *);
 extern int e_ddi_devid_discovery(ddi_devid_t);
 extern int e_devid_cache_register(dev_info_t *, ddi_devid_t);
 extern void e_devid_cache_unregister(dev_info_t *);
-extern int e_devid_cache_to_devt_list(ddi_devid_t, char *, int *, dev_t **);
+extern int e_devid_cache_to_devt_list(ddi_devid_t, const char *, int *,
+    dev_t **);
 extern void e_devid_cache_free_devt_list(int, dev_t *);
 
 /*

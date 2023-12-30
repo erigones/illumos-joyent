@@ -10,8 +10,8 @@
 #
 
 #
-# Copyright 2022 Oxide Computer Company
 # Copyright 2022 MNX Cloud, Inc.
+# Copyright 2023 Oxide Computer Company
 #
 
 [DEFAULT]
@@ -29,11 +29,15 @@ tests = [
 	'auto_destruct',
 	'cpuid_ioctl',
 	'datarw_constraints',
+	'datarw_msrs',
+	'datarw_vcpu',
 	'default_capabs',
 	'drv_hold',
 	'fpu_getset',
+	'import_vlapic',
 	'interface_version',
 	'legacy_destruct',
+	'maxcpu',
 	'mem_devmem',
 	'mem_partial',
 	'mem_seg_map',
@@ -51,7 +55,10 @@ tests = [
 	'vlapic_freq_periodic',
 	'vlapic_mmio_access',
 	'vlapic_msr_access',
-	'vpmtmr_freq'
+	'vpmtmr_freq',
+	'vrtc_ops',
+	'wrmsr_tsc',
+	'rdmsr_tsc'
 	]
 
 [/opt/bhyve-tests/tests/inst_emul]
@@ -63,7 +70,10 @@ tests = [
 	'wrmsr',
 	'triple_fault',
 	'exit_paging',
-	'page_dirty'
+	'page_dirty',
+	'exit_consistent',
+	'suspend_info',
+	'vcpu_barrier'
 	]
 
 [/opt/bhyve-tests/tests/viona]

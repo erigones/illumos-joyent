@@ -112,12 +112,6 @@ CLOBBERFILES	= $(CLEANFILES) $(UNIX_BIN)
 # instr_size needs a special header
 $(OBJS_DIR)/instr_size.o :=	EXTRA_OPTIONS	= -I$(SRC)/common/dis/i386
 
-#
-# When performing shadow studio builds, the pre-processed comm page
-# output from gcc can end up confusing studio.
-#
-$(OBJS_DIR)/comm_page_ctf.o :=	CERRWARN += -_cc=-erroff=E_TKNS_IGNORED_AT_END_OF_DIR
-
 CFLAGS += -DDIS_MEM
 
 #
@@ -185,8 +179,8 @@ $(DBOOT_O):	$(DBOOT_BIN)
 $(DBOOT_OBJS_DIR):
 	-@mkdir -p $@ 2> /dev/null
 
-$(COMMP_CTF_SRC):	$(UTSBASE)/i86pc/ml/comm_page.s
-	$(COMPILE.cpp) -D_GENCTF -o $@ $(UTSBASE)/i86pc/ml/comm_page.s
+$(COMMP_CTF_SRC):	$(UTSBASE)/i86pc/ml/comm_page.S
+	$(COMPILE.cpp) -D_GENCTF -o $@ $(UTSBASE)/i86pc/ml/comm_page.S
 
 $(OBJS_DIR)/comm_page_ctf.o:	$(COMMP_CTF_SRC)
 	$(COMPILE.c) -o $@ $<

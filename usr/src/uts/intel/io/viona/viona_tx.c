@@ -53,6 +53,11 @@
 #define	BNXE_NIC_DRIVER		"bnxe"
 
 /*
+ * Tunable controls tx copy by default on or off
+ */
+boolean_t viona_default_tx_copy = B_TRUE;
+
+/*
  * copy tx mbufs from virtio ring to avoid necessitating a wait for packet
  * transmission to free resources.
  */
@@ -101,6 +106,10 @@ viona_tx_copy_needed(void)
 {
 	boolean_t result;
 
+	if (viona_default_tx_copy) {
+		return (B_TRUE);
+	}
+
 	mutex_enter(&viona_force_copy_lock);
 	if (viona_force_copy_state == VFC_UNINITALIZED) {
 		major_t bnxe_major;
@@ -132,7 +141,7 @@ viona_tx_copy_needed(void)
 void
 viona_tx_ring_alloc(viona_vring_t *ring, const uint16_t qsz)
 {
-	/* Allocate desb handles for TX ring if packet copying not disabled */
+	/* Allocate desb handles for TX ring if packet copying is disabled */
 	if (!viona_tx_copy_needed()) {
 		viona_desb_t *dp;
 

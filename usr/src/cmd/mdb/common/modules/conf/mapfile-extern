@@ -1,6 +1,8 @@
 #
 # Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright (c) 2013, 2015 by Delphix. All rights reserved.
+# Copyright 2023 RackTop Systems, Inc.
+# Copyright 2023 OmniOS Community Edition (OmniOSce) Association.
 #
 # CDDL HEADER START
 #
@@ -90,6 +92,7 @@ SYMBOL_SCOPE {
 		mdb_fdio_fileno			{ FLAGS = EXTERN };
 		mdb_ffs				{ FLAGS = EXTERN };
 		mdb_flush			{ FLAGS = EXTERN };
+		mdb_fpwalk_dcmd			{ FLAGS = EXTERN };
 		mdb_fread			{ FLAGS = EXTERN };
 		mdb_free			{ FLAGS = EXTERN };
 		mdb_fwrite			{ FLAGS = EXTERN };
@@ -125,6 +128,7 @@ SYMBOL_SCOPE {
 		mdb_name_to_major		{ FLAGS = EXTERN };
 		mdb_nhconvert			{ FLAGS = EXTERN };
 		mdb_nicenum			{ FLAGS = EXTERN };
+		mdb_nicetime			{ FLAGS = EXTERN };
 		mdb_object_iter			{ FLAGS = EXTERN };
 		mdb_one_bit			{ FLAGS = EXTERN };
 		mdb_page2pfn			{ FLAGS = EXTERN };

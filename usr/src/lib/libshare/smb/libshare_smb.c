@@ -87,6 +87,7 @@ static int cmd_validator(int, char *);
 static int disposition_validator(int, char *);
 static int protocol_validator(int, char *);
 static int require_validator(int, char *);
+static int ciphers_validator(int, char *);
 
 static int smb_enable_resource(sa_resource_t);
 static int smb_disable_resource(sa_resource_t);
@@ -897,6 +898,8 @@ struct smb_proto_option_defs {
 	    SMB_REFRESH_REFRESH },
 	{ SMB_CI_ENCRYPT, 0, MAX_VALUE_BUFLEN, require_validator,
 	    SMB_REFRESH_REFRESH },
+	{ SMB_CI_ENCRYPT_CIPHERS, 0, MAX_VALUE_BUFLEN, ciphers_validator,
+	    SMB_REFRESH_REFRESH },
 	{ SMB_CI_BYPASS_TRAVERSE_CHECKING, 0, 0, true_false_validator,
 	    SMB_REFRESH_REFRESH },
 	{ SMB_CI_OPLOCK_ENABLE, 0, 0, true_false_validator,
@@ -964,7 +967,7 @@ range_check_validator_zero_ok(int index, char *value)
 		else {
 			if (val < smb_proto_options[index].minval ||
 			    val > smb_proto_options[index].maxval)
-			ret = SA_BAD_VALUE;
+				ret = SA_BAD_VALUE;
 		}
 	}
 	return (ret);
@@ -1528,7 +1531,7 @@ smb_set_proto_prop(sa_property_t prop)
 	if (opt->smb_index == SMB_CI_MAX_PROTOCOL ||
 	    opt->smb_index == SMB_CI_MIN_PROTOCOL)
 		if (strcmp(value, "3.1.1") == 0)
-			strcpy(value, "3.11");
+			(void) strcpy(value, "3.11");
 
 	/* Test for valid value */
 	if (opt->validator != NULL &&
@@ -2424,6 +2427,24 @@ protocol_validator(int index, char *value)
 		    opt->smb_index);
 		return (SA_BAD_VALUE);
 	}
+
+	return (SA_OK);
+}
+
+/*ARGSUSED*/
+static int
+ciphers_validator(int index, char *value)
+{
+
+	if (value == NULL)
+		return (SA_BAD_VALUE);
+
+	/* Allow setting back to empty (use defaults) */
+	if (*value == '\0')
+		return (SA_OK);
+
+	if (smb_convert_encrypt_ciphers(value) <= 0)
+		return (SA_BAD_VALUE);
 
 	return (SA_OK);
 }

@@ -85,19 +85,11 @@ UNSHIPPED_SUBDIRS = \
 	vtfontcvt \
 	zic
 
-sparc_SUBDIRS=			\
-	chk4ubin		\
-	stabs			\
-	tokenize
-
 i386_SUBDIRS=			\
-	aw			\
 	cpcgen			\
 	elfextract		\
 	mbh_patch		\
 	btxld
-
-$(INTEL_BLD)sgs: aw
 
 SUBDIRS=			\
 	$($(MACH)_SUBDIRS)	\

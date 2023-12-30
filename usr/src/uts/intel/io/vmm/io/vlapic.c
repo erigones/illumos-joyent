@@ -40,7 +40,7 @@
  *
  * Copyright 2014 Pluribus Networks Inc.
  * Copyright 2018 Joyent, Inc.
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 #include <sys/cdefs.h>
@@ -76,7 +76,7 @@ __FBSDID("$FreeBSD$");
  */
 #define	PRIO(x)			((x) & 0xf0)
 
-#define	VLAPIC_VERSION		(16)
+#define	VLAPIC_VERSION		(0x14)
 
 /*
  * The 'vlapic->timer_lock' is used to provide mutual exclusion between the
@@ -255,8 +255,17 @@ vlapic_get_ccr(struct vlapic *vlapic)
 			    vlapic->timer_cur_freq);
 		}
 	}
-	KASSERT(ccr <= lapic->icr_timer, ("vlapic_get_ccr: invalid ccr %x, "
-	    "icr_timer is %x", ccr, lapic->icr_timer));
+
+	/*
+	 * Clamp CCR value to that programmed in ICR - its theoretical maximum.
+	 * Normal operation should never result in this being necessary.  Only
+	 * strange circumstances due to state importation as part of instance
+	 * save/restore or live-migration require such wariness.
+	 */
+	if (ccr > lapic->icr_timer) {
+		ccr = lapic->icr_timer;
+		vlapic->stats.vs_clamp_ccr++;
+	}
 	VLAPIC_TIMER_UNLOCK(vlapic);
 	return (ccr);
 }
@@ -940,6 +949,91 @@ vlapic_get_cr8(const struct vlapic *vlapic)
 	return (lapic->tpr >> 4);
 }
 
+static bool
+vlapic_is_icr_valid(uint64_t icrval)
+{
+	uint32_t mode = icrval & APIC_DELMODE_MASK;
+	uint32_t level = icrval & APIC_LEVEL_MASK;
+	uint32_t trigger = icrval & APIC_TRIGMOD_MASK;
+	uint32_t shorthand = icrval & APIC_DEST_MASK;
+
+	switch (mode) {
+	case APIC_DELMODE_FIXED:
+		if (trigger == APIC_TRIGMOD_EDGE)
+			return (true);
+		/*
+		 * AMD allows a level assert IPI and Intel converts a level
+		 * assert IPI into an edge IPI.
+		 */
+		if (trigger == APIC_TRIGMOD_LEVEL && level == APIC_LEVEL_ASSERT)
+			return (true);
+		break;
+	case APIC_DELMODE_LOWPRIO:
+	case APIC_DELMODE_SMI:
+	case APIC_DELMODE_NMI:
+	case APIC_DELMODE_INIT:
+		if (trigger == APIC_TRIGMOD_EDGE &&
+		    (shorthand == APIC_DEST_DESTFLD ||
+		    shorthand == APIC_DEST_ALLESELF)) {
+			return (true);
+		}
+		/*
+		 * AMD allows a level assert IPI and Intel converts a level
+		 * assert IPI into an edge IPI.
+		 */
+		if (trigger == APIC_TRIGMOD_LEVEL &&
+		    level == APIC_LEVEL_ASSERT &&
+		    (shorthand == APIC_DEST_DESTFLD ||
+		    shorthand == APIC_DEST_ALLESELF)) {
+			return (true);
+		}
+		/*
+		 * An level triggered deassert INIT is defined in the Intel
+		 * Multiprocessor Specification and the Intel Software Developer
+		 * Manual. Due to the MPS it's required to send a level assert
+		 * INIT to a cpu and then a level deassert INIT. Some operating
+		 * systems e.g. FreeBSD or Linux use that algorithm. According
+		 * to the SDM a level deassert INIT is only supported by Pentium
+		 * and P6 processors. It's always send to all cpus regardless of
+		 * the destination or shorthand field. It resets the arbitration
+		 * id register. This register is not software accessible and
+		 * only required for the APIC bus arbitration. So, the level
+		 * deassert INIT doesn't need any emulation and we should ignore
+		 * it. The SDM also defines that newer processors don't support
+		 * the level deassert INIT and it's not valid any more. As it's
+		 * defined for older systems, it can't be invalid per se.
+		 * Otherwise, backward compatibility would be broken. However,
+		 * when returning false here, it'll be ignored which is the
+		 * desired behaviour.
+		 */
+		if (mode == APIC_DELMODE_INIT &&
+		    trigger == APIC_TRIGMOD_LEVEL &&
+		    level == APIC_LEVEL_DEASSERT) {
+			return (false);
+		}
+		break;
+	case APIC_DELMODE_STARTUP:
+		if (shorthand == APIC_DEST_DESTFLD ||
+		    shorthand == APIC_DEST_ALLESELF) {
+			return (true);
+		}
+		break;
+	case APIC_DELMODE_RR:
+		/* Only available on AMD! */
+		if (trigger == APIC_TRIGMOD_EDGE &&
+		    shorthand == APIC_DEST_DESTFLD) {
+			return (true);
+		}
+		break;
+	case APIC_DELMODE_RESV:
+		return (false);
+	default:
+		panic("vlapic_is_icr_valid: invalid mode 0x%08x", mode);
+	}
+
+	return (false);
+}
+
 void
 vlapic_icrlo_write_handler(struct vlapic *vlapic)
 {
@@ -953,6 +1047,12 @@ vlapic_icrlo_write_handler(struct vlapic *vlapic)
 	lapic->icr_lo &= ~APIC_DELSTAT_PEND;
 	icrval = ((uint64_t)lapic->icr_hi << 32) | lapic->icr_lo;
 
+	/*
+	 * Ignore invalid combinations of the icr.
+	 */
+	if (!vlapic_is_icr_valid(icrval))
+		return;
+
 	if (vlapic_x2mode(vlapic))
 		dest = icrval >> 32;
 	else
@@ -965,21 +1065,10 @@ vlapic_icrlo_write_handler(struct vlapic *vlapic)
 		vlapic_set_error(vlapic, APIC_ESR_SEND_ILLEGAL_VECTOR, false);
 		return;
 	}
+
 	if (mode == APIC_DELMODE_INIT &&
 	    (icrval & APIC_LEVEL_MASK) == APIC_LEVEL_DEASSERT) {
 		/* No work required to deassert INIT */
-		return;
-	}
-	if ((mode == APIC_DELMODE_STARTUP || mode == APIC_DELMODE_INIT) &&
-	    !(dsh == APIC_DEST_DESTFLD || dsh == APIC_DEST_ALLESELF)) {
-		/*
-		 * While Intel makes no mention of restrictions for destination
-		 * shorthand when sending INIT or SIPI, AMD requires either a
-		 * specific destination or all-excluding self.  Common use seems
-		 * to be restricted to those two cases.  Until handling is in
-		 * place to halt a guest which makes such a frivolous request,
-		 * we will ignore them.
-		 */
 		return;
 	}
 
@@ -1736,13 +1825,13 @@ vlapic_resume(struct vlapic *vlapic)
 }
 
 static int
-vlapic_data_read(void *datap, const vmm_data_req_t *req)
+vlapic_data_read(struct vm *vm, int vcpuid, const vmm_data_req_t *req)
 {
 	VERIFY3U(req->vdr_class, ==, VDC_LAPIC);
 	VERIFY3U(req->vdr_version, ==, 1);
 	VERIFY3U(req->vdr_len, >=, sizeof (struct vdi_lapic_v1));
 
-	struct vlapic *vlapic = datap;
+	struct vlapic *vlapic = vm_lapic(vm, vcpuid);
 	struct vdi_lapic_v1 *out = req->vdr_data;
 
 	VLAPIC_TIMER_LOCK(vlapic);
@@ -1888,13 +1977,13 @@ vlapic_data_validate(const struct vlapic *vlapic, const vmm_data_req_t *req)
 }
 
 static int
-vlapic_data_write(void *datap, const vmm_data_req_t *req)
+vlapic_data_write(struct vm *vm, int vcpuid, const vmm_data_req_t *req)
 {
 	VERIFY3U(req->vdr_class, ==, VDC_LAPIC);
 	VERIFY3U(req->vdr_version, ==, 1);
 	VERIFY3U(req->vdr_len, >=, sizeof (struct vdi_lapic_v1));
 
-	struct vlapic *vlapic = datap;
+	struct vlapic *vlapic = vm_lapic(vm, vcpuid);
 	if (vlapic_data_validate(vlapic, req) != VVE_OK) {
 		return (EINVAL);
 	}
@@ -1905,7 +1994,6 @@ vlapic_data_write(void *datap, const vmm_data_req_t *req)
 	VLAPIC_TIMER_LOCK(vlapic);
 
 	/* Already ensured by vlapic_data_validate() */
-	VERIFY3U(page->vlp_id, ==, lapic->id);
 	VERIFY3U(page->vlp_version, ==, lapic->version);
 
 	vlapic->msr_apicbase = src->vl_msr_apicbase;
@@ -1951,6 +2039,25 @@ vlapic_data_write(void *datap, const vmm_data_req_t *req)
 		vlapic->timer_fire_when =
 		    vm_denormalize_hrtime(vlapic->vm, src->vl_timer_target);
 
+		/*
+		 * Check to see if timer expiration would result computed CCR
+		 * values in excess of what is configured in ICR/DCR.
+		 */
+		const hrtime_t now = gethrtime();
+		if (vlapic->timer_fire_when > now) {
+			const uint32_t ccr = hrt_freq_count(
+			    vlapic->timer_fire_when - now,
+			    vlapic->timer_cur_freq);
+
+			/*
+			 * Until we have a richer event/logging system
+			 * available, just note such an overage as a stat.
+			 */
+			if (ccr > lapic->icr_timer) {
+				vlapic->stats.vs_import_timer_overage++;
+			}
+		}
+
 		if (!vm_is_paused(vlapic->vm)) {
 			vlapic_callout_reset(vlapic);
 		}
@@ -1970,7 +2077,7 @@ static const vmm_data_version_entry_t lapic_v1 = {
 	.vdve_class = VDC_LAPIC,
 	.vdve_version = 1,
 	.vdve_len_expect = sizeof (struct vdi_lapic_v1),
-	.vdve_readf = vlapic_data_read,
-	.vdve_writef = vlapic_data_write,
+	.vdve_vcpu_readf = vlapic_data_read,
+	.vdve_vcpu_writef = vlapic_data_write,
 };
 VMM_DATA_VERSION(lapic_v1);

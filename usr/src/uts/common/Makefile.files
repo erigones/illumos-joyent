@@ -28,8 +28,8 @@
 # Copyright 2021 Joyent, Inc.
 # Copyright 2016 OmniTI Computer Consulting, Inc.  All rights reserved.
 # Copyright 2016 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
-# Copyright 2022 RackTop Systems, Inc.
-# Copyright 2022 Oxide Computer Company
+# Copyright 2023 Oxide Computer Company
+# Copyright 2023 RackTop Systems, Inc.
 #
 
 #
@@ -83,6 +83,7 @@ COMMON_CORE_OBJS +=		\
 		strtoul.o	\
 		strtoll.o	\
 		strtoull.o	\
+		ilstr.o		\
 		thread_intr.o	\
 		vm_page.o	\
 		vm_pagelist.o	\
@@ -929,7 +930,7 @@ OCE_OBJS +=	oce_buf.o oce_fm.o oce_gld.o oce_hw.o oce_intr.o oce_main.o \
 
 FCT_OBJS += discovery.o fct.o
 
-QLT_OBJS += 2400.o 2500.o 8100.o qlt.o qlt_dma.o
+QLT_OBJS += 2400.o 2500.o 2700.o 8100.o 8300fc.o qlt.o qlt_dma.o
 
 SRPT_OBJS += srpt_mod.o srpt_ch.o srpt_cm.o srpt_ioc.o srpt_stp.o
 
@@ -996,7 +997,8 @@ VUIDPS2_OBJS += vuidmice.o vuidps2.o
 
 HPCSVC_OBJS += hpcsvc.o
 
-PCIE_MISC_OBJS += pcie.o pcie_fault.o pcie_hp.o pciehpc.o pcishpc.o pcie_pwr.o pciev.o
+PCIE_MISC_OBJS += pcie.o pcie_fault.o pcie_hp.o pciehpc.o pcishpc.o pcie_pwr.o \
+	pciev.o pci_props.o
 
 PCIHPNEXUS_OBJS += pcihp.o
 
@@ -1028,8 +1030,8 @@ FCTL_OBJS += fctl.o
 
 FP_OBJS += fp.o
 
-QLC_OBJS += ql_api.o ql_debug.o ql_hba_fru.o ql_init.o ql_iocb.o ql_ioctl.o \
-	ql_isr.o ql_mbx.o ql_nx.o ql_xioctl.o ql_fw_table.o
+QLC_OBJS += ql_api.o ql_debug.o ql_fm.o ql_hba_fru.o ql_init.o ql_iocb.o \
+	ql_ioctl.o ql_isr.o ql_mbx.o ql_nx.o ql_xioctl.o ql_fw_table.o
 
 QLC_FW_2200_OBJS += ql_fw_2200.o
 
@@ -1039,9 +1041,13 @@ QLC_FW_2400_OBJS += ql_fw_2400.o
 
 QLC_FW_2500_OBJS += ql_fw_2500.o
 
+QLC_FW_2700_OBJS += ql_fw_2700.o
+
 QLC_FW_6322_OBJS += ql_fw_6322.o
 
 QLC_FW_8100_OBJS += ql_fw_8100.o
+
+QLC_FW_8301FC_OBJS += ql_fw_8301fc.o
 
 QLGE_OBJS += qlge.o qlge_dbg.o qlge_flash.o qlge_fm.o qlge_gld.o qlge_mpi.o
 
@@ -1931,6 +1937,11 @@ MXFE_OBJS += mxfe.o
 
 MPTSAS_OBJS += mptsas.o mptsas_impl.o mptsas_init.o mptsas_raid.o mptsas_smhba.o
 
+SMARTPQI_OBJS += smartpqi_main.o smartpqi_intr.o smartpqi_hba.o \
+		smartpqi_util.o smartpqi_hw.o smartpqi_init.o \
+		smartpqi_sis.o
+
+
 SFE_OBJS += sfe.o sfe_util.o
 
 BFE_OBJS += bfe.o
@@ -1981,7 +1992,6 @@ CH_COM_OBJS =	ch_mac.o ch_subr.o cspi.o espi.o ixf1010.o mc3.o mc4.o mc5.o \
 #
 #	Chelsio Terminator 4 10G NIC nexus driver module
 #
-CXGBE_FW_OBJS  =	t4_fw.o t4_cfg.o t5_cfg.o t5_fw.o t6_cfg.o t6_fw.o
 CXGBE_COM_OBJS =	t4_hw.o common.o
 CXGBE_NEX_OBJS =	t4_nexus.o t4_sge.o t4_mac.o t4_ioctl.o shared.o \
 			t4_l2t.o osdep.o cudbg_lib.o cudbg_wtp.o fastlz.o \
@@ -2020,7 +2030,8 @@ XGE_HAL_OBJS =  xgehal-channel.o xgehal-fifo.o xgehal-ring.o  xgehal-config.o \
 E1000API_OBJS += e1000_80003es2lan.o e1000_82540.o e1000_82541.o e1000_82542.o \
 		e1000_82543.o e1000_82571.o e1000_api.o e1000_ich8lan.o \
 		e1000_mac.o e1000_manage.o e1000_nvm.o e1000_phy.o \
-		e1000_82575.o e1000_i210.o e1000_mbx.o e1000_vf.o
+		e1000_82575.o e1000_i210.o e1000_mbx.o e1000_vf.o \
+		e1000_illumos.o
 
 #
 #	e1000g module
@@ -2170,6 +2181,11 @@ MEGA_SAS_OBJS = megaraid_sas.o
 #	MR_SAS module
 #
 MR_SAS_OBJS = ld_pd_map.o mr_sas.o mr_sas_tbolt.o mr_sas_list.o
+
+#
+#	LMRC module
+#
+LMRC_OBJS += lmrc_ddi.o lmrc_ioctl.o lmrc_phys.o lmrc_raid.o lmrc_scsa.o lmrc.o
 
 #
 #	CPQARY3 module

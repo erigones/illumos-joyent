@@ -26,6 +26,7 @@
  * Copyright 2020 Joyent, Inc.
  * Copyright 2022 OmniOS Community Edition (OmniOSce) Association.
  * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
+ * Copyright 2023 Oxide Computer Company
  */
 
 #include <sys/types.h>
@@ -866,6 +867,19 @@ bd_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 		(void) ddi_prop_create(DDI_DEV_T_NONE, dip, DDI_PROP_CANSLEEP,
 		    "hotpluggable", NULL, 0);
 	}
+
+	/*
+	 * Before we proceed, we need to ensure that the geometry and labels on
+	 * the cmlb disk are reasonable. When cmlb first attaches, it does not
+	 * perform label validation and creates minor nodes based on the
+	 * assumption of the size. This may not be correct and the rest of the
+	 * system assumes that this will have been done before we allow opens
+	 * to proceed. Otherwise, on first open, this'll all end up changing
+	 * around on users. We do not care if it succeeds or not. It is totally
+	 * acceptable for this device to be unlabeled or not to have anything on
+	 * it.
+	 */
+	(void) cmlb_validate(bd->d_cmlbh, 0, 0);
 
 	hdl->h_bd = bd;
 	ddi_report_dev(dip);
@@ -2412,7 +2426,6 @@ bd_attach_handle(dev_info_t *dip, bd_handle_t hdl)
 int
 bd_detach_handle(bd_handle_t hdl)
 {
-	int	circ;
 	int	rv;
 	char	*devnm;
 
@@ -2425,7 +2438,7 @@ bd_detach_handle(bd_handle_t hdl)
 	if (hdl->h_child == NULL) {
 		return (DDI_SUCCESS);
 	}
-	ndi_devi_enter(hdl->h_parent, &circ);
+	ndi_devi_enter(hdl->h_parent);
 	if (i_ddi_node_state(hdl->h_child) < DS_INITIALIZED) {
 		rv = ddi_remove_child(hdl->h_child, 0);
 	} else {
@@ -2440,7 +2453,7 @@ bd_detach_handle(bd_handle_t hdl)
 		hdl->h_child = NULL;
 	}
 
-	ndi_devi_exit(hdl->h_parent, circ);
+	ndi_devi_exit(hdl->h_parent);
 	return (rv == NDI_SUCCESS ? DDI_SUCCESS : DDI_FAILURE);
 }
 
@@ -2556,6 +2569,12 @@ bd_state_change(bd_handle_t hdl)
 	if ((bd = hdl->h_bd) != NULL) {
 		bd_update_state(bd);
 	}
+}
+
+const char *
+bd_address(bd_handle_t hdl)
+{
+	return (hdl->h_addr);
 }
 
 void

@@ -14,7 +14,7 @@
  * Copyright 2015 Pluribus Networks Inc.
  * Copyright 2019 Joyent, Inc.
  * Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 #include <sys/types.h>
@@ -80,8 +80,16 @@ static list_t		vmm_list;
 static id_space_t	*vmm_minors;
 static void		*vmm_statep;
 
-/* temporary safety switch */
-int		vmm_allow_state_writes;
+/*
+ * Until device emulation in bhyve had been adequately scrutinized and tested,
+ * there was (justified) concern that unusual or corrupt device state payloads
+ * could crash the host when loaded via the vmm-data interface.
+ *
+ * Now that those concerns have been mitigated, this protection is loosened to
+ * default-allow, but the switch is left in place, in case there is a need to
+ * once again clamp down on vmm-data writes.
+ */
+int		vmm_allow_state_writes = 1;
 
 static const char *vmmdev_hvm_name = "bhyve";
 
@@ -464,7 +472,7 @@ vmmdev_do_ioctl(vmm_softc_t *sc, int cmd, intptr_t arg, int md,
 		if (ddi_copyin(datap, &vcpu, sizeof (vcpu), md)) {
 			return (EFAULT);
 		}
-		if (vcpu < 0 || vcpu > vm_get_maxcpus(sc->vmm_vm)) {
+		if (vcpu < 0 || vcpu >= vm_get_maxcpus(sc->vmm_vm)) {
 			return (EINVAL);
 		}
 		vcpu_lock_one(sc, vcpu);
@@ -533,6 +541,7 @@ vmmdev_do_ioctl(vmm_softc_t *sc, int cmd, intptr_t arg, int md,
 	case VM_SET_AUTODESTRUCT:
 	case VM_DESTROY_SELF:
 	case VM_DESTROY_PENDING:
+	case VM_VCPU_BARRIER:
 	default:
 		break;
 	}
@@ -579,7 +588,7 @@ vmmdev_do_ioctl(vmm_softc_t *sc, int cmd, intptr_t arg, int md,
 			error = EFAULT;
 			break;
 		}
-		error = vm_suspend(sc->vmm_vm, vmsuspend.how);
+		error = vm_suspend(sc->vmm_vm, vmsuspend.how, vmsuspend.source);
 		break;
 	}
 	case VM_REINIT: {
@@ -1511,6 +1520,11 @@ vmmdev_do_ioctl(vmm_softc_t *sc, int cmd, intptr_t arg, int md,
 		}
 		break;
 
+	case VM_VCPU_BARRIER:
+		vcpu = arg;
+		error = vm_vcpu_barrier(sc->vmm_vm, vcpu);
+		break;
+
 	case VM_GET_CPUS: {
 		struct vm_cpuset vm_cpuset;
 		cpuset_t tempset;
@@ -1537,8 +1551,6 @@ vmmdev_do_ioctl(vmm_softc_t *sc, int cmd, intptr_t arg, int md,
 
 		if (vm_cpuset.which == VM_ACTIVE_CPUS) {
 			tempset = vm_active_cpus(sc->vmm_vm);
-		} else if (vm_cpuset.which == VM_SUSPENDED_CPUS) {
-			tempset = vm_suspended_cpus(sc->vmm_vm);
 		} else if (vm_cpuset.which == VM_DEBUG_CPUS) {
 			tempset = vm_debug_cpus(sc->vmm_vm);
 		} else {
@@ -1604,20 +1616,20 @@ vmmdev_do_ioctl(vmm_softc_t *sc, int cmd, intptr_t arg, int md,
 		break;
 	}
 	case VM_RTC_SETTIME: {
-		struct vm_rtc_time rtctime;
+		timespec_t ts;
 
-		if (ddi_copyin(datap, &rtctime, sizeof (rtctime), md)) {
+		if (ddi_copyin(datap, &ts, sizeof (ts), md)) {
 			error = EFAULT;
 			break;
 		}
-		error = vrtc_set_time(sc->vmm_vm, rtctime.secs);
+		error = vrtc_set_time(sc->vmm_vm, &ts);
 		break;
 	}
 	case VM_RTC_GETTIME: {
-		struct vm_rtc_time rtctime;
+		timespec_t ts;
 
-		rtctime.secs = vrtc_get_time(sc->vmm_vm);
-		if (ddi_copyout(&rtctime, datap, sizeof (rtctime), md)) {
+		vrtc_get_time(sc->vmm_vm, &ts);
+		if (ddi_copyout(&ts, datap, sizeof (ts), md)) {
 			error = EFAULT;
 			break;
 		}
@@ -1739,14 +1751,15 @@ vmmdev_do_ioctl(vmm_softc_t *sc, int cmd, intptr_t arg, int md,
 		const size_t len = vdx.vdx_len;
 		void *buf = NULL;
 		if (len != 0) {
+			const void *udata = vdx.vdx_data;
+
 			buf = kmem_alloc(len, KM_SLEEP);
-			if ((vdx.vdx_flags & VDX_FLAG_READ_COPYIN) != 0 &&
-			    ddi_copyin(vdx.vdx_data, buf, len, md) != 0) {
+			if ((vdx.vdx_flags & VDX_FLAG_READ_COPYIN) == 0) {
+				bzero(buf, len);
+			} else if (ddi_copyin(udata, buf, len, md) != 0) {
 				kmem_free(buf, len);
 				error = EFAULT;
 				break;
-			} else {
-				bzero(buf, len);
 			}
 		}
 
@@ -1817,12 +1830,15 @@ vmmdev_do_ioctl(vmm_softc_t *sc, int cmd, intptr_t arg, int md,
 			.vdr_data = buf,
 			.vdr_result_len = &vdx.vdx_result_len,
 		};
-		if (vmm_allow_state_writes == 0) {
-			/* XXX: Play it safe for now */
-			error = EPERM;
-		} else {
+		if (vmm_allow_state_writes != 0) {
 			error = vmm_data_write(sc->vmm_vm, vdx.vdx_vcpuid,
 			    &req);
+		} else {
+			/*
+			 * Reject the write if somone has thrown the switch back
+			 * into the "disallow" position.
+			 */
+			error = EPERM;
 		}
 
 		if (error == 0 && buf != NULL &&
@@ -2336,6 +2352,21 @@ vmm_drv_page_hold(vmm_lease_t *lease, uintptr_t gpa, int prot)
 	return ((vmm_page_t *)vmc_hold(lease->vml_vmclient, gpa, prot));
 }
 
+
+/* Ensure that flags mirrored by vmm_drv interface properly match up */
+CTASSERT(VMPF_DEFER_DIRTY == VPF_DEFER_DIRTY);
+
+vmm_page_t *
+vmm_drv_page_hold_ext(vmm_lease_t *lease, uintptr_t gpa, int prot, int flags)
+{
+	ASSERT(lease != NULL);
+	ASSERT0(gpa & PAGEOFFSET);
+
+	vmm_page_t *page =
+	    (vmm_page_t *)vmc_hold_ext(lease->vml_vmclient, gpa, prot, flags);
+	return (page);
+}
+
 void
 vmm_drv_page_release(vmm_page_t *vmmp)
 {
@@ -2358,6 +2389,12 @@ void *
 vmm_drv_page_writable(const vmm_page_t *vmmp)
 {
 	return (vmp_get_writable((const vm_page_t *)vmmp));
+}
+
+void
+vmm_drv_page_mark_dirty(vmm_page_t *vmmp)
+{
+	return (vmp_mark_dirty((vm_page_t *)vmmp));
 }
 
 void
@@ -2953,8 +2990,7 @@ vmm_ctl_ioctl(int cmd, intptr_t arg, int md, cred_t *cr, int *rvalp)
 		}
 		return (0);
 	case VMM_RESV_QUERY:
-	case VMM_RESV_ADD:
-	case VMM_RESV_REMOVE:
+	case VMM_RESV_SET_TARGET:
 		return (vmmr_ioctl(cmd, arg, md, cr, rvalp));
 	default:
 		break;
@@ -3335,8 +3371,13 @@ _init(void)
 		return (error);
 	}
 
+	error = vmmr_init();
+	if (error) {
+		ddi_soft_state_fini(&vmm_statep);
+		return (error);
+	}
+
 	vmm_zsd_init();
-	vmmr_init();
 
 	error = mod_install(&modlinkage);
 	if (error) {

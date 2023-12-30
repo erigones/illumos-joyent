@@ -161,9 +161,10 @@ typedef enum {
 	SMB_CI_ENCRYPT,
 	SMB_CI_MIN_PROTOCOL,
 	SMB_CI_BYPASS_TRAVERSE_CHECKING,
-	SMB_CI_ENCRYPT_CIPHER,
+	SMB_CI_ENCRYPT_CIPHERS,
 	SMB_CI_NETLOGON_FLAGS,
 	SMB_CI_SHORT_NAMES,
+	SMB_CI_MAX_OPENS,
 
 	SMB_CI_MAX
 } smb_cfg_id_t;
@@ -225,7 +226,8 @@ extern uint32_t smb_config_get_max_protocol(void);
 extern uint32_t smb_config_get_min_protocol(void);
 extern uint32_t smb_convert_version_str(const char *);
 extern void smb_config_upgrade(void);
-extern uint16_t smb31_config_get_encrypt_cipher(void);
+extern uint32_t smb_config_get_encrypt_ciphers(void);
+extern int smb_convert_encrypt_ciphers(char *);
 
 extern smb_cfg_val_t smb_config_get_require(smb_cfg_id_t);
 
@@ -261,7 +263,7 @@ int smb_join(smb_joininfo_t *, smb_joinres_t *info);
 bool_t smb_joininfo_xdr(XDR *, smb_joininfo_t *);
 bool_t smb_joinres_xdr(XDR *, smb_joinres_t *);
 boolean_t smb_find_ads_server(char *, char *, int);
-void smb_notify_dc_changed(void);
+int smb_notify_dc_changed(void);
 
 extern void smb_config_getdomaininfo(char *, char *, char *, char *, char *);
 extern void smb_config_setdomaininfo(char *, char *, char *, char *, char *);
@@ -911,6 +913,7 @@ void smb_kmod_unbind(void);
 int smb_kmod_share(nvlist_t *);
 int smb_kmod_unshare(nvlist_t *);
 int smb_kmod_shareinfo(char *, boolean_t *);
+int smb_kmod_shareaccess(smb_netuserinfo_t *, smb_share_t *);
 int smb_kmod_get_open_num(smb_opennum_t *);
 int smb_kmod_enum(smb_netsvc_t *);
 smb_netsvc_t *smb_kmod_enum_init(smb_svcenum_t *);

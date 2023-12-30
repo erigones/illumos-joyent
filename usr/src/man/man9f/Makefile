@@ -15,8 +15,9 @@
 # Copyright 2020-2021 Tintri by DDN, Inc. All rights reserved.
 # Copyright 2016 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
 # Copyright 2022 RackTop Systems, Inc.
-# Copyright 2022 Oxide Computer Company
+# Copyright 2023 Oxide Computer Company
 # Copyright 2022 Garrett D'Amore
+# Copyright 2023 Peter Tribble
 #
 
 include		$(SRC)/Makefile.master
@@ -332,11 +333,14 @@ MANFILES=	ASSERT.9f				\
 		linkb.9f				\
 		list_create.9f				\
 		mac_alloc.9f				\
+		mac_devt_to_instance.9f			\
+		mac_getinfo.9f				\
 		mac_hcksum_get.9f			\
 		mac_init_ops.9f				\
 		mac_link_update.9f			\
 		mac_lso_get.9f				\
 		mac_maxsdu_update.9f			\
+		mac_private_minor.9f			\
 		mac_prop_info.9f			\
 		mac_register.9f				\
 		mac_rx.9f				\
@@ -884,6 +888,7 @@ MANLINKS=	AVL_NEXT.9f					\
 		ddi_taskq_dispatch.9f				\
 		ddi_taskq_resume.9f				\
 		ddi_taskq_suspend.9f				\
+		ddi_taskq_suspended.9f				\
 		ddi_taskq_wait.9f				\
 		ddi_trigger_softintr.9f				\
 		ddi_ufm_fini.9f					\
@@ -910,9 +915,7 @@ MANLINKS=	AVL_NEXT.9f					\
 		dluderrorind.9f					\
 		esballoca.9f					\
 		firmware_close.9f				\
-		firmware_free.9f				\
 		firmware_get_size.9f				\
-		firmware_malloc.9f				\
 		firmware_open.9f				\
 		firmware_read.9f				\
 		free_pktiopb.9f					\
@@ -996,7 +999,7 @@ MANLINKS=	AVL_NEXT.9f					\
 		mac_prop_info_set_default_uint8.9f		\
 		mac_prop_info_set_perm.9f			\
 		mac_prop_info_set_range_uint32.9f		\
-		mac_ring_rx.9f					\
+		mac_rx_ring.9f					\
 		mac_transceiver_info_set_present.9f		\
 		mac_transceiver_info_set_usable.9f		\
 		mac_tx_ring_update.9f				\
@@ -1219,7 +1222,6 @@ MANLINKS=	AVL_NEXT.9f					\
 		strnlen.9f					\
 		strrchr.9f					\
 		strspn.9f					\
-		taskq_suspended.9f				\
 		uconv_u16tou8.9f				\
 		uconv_u32tou16.9f				\
 		uconv_u32tou8.9f				\
@@ -1721,9 +1723,7 @@ esballoca.9f				:= LINKSRC = esballoc.9f
 unfreezestr.9f				:= LINKSRC = freezestr.9f
 
 firmware_close.9f			:= LINKSRC = firmload.9f
-firmware_free.9f			:= LINKSRC = firmload.9f
 firmware_get_size.9f			:= LINKSRC = firmload.9f
-firmware_malloc.9f			:= LINKSRC = firmload.9f
 firmware_open.9f			:= LINKSRC = firmload.9f
 firmware_read.9f			:= LINKSRC = firmload.9f
 
@@ -1826,7 +1826,7 @@ mac_prop_info_set_default_uint64.9f	:= LINKSRC = mac_prop_info.9f
 mac_prop_info_set_perm.9f		:= LINKSRC = mac_prop_info.9f
 mac_prop_info_set_range_uint32.9f	:= LINKSRC = mac_prop_info.9f
 
-mac_ring_rx.9f				:= LINKSRC = mac_rx.9f
+mac_rx_ring.9f				:= LINKSRC = mac_rx.9f
 
 mac_transceiver_info_set_present.9f	:= LINKSRC = mac_transceiver_info.9f
 mac_transceiver_info_set_usable.9f	:= LINKSRC = mac_transceiver_info.9f
@@ -2109,8 +2109,8 @@ ddi_taskq_destroy.9f			:= LINKSRC = taskq.9f
 ddi_taskq_dispatch.9f			:= LINKSRC = taskq.9f
 ddi_taskq_resume.9f			:= LINKSRC = taskq.9f
 ddi_taskq_suspend.9f			:= LINKSRC = taskq.9f
+ddi_taskq_suspended.9f			:= LINKSRC = taskq.9f
 ddi_taskq_wait.9f			:= LINKSRC = taskq.9f
-taskq_suspended.9f			:= LINKSRC = taskq.9f
 
 uconv_u16tou8.9f			:= LINKSRC = uconv_u16tou32.9f
 uconv_u32tou16.9f			:= LINKSRC = uconv_u16tou32.9f

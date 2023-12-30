@@ -42,6 +42,7 @@
 #include <efi.h>
 #include <efilib.h>
 #include <efigpt.h>
+#include <efichar.h>
 
 #include <uuid.h>
 
@@ -146,24 +147,15 @@ has_keyboard(void)
 {
 	EFI_STATUS status;
 	EFI_DEVICE_PATH *path;
-	EFI_HANDLE *hin, *hin_end, *walker;
-	UINTN sz;
+	EFI_HANDLE *hin;
+	uint_t i, nhandles;
 	bool retval = false;
 
 	/*
 	 * Find all the handles that support the SIMPLE_TEXT_INPUT_PROTOCOL and
 	 * do the typical dance to get the right sized buffer.
 	 */
-	sz = 0;
-	hin = NULL;
-	status = BS->LocateHandle(ByProtocol, &inputid, 0, &sz, 0);
-	if (status == EFI_BUFFER_TOO_SMALL) {
-		hin = (EFI_HANDLE *)malloc(sz);
-		status = BS->LocateHandle(ByProtocol, &inputid, 0, &sz,
-		    hin);
-		if (EFI_ERROR(status))
-			free(hin);
-	}
+	status = efi_get_protocol_handles(&inputid, &nhandles, &hin);
 	if (EFI_ERROR(status))
 		return (retval);
 
@@ -173,9 +165,8 @@ has_keyboard(void)
 	 * device path matches either the USB device path for keyboards or the
 	 * legacy device path for keyboards.
 	 */
-	hin_end = &hin[sz / sizeof (*hin)];
-	for (walker = hin; walker < hin_end; walker++) {
-		status = OpenProtocolByHandle(*walker, &devid, (void **)&path);
+	for (i = 0; i < nhandles; i++) {
+		status = OpenProtocolByHandle(hin[i], &devid, (void **)&path);
 		if (EFI_ERROR(status))
 			continue;
 
@@ -629,16 +620,11 @@ efi_serial_get_uid(EFI_DEVICE_PATH *devpath)
 static const char *
 uefi_serial_console(void)
 {
-	UINTN bufsz;
 	EFI_STATUS status;
 	EFI_HANDLE *handles;
-	int i, nhandles;
+	uint_t i, nhandles;
 	unsigned long uid, lowest;
 	char *env, *ep;
-	extern struct console ttya;
-	extern struct console ttyb;
-	extern struct console ttyc;
-	extern struct console ttyd;
 
 	env = getenv("efi_8250_uid");
 	if (env == NULL)
@@ -651,28 +637,12 @@ uefi_serial_console(void)
 
 	/* if uid is 0, this is first serial port */
 	if (uid == 0)
-		return (ttya.c_name);
+		return ("ttya");
 
-	/*
-	 * get buffer size
-	 */
-	bufsz = 0;
-	handles = NULL;
-	status = BS->LocateHandle(ByProtocol, &serialio, NULL, &bufsz, handles);
-	if (status != EFI_BUFFER_TOO_SMALL)
-		return (NULL);
-	if ((handles = malloc(bufsz)) == NULL)
-		return (NULL);
-
-	/*
-	 * get handle array
-	 */
-	status = BS->LocateHandle(ByProtocol, &serialio, NULL, &bufsz, handles);
+	status = efi_get_protocol_handles(&serialio, &nhandles, &handles);
 	if (EFI_ERROR(status)) {
-		free(handles);
 		return (NULL);
 	}
-	nhandles = (int)(bufsz / sizeof (EFI_HANDLE));
 
 	lowest = 255;	/* high enough value */
 	for (i = 0; i < nhandles; i++) {
@@ -687,13 +657,13 @@ uefi_serial_console(void)
 	free(handles);
 	switch (uid - lowest) {
 	case 0:
-		return (ttya.c_name);
+		return ("ttya");
 	case 1:
-		return (ttyb.c_name);
+		return ("ttyb");
 	case 2:
-		return (ttyc.c_name);
+		return ("ttyc");
 	case 3:
-		return (ttyd.c_name);
+		return ("ttyd");
 	}
 	return (NULL);
 }
@@ -748,11 +718,11 @@ main(int argc, CHAR16 *argv[])
 
 		(void) snprintf(var, sizeof (var), "%s,8,n,1,-", s);
 		if (asprintf(&name, "%s-mode", serial) > 0) {
-			(void) setenv (name, var, 1);
+			(void) setenv(name, var, 1);
 			free(name);
 		}
 		if (asprintf(&name, "%s-spcr-mode", serial) > 0) {
-			(void) setenv (name, var, 1);
+			(void) setenv(name, var, 1);
 			free(name);
 		}
 		(void) unsetenv("efi_com_speed");
@@ -962,7 +932,6 @@ main(int argc, CHAR16 *argv[])
 
 	autoload_font(false);		/* Set up the font list for console. */
 	efi_init_environment();
-	setenv("ISADIR", "amd64", 1);	/* we only build 64bit */
 	bi_isadir();			/* set ISADIR */
 	acpi_detect();
 
@@ -977,10 +946,59 @@ main(int argc, CHAR16 *argv[])
 
 COMMAND_SET(reboot, "reboot", "reboot the system", command_reboot);
 
-static int
-command_reboot(int argc __unused, char *argv[] __unused)
+static void
+fw_setup(void)
 {
-	int i;
+	uint64_t os_indications;
+	size_t size;
+	EFI_STATUS status;
+
+	size = sizeof (os_indications);
+	status = efi_global_getenv("OsIndicationsSupported",
+	    &os_indications, &size);
+	if (EFI_ERROR(status) || size != sizeof (os_indications) ||
+	    (os_indications & EFI_OS_INDICATIONS_BOOT_TO_FW_UI) == 0) {
+		printf("Booting to Firmware UI is not supported in "
+		    "this system.");
+		for (int i = 0; i < 3; i++) {
+			delay(1000 * 1000); /* 1 second */
+			if (ischar())
+				break;
+		}
+		return;
+	}
+
+	os_indications = EFI_OS_INDICATIONS_BOOT_TO_FW_UI;
+
+	status = efi_global_setenv("OsIndications", &os_indications,
+	    sizeof (os_indications));
+}
+
+static int
+command_reboot(int argc, char *argv[])
+{
+	int i, ch;
+	bool fw = false;
+
+	optind = 1;
+	optreset = 1;
+
+	while ((ch = getopt(argc, argv, "fh")) != -1) {
+		switch (ch) {
+		case 'f':
+			fw = true;
+			break;
+		case 'h':
+			printf("Usage: reboot [-f]\n");
+			return (CMD_OK);
+		case '?':
+		default:
+			return (CMD_OK);
+		}
+	}
+
+	if (fw || getenv("BOOT_TO_FW_UI") != NULL)
+		fw_setup();
 
 	for (i = 0; devsw[i] != NULL; ++i)
 		if (devsw[i]->dv_cleanup != NULL)
@@ -1206,12 +1224,27 @@ command_lsefi(int argc __unused, char *argv[] __unused)
 	for (i = 0; i < (bufsz / sizeof (EFI_HANDLE)); i++) {
 		UINTN nproto = 0;
 		EFI_GUID **protocols = NULL;
+		EFI_DEVICE_PATH *dp;
+		CHAR16 *text;
 
 		handle = buffer[i];
 		printf("Handle %p", handle);
 		if (pager_output("\n"))
 			break;
-		/* device path */
+
+		ret = 0;
+		dp = efi_lookup_devpath(handle);
+		if (dp != NULL) {
+			text = efi_devpath_name(dp);
+			if (text != NULL) {
+				printf("  %S", text);
+				efi_free_devpath_name(text);
+				ret = pager_output("\n");
+			}
+			efi_close_devpath(handle);
+		}
+		if (ret != 0)
+			break;
 
 		status = BS->ProtocolsPerHandle(handle, &protocols, &nproto);
 		if (EFI_ERROR(status)) {
@@ -1237,27 +1270,6 @@ command_lsefi(int argc __unused, char *argv[] __unused)
 	}
 	pager_close();
 	free(buffer);
-	return (CMD_OK);
-}
-
-COMMAND_SET(lszfs, "lszfs", "list child datasets of a zfs dataset",
-    command_lszfs);
-
-static int
-command_lszfs(int argc, char *argv[])
-{
-	int err;
-
-	if (argc != 2) {
-		command_errmsg = "wrong number of arguments";
-		return (CMD_ERROR);
-	}
-
-	err = zfs_list(argv[1]);
-	if (err != 0) {
-		command_errmsg = strerror(err);
-		return (CMD_ERROR);
-	}
 	return (CMD_OK);
 }
 

@@ -48,7 +48,6 @@ DEBUG_DEFS	+= $(DEBUG_FLGS)
 # Please do not carry these forward to new Makefiles.
 #
 CFLAGS += $(CCVERBOSE)
-CERRWARN += -erroff=E_STATEMENT_NOT_REACHED
 CERRWARN += -_gcc=-Wno-unused-variable
 CERRWARN += -_gcc=-Wno-parentheses
 CERRWARN += $(CNOWARN_UNINIT)
@@ -56,6 +55,8 @@ CERRWARN += -_gcc=-Wno-unused-function
 SMOFF += all_func_returns
 
 CFLAGS += -DPWRDMN -DACPI_USE_LOCAL_CACHE -DACPI_DEBUG_OUTPUT
+
+$(OBJS_DIR)/utdebug.o := CERRWARN += -_gcc12=-Wno-dangling-pointer
 
 #
 #	Default build targets.

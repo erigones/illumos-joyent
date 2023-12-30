@@ -16,7 +16,8 @@
 # Copyright 2016 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
 # Copyright 2019 Joyent, Inc.
 # Copyright 2022 RackTop Systems, Inc.
-# Copyright 2022 Oxide Computer Company
+# Copyright 2023 Oxide Computer Company
+# Copyright 2023 Peter Tribble
 #
 
 file path=usr/share/man/man9f/ASSERT.9f
@@ -603,6 +604,7 @@ link path=usr/share/man/man9f/ddi_taskq_destroy.9f target=taskq.9f
 link path=usr/share/man/man9f/ddi_taskq_dispatch.9f target=taskq.9f
 link path=usr/share/man/man9f/ddi_taskq_resume.9f target=taskq.9f
 link path=usr/share/man/man9f/ddi_taskq_suspend.9f target=taskq.9f
+link path=usr/share/man/man9f/ddi_taskq_suspended.9f target=taskq.9f
 link path=usr/share/man/man9f/ddi_taskq_wait.9f target=taskq.9f
 link path=usr/share/man/man9f/ddi_trigger_softintr.9f target=ddi_add_softintr.9f
 file path=usr/share/man/man9f/ddi_ufm.9f
@@ -657,9 +659,7 @@ link path=usr/share/man/man9f/esballoca.9f target=esballoc.9f
 file path=usr/share/man/man9f/esbbcall.9f
 file path=usr/share/man/man9f/firmload.9f
 link path=usr/share/man/man9f/firmware_close.9f target=firmload.9f
-link path=usr/share/man/man9f/firmware_free.9f target=firmload.9f
 link path=usr/share/man/man9f/firmware_get_size.9f target=firmload.9f
-link path=usr/share/man/man9f/firmware_malloc.9f target=firmload.9f
 link path=usr/share/man/man9f/firmware_open.9f target=firmload.9f
 link path=usr/share/man/man9f/firmware_read.9f target=firmload.9f
 file path=usr/share/man/man9f/flushband.9f
@@ -795,14 +795,17 @@ link path=usr/share/man/man9f/list_remove_head.9f target=list_create.9f
 link path=usr/share/man/man9f/list_remove_tail.9f target=list_create.9f
 link path=usr/share/man/man9f/list_tail.9f target=list_create.9f
 file path=usr/share/man/man9f/mac_alloc.9f
+file path=usr/share/man/man9f/mac_devt_to_instance.9f
 link path=usr/share/man/man9f/mac_fini_ops.9f target=mac_init_ops.9f
 link path=usr/share/man/man9f/mac_free.9f target=mac_alloc.9f
+file path=usr/share/man/man9f/mac_getinfo.9f
 file path=usr/share/man/man9f/mac_hcksum_get.9f
 link path=usr/share/man/man9f/mac_hcksum_set.9f target=mac_hcksum_get.9f
 file path=usr/share/man/man9f/mac_init_ops.9f
 file path=usr/share/man/man9f/mac_link_update.9f
 file path=usr/share/man/man9f/mac_lso_get.9f
 file path=usr/share/man/man9f/mac_maxsdu_update.9f
+file path=usr/share/man/man9f/mac_private_minor.9f
 file path=usr/share/man/man9f/mac_prop_info.9f
 link path=usr/share/man/man9f/mac_prop_info_set_default_fec.9f \
     target=mac_prop_info.9f
@@ -820,8 +823,8 @@ link path=usr/share/man/man9f/mac_prop_info_set_perm.9f target=mac_prop_info.9f
 link path=usr/share/man/man9f/mac_prop_info_set_range_uint32.9f \
     target=mac_prop_info.9f
 file path=usr/share/man/man9f/mac_register.9f
-link path=usr/share/man/man9f/mac_ring_rx.9f target=mac_rx.9f
 file path=usr/share/man/man9f/mac_rx.9f
+link path=usr/share/man/man9f/mac_rx_ring.9f target=mac_rx.9f
 file path=usr/share/man/man9f/mac_transceiver_info.9f
 link path=usr/share/man/man9f/mac_transceiver_info_set_present.9f \
     target=mac_transceiver_info.9f
@@ -1288,7 +1291,6 @@ link path=usr/share/man/man9f/strrchr.9f target=string.9f
 link path=usr/share/man/man9f/strspn.9f target=string.9f
 file path=usr/share/man/man9f/swab.9f
 file path=usr/share/man/man9f/taskq.9f
-link path=usr/share/man/man9f/taskq_suspended.9f target=taskq.9f
 file path=usr/share/man/man9f/testb.9f
 file path=usr/share/man/man9f/timeout.9f
 file path=usr/share/man/man9f/u8_strcmp.9f

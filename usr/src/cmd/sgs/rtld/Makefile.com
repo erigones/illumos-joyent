@@ -95,12 +95,12 @@ CPPFLAGS +=	-I$(SRC)/lib/libc/inc \
 		-I$(ELFCAP) \
 		 $(CPPFEATUREMACROS)
 
-ASFLAGS=	-P -D_ASM $(CPPFLAGS)
+ASFLAGS +=	-D_ASM $(CPPFLAGS)
+ASFLAGS64 +=	-D_ASM $(CPPFLAGS)
 LDLIB =		-L ../../libld/$(MACH)
 RTLDLIB =	-L ../../librtld/$(MACH)
 
 CERRWARN +=	$(CNOWARN_UNINIT)
-CERRWARN +=	-_gcc=-Wno-unused-variable
 
 # not linted
 SMATCH=off
@@ -120,8 +120,6 @@ LDLIBS +=	$(CONVLIBDIR) -lconv \
 
 DYNFLAGS +=	-i -e _rt_boot $(VERSREF) $(ZNODLOPEN) \
 		$(ZINTERPOSE) -zdtrace=dtrace_data '-R$$ORIGIN'
-
-BUILD.s=	$(AS) $(ASFLAGS) $< -o $@
 
 BLTDEFS=	msg.h
 BLTDATA=	msg.c
@@ -153,7 +151,7 @@ SRCS=		$(AVLOBJ:%.o=$(SRC)/common/avl/%.c) \
 		$(COMOBJS:%.o=../common/%.c)  $(MACHOBJS:%.o=%.c) $(BLTDATA) \
 		$(G_MACHOBJS:%.o=$(SRC)/uts/$(PLAT)/krtld/%.c) \
 		$(CP_MACHOBJS:%.o=../$(MACH)/%.c) \
-		$(ASOBJS:%.o=%.s)
+		$(ASOBJS:%.o=%.S)
 
 CLEANFILES +=	$(CRTS) $(BLTFILES)
 CLOBBERFILES +=	$(RTLD)

@@ -68,6 +68,9 @@
 #include <vm/as.h>
 #include <vm/seg_kmem.h>
 
+
+static void vmm_tsc_init(void);
+
 SET_DECLARE(sysinit_set, struct sysinit);
 
 void
@@ -78,19 +81,6 @@ sysinit(void)
 	SET_FOREACH(si, sysinit_set)
 		(*si)->func((*si)->data);
 }
-
-uint8_t const bin2bcd_data[] = {
-	0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
-	0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19,
-	0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29,
-	0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39,
-	0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49,
-	0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59,
-	0x60, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69,
-	0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79,
-	0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89,
-	0x90, 0x91, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, 0x98, 0x99
-};
 
 void
 invalidate_cache_all(void)
@@ -410,6 +400,7 @@ vmm_sol_glue_init(void)
 {
 	vmm_ptp_init();
 	vmm_cpuid_init();
+	vmm_tsc_init();
 }
 
 void
@@ -599,9 +590,11 @@ clock_ts_to_ct(struct timespec *ts, struct clocktime *ct)
 #endif
 }
 
-/* Equivalent to the FreeBSD rdtsc(), but with any necessary per-cpu offset */
-uint64_t
-rdtsc_offset(void)
+/* Do the host CPU TSCs require offsets be applied for proper sync? */
+static bool vmm_host_tsc_offset;
+
+static void
+vmm_tsc_init(void)
 {
 	/*
 	 * The timestamp logic will decide if a delta need be applied to the
@@ -612,7 +605,36 @@ rdtsc_offset(void)
 	extern hrtime_t tsc_gethrtimeunscaled(void);
 	extern hrtime_t tsc_gethrtimeunscaled_delta(void);
 
-	ASSERT(*gethrtimeunscaledf == tsc_gethrtimeunscaled ||
+	VERIFY(*gethrtimeunscaledf == tsc_gethrtimeunscaled ||
 	    *gethrtimeunscaledf == tsc_gethrtimeunscaled_delta);
+
+	/*
+	 * If a delta is being applied to the TSC on a per-host-CPU basis,
+	 * expose that delta via vmm_host_tsc_delta().
+	 */
+	vmm_host_tsc_offset =
+	    (*gethrtimeunscaledf == tsc_gethrtimeunscaled_delta);
+
+}
+
+/* Equivalent to the FreeBSD rdtsc(), but with any necessary per-cpu offset */
+uint64_t
+rdtsc_offset(void)
+{
 	return ((uint64_t)gethrtimeunscaledf());
+}
+
+/*
+ * The delta (if any) which needs to be applied to the TSC of this host CPU to
+ * bring it in sync with the others.
+ */
+uint64_t
+vmm_host_tsc_delta(void)
+{
+	if (vmm_host_tsc_offset) {
+		extern hrtime_t tsc_gethrtime_tick_delta(void);
+		return (tsc_gethrtime_tick_delta());
+	} else {
+		return (0);
+	}
 }

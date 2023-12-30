@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 /*
@@ -1511,16 +1511,16 @@ static const pcieadm_regdef_t pcieadm_regdef_pcie_slotcap[] = {
 };
 
 static const pcieadm_regdef_t pcieadm_regdef_pcie_slotctl[] = {
-	{ 0, 0, "attnbtn", "Attention Button Pressed", PRDV_STRVAL,
+	{ 0, 0, "attnbtn", "Attention Button Pressed Reporting", PRDV_STRVAL,
 	    .prd_val = { .prdv_strval = { "disabled", "enabled" } } },
-	{ 1, 1, "pwrflt", "Power Fault Detected", PRDV_STRVAL,
+	{ 1, 1, "pwrflt", "Power Fault Detected Reporting", PRDV_STRVAL,
 	    .prd_val = { .prdv_strval = { "disabled", "enabled" } } },
-	{ 2, 2, "mrlchg", "MRL Sensor Changed", PRDV_STRVAL,
+	{ 2, 2, "mrlchg", "MRL Sensor Changed Reporting", PRDV_STRVAL,
 	    .prd_val = { .prdv_strval = { "disabled", "enabled" } } },
-	{ 3, 3, "preschg", "Presence Detect Changed", PRDV_STRVAL,
+	{ 3, 3, "preschg", "Presence Detect Changed Reporting", PRDV_STRVAL,
 	    .prd_val = { .prdv_strval = { "disabled", "enabled" } } },
 	{ 4, 4, "ccmpltint", "Command Complete Interrupt", PRDV_STRVAL,
-	    .prd_val = { .prdv_strval = { "disabled", "Enabled" } } },
+	    .prd_val = { .prdv_strval = { "disabled", "enabled" } } },
 	{ 5, 5, "hpi", "Hot Plug Interrupt Enable", PRDV_STRVAL,
 	    .prd_val = { .prdv_strval = { "disabled", "enabled" } } },
 	{ 6, 7, "attnind", "Attention Indicator Control", PRDV_STRVAL,
@@ -2083,7 +2083,7 @@ static const pcieadm_cfgspace_print_t pcieadm_cap_aer_v1[] = {
 	    pcieadm_cfgspace_print_hex },
 	{ PCIE_AER_HDR_LOG + 12, 4, "hl3", "Header Log 3",
 	    pcieadm_cfgspace_print_hex },
-	{ PCIE_AER_CTL, 4, "rootcmd", "Root Error Command",
+	{ PCIE_AER_RE_CMD, 4, "rootcmd", "Root Error Command",
 	    pcieadm_cfgspace_print_regdef, pcieadm_regdef_aer_rootcom },
 	{ PCIE_AER_RE_STS, 4, "rootsts", "Root Error Status",
 	    pcieadm_cfgspace_print_regdef, pcieadm_regdef_aer_rootsts },
@@ -2115,7 +2115,7 @@ static const pcieadm_cfgspace_print_t pcieadm_cap_aer_v2[] = {
 	    pcieadm_cfgspace_print_hex },
 	{ PCIE_AER_HDR_LOG + 12, 4, "hl3", "Header Log 3",
 	    pcieadm_cfgspace_print_hex },
-	{ PCIE_AER_CTL, 4, "rootcmd", "Root Error Command",
+	{ PCIE_AER_RE_CMD, 4, "rootcmd", "Root Error Command",
 	    pcieadm_cfgspace_print_regdef, pcieadm_regdef_aer_rootcom },
 	{ PCIE_AER_RE_STS, 4, "rootsts", "Root Error Status",
 	    pcieadm_cfgspace_print_regdef, pcieadm_regdef_aer_rootsts },
@@ -2153,7 +2153,7 @@ static const pcieadm_cfgspace_print_t pcieadm_cap_aer_bridge[] = {
 	    pcieadm_cfgspace_print_hex },
 	{ PCIE_AER_HDR_LOG + 12, 4, "hl3", "Header Log 3",
 	    pcieadm_cfgspace_print_hex },
-	{ PCIE_AER_CTL, 4, "rootcmd", "Root Error Command",
+	{ PCIE_AER_RE_CMD, 4, "rootcmd", "Root Error Command",
 	    pcieadm_cfgspace_print_regdef, pcieadm_regdef_aer_rootcom },
 	{ PCIE_AER_RE_STS, 4, "rootsts", "Root Error Status",
 	    pcieadm_cfgspace_print_regdef, pcieadm_regdef_aer_rootsts },
@@ -4832,7 +4832,9 @@ static const pcieadm_pci_cap_t pcieadm_pcie_caps[] = {
 	{ PCIE_EXT_CAP_ID_FLIT_LOG, "fltlog", "Flit Logging" },
 	{ PCIE_EXT_CAP_ID_FLIT_PERF, "fltperf",
 	    "Flit Performance Measurement" },
-	{ PCIE_EXT_CAP_ID_FLIT_ERR, "flterr", "Flit Error Injection" }
+	{ PCIE_EXT_CAP_ID_FLIT_ERR, "flterr", "Flit Error Injection" },
+	{ PCIE_EXT_CAP_ID_SVC, "svc", "Streamlined Virtual Channel" },
+	{ PCIE_EXT_CAP_ID_MMIO_RBL, "mrbl", "MMIO Register Block Locator" }
 };
 
 static const pcieadm_pci_cap_t *
@@ -5034,7 +5036,7 @@ pcieadm_cfgspace(pcieadm_t *pcip, pcieadm_cfgspace_op_t op,
 		headshort = "headerX";
 		header = pcieadm_cfgspace_unknown;
 		warnx("unsupported PCI header type: 0x%x, output limited to "
-		    "data configuration space");
+		    "data configuration space", type);
 	}
 
 	walk.pcw_dtype = type;

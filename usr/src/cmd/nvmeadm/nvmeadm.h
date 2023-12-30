@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2021 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
  */
 
@@ -51,7 +51,7 @@ struct nvme_process_arg {
 	di_node_t npa_node;
 	di_minor_t npa_minor;
 	char *npa_dsk;
-	uint32_t npa_ns_state;
+	nvme_ns_state_t npa_ns_state;
 	nvme_identify_ctrl_t *npa_idctl;
 	nvme_identify_nsid_t *npa_idns;
 	nvme_identify_nsid_list_t *npa_idnslist;
@@ -65,6 +65,7 @@ extern boolean_t nvme_version_check(nvme_version_t *, uint_t, uint_t);
 /* printing functions */
 extern int nvme_strlen(const char *, int);
 extern void nvme_print(int, const char *, int, const char *, ...);
+extern int nvme_snprint_uint128(char *, size_t, nvme_uint128_t, int, int);
 extern void nvme_print_ctrl_summary(nvme_identify_ctrl_t *, nvme_version_t *);
 extern void nvme_print_nsid_summary(nvme_identify_nsid_t *);
 extern void nvme_print_identify_ctrl(nvme_identify_ctrl_t *,
@@ -124,12 +125,13 @@ extern boolean_t nvme_detach(int);
 extern boolean_t nvme_attach(int);
 extern boolean_t nvme_firmware_load(int, void *, size_t, offset_t, uint16_t *);
 extern boolean_t nvme_firmware_commit(int, int, int, uint16_t *);
-extern boolean_t nvme_namespace_state(int);
+extern nvme_ns_state_t nvme_namespace_state(int);
 
 /*
  * ofmt related
  */
-extern const ofmt_field_t nvme_list_ofmt[];
+extern const ofmt_field_t nvme_list_ctrl_ofmt[];
+extern const ofmt_field_t nvme_list_nsid_ofmt[];
 
 #ifdef __cplusplus
 }

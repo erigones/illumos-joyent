@@ -39,7 +39,7 @@
  *
  * Copyright 2015 Pluribus Networks Inc.
  * Copyright 2019 Joyent, Inc.
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  * Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
  */
 
@@ -69,6 +69,14 @@ struct vm_object;
 struct vm_guest_paging;
 struct vmm_data_req;
 
+/* Return values for architecture-specific calculation of the TSC multiplier */
+typedef enum {
+	FR_VALID,			/* valid multiplier, scaling needed */
+	FR_SCALING_NOT_NEEDED,		/* scaling not required */
+	FR_SCALING_NOT_SUPPORTED,	/* scaling not supported by platform */
+	FR_OUT_OF_RANGE,		/* freq ratio out of supported range */
+} freqratio_res_t;
+
 typedef int	(*vmm_init_func_t)(void);
 typedef int	(*vmm_cleanup_func_t)(void);
 typedef void	(*vmm_resume_func_t)(void);
@@ -89,11 +97,14 @@ typedef struct vlapic *(*vmi_vlapic_init)(void *vmi, int vcpu);
 typedef void	(*vmi_vlapic_cleanup)(void *vmi, struct vlapic *vlapic);
 typedef void	(*vmi_savectx)(void *vmi, int vcpu);
 typedef void	(*vmi_restorectx)(void *vmi, int vcpu);
+typedef void	(*vmi_pause_t)(void *vmi, int vcpu);
 
 typedef int	(*vmi_get_msr_t)(void *vmi, int vcpu, uint32_t msr,
     uint64_t *valp);
 typedef int	(*vmi_set_msr_t)(void *vmi, int vcpu, uint32_t msr,
     uint64_t val);
+typedef freqratio_res_t	(*vmi_freqratio_t)(uint64_t guest_hz,
+    uint64_t host_hz, uint64_t *mult);
 
 struct vmm_ops {
 	vmm_init_func_t		init;		/* module wide initialization */
@@ -111,12 +122,17 @@ struct vmm_ops {
 	vmi_set_cap_t		vmsetcap;
 	vmi_vlapic_init		vlapic_init;
 	vmi_vlapic_cleanup	vlapic_cleanup;
+	vmi_pause_t		vmpause;
 
 	vmi_savectx		vmsavectx;
 	vmi_restorectx		vmrestorectx;
 
 	vmi_get_msr_t		vmgetmsr;
 	vmi_set_msr_t		vmsetmsr;
+
+	vmi_freqratio_t		vmfreqratio;
+	uint32_t		fr_intsize;
+	uint32_t		fr_fracsize;
 };
 
 extern struct vmm_ops vmm_ops_intel;
@@ -178,7 +194,7 @@ int vm_set_run_state(struct vm *vm, int vcpuid, uint32_t state,
 int vm_get_fpu(struct vm *vm, int vcpuid, void *buf, size_t len);
 int vm_set_fpu(struct vm *vm, int vcpuid, void *buf, size_t len);
 int vm_run(struct vm *vm, int vcpuid, const struct vm_entry *);
-int vm_suspend(struct vm *vm, enum vm_suspend_how how);
+int vm_suspend(struct vm *, enum vm_suspend_how, int);
 int vm_inject_nmi(struct vm *vm, int vcpu);
 bool vm_nmi_pending(struct vm *vm, int vcpuid);
 void vm_nmi_clear(struct vm *vm, int vcpuid);
@@ -213,12 +229,12 @@ int vm_service_mmio_write(struct vm *vm, int cpuid, uint64_t gpa, uint64_t wval,
 #ifdef _SYS__CPUSET_H_
 cpuset_t vm_active_cpus(struct vm *vm);
 cpuset_t vm_debug_cpus(struct vm *vm);
-cpuset_t vm_suspended_cpus(struct vm *vm);
 #endif	/* _SYS__CPUSET_H_ */
 
 bool vcpu_entry_bailout_checks(struct vm *vm, int vcpuid, uint64_t rip);
 bool vcpu_run_state_pending(struct vm *vm, int vcpuid);
 int vcpu_arch_reset(struct vm *vm, int vcpuid, bool init_only);
+int vm_vcpu_barrier(struct vm *, int);
 
 /*
  * Return true if device indicated by bus/slot/func is supposed to be a
@@ -246,6 +262,7 @@ void vcpu_unblock_run(struct vm *, int);
 uint64_t vcpu_tsc_offset(struct vm *vm, int vcpuid, bool phys_adj);
 hrtime_t vm_normalize_hrtime(struct vm *, hrtime_t);
 hrtime_t vm_denormalize_hrtime(struct vm *, hrtime_t);
+uint64_t vm_get_freq_multiplier(struct vm *);
 
 static __inline bool
 vcpu_is_running(struct vm *vm, int vcpu, int *hostcpu)
@@ -433,6 +450,8 @@ bool vmm_check_iommu(void);
 
 void vmm_call_trap(uint64_t);
 
+uint64_t vmm_host_tsc_delta(void);
+
 /*
  * Because of tangled headers, this is not exposed directly via the vmm_drv
  * interface, but rather mirrored as vmm_drv_iop_cb_t in vmm_drv.h.
@@ -491,19 +510,70 @@ typedef struct vmm_data_req {
 
 typedef int (*vmm_data_writef_t)(void *, const vmm_data_req_t *);
 typedef int (*vmm_data_readf_t)(void *, const vmm_data_req_t *);
+typedef int (*vmm_data_vcpu_writef_t)(struct vm *, int, const vmm_data_req_t *);
+typedef int (*vmm_data_vcpu_readf_t)(struct vm *, int, const vmm_data_req_t *);
 
 typedef struct vmm_data_version_entry {
 	uint16_t		vdve_class;
 	uint16_t		vdve_version;
+
+	/*
+	 * If these handlers accept/emit a single item of a fixed length, it
+	 * should be specified in vdve_len_expect.  The vmm-data logic will then
+	 * ensure that requests possess at least that specified length before
+	 * calling into the defined handlers.
+	 */
 	uint16_t		vdve_len_expect;
+
+	/*
+	 * For handlers which deal with (potentially) multiple items of a fixed
+	 * length, vdve_len_per_item is used to hint (via the VDC_VERSION class)
+	 * to userspace what that item size is.  Although not strictly mutually
+	 * exclusive with vdve_len_expect, it is nonsensical to set them both.
+	 */
 	uint16_t		vdve_len_per_item;
+
+	/*
+	 * A vmm-data handler is expected to provide read/write functions which
+	 * are either VM-wide (via vdve_readf and vdve_writef) or per-vCPU
+	 * (via vdve_vcpu_readf and vdve_vcpu_writef).  Providing both is not
+	 * allowed (but is not currently checked at compile time).
+	 */
+
+	/* VM-wide handlers */
 	vmm_data_readf_t	vdve_readf;
 	vmm_data_writef_t	vdve_writef;
+
+	/* Per-vCPU handlers */
+	vmm_data_vcpu_readf_t	vdve_vcpu_readf;
+	vmm_data_vcpu_writef_t	vdve_vcpu_writef;
+
+	/*
+	 * The vdve_vcpu_readf/writef handlers can rely on vcpuid to be within
+	 * the [0, VM_MAXCPU) bounds.  If they also can handle vcpuid == -1 (for
+	 * VM-wide data), then they can opt into such cases by setting
+	 * vdve_vcpu_wildcard to true.
+	 *
+	 * At a later time, it would make sense to improve the logic so a
+	 * vmm-data class could define both the VM-wide and per-vCPU handlers,
+	 * letting the incoming vcpuid determine which would be called.  Until
+	 * then, vdve_vcpu_wildcard is the stopgap.
+	 */
+	bool			vdve_vcpu_wildcard;
 } vmm_data_version_entry_t;
 
 #define	VMM_DATA_VERSION(sym)	SET_ENTRY(vmm_data_version_entries, sym)
 
 int vmm_data_read(struct vm *, int, const vmm_data_req_t *);
 int vmm_data_write(struct vm *, int, const vmm_data_req_t *);
+
+/*
+ * TSC Scaling
+ */
+uint64_t vmm_calc_freq_multiplier(uint64_t guest_hz, uint64_t host_hz,
+    uint32_t frac);
+
+/* represents a multiplier for a guest in which no scaling is required */
+#define	VM_TSCM_NOSCALE	0
 
 #endif /* _VMM_KERNEL_H_ */

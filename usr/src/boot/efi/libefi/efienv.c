@@ -48,8 +48,23 @@ efi_getenv(EFI_GUID *g, const char *v, void *data, size_t *len)
 		return (EFI_OUT_OF_RESOURCES);
 	dl = *len;
 	rv = RS->GetVariable(uv, g, &attr, &dl, data);
-	if (rv == EFI_SUCCESS)
+	if (rv == EFI_SUCCESS || rv == EFI_BUFFER_TOO_SMALL)
 		*len = dl;
+	free(uv);
+	return (rv);
+}
+
+EFI_STATUS
+efi_setenv(EFI_GUID *g, uint32_t attr, const char *v, void *data, size_t len)
+{
+	size_t ul;
+	CHAR16 *uv;
+	EFI_STATUS rv;
+
+	uv = NULL;
+	if (utf8_to_ucs2(v, &uv, &ul) != 0)
+		return (EFI_OUT_OF_RESOURCES);
+	rv = RS->SetVariable(uv, g, attr, len, data);
 	free(uv);
 	return (rv);
 }
@@ -62,6 +77,15 @@ efi_global_getenv(const char *v, void *data, size_t *len)
 }
 
 EFI_STATUS
+efi_global_setenv(const char *v, void *data, size_t len)
+{
+	return (efi_setenv(&GlobalBootVarGUID,
+	    EFI_VARIABLE_NON_VOLATILE |
+	    EFI_VARIABLE_BOOTSERVICE_ACCESS |
+	    EFI_VARIABLE_RUNTIME_ACCESS, v, data, len));
+}
+
+EFI_STATUS
 efi_illumos_getenv(const char *v, void *data, size_t *len)
 {
 
@@ -69,17 +93,9 @@ efi_illumos_getenv(const char *v, void *data, size_t *len)
 }
 
 EFI_STATUS
-efi_setenv_illumos_wcs(const char *varname, CHAR16 *valstr)
+efi_setenv_illumos_wcs(const char *var, CHAR16 *valstr)
 {
-	CHAR16 *var = NULL;
-	size_t len;
-	EFI_STATUS rv;
-
-	if (utf8_to_ucs2(varname, &var, &len) != 0)
-		return (EFI_OUT_OF_RESOURCES);
-	rv = RS->SetVariable(var, &illumosBootVarGUID,
+	return (efi_setenv(&illumosBootVarGUID,
 	    EFI_VARIABLE_BOOTSERVICE_ACCESS | EFI_VARIABLE_RUNTIME_ACCESS,
-	    (ucs2len(valstr) + 1) * sizeof (CHAR16), valstr);
-	free(var);
-	return (rv);
+	    var, valstr, (ucs2len(valstr) + 1) * sizeof (CHAR16)));
 }

@@ -84,7 +84,6 @@ MANFILES=	acctcom.1			\
 		crle.1				\
 		crontab.1			\
 		crypt.1				\
-		csh.1				\
 		csplit.1			\
 		ctfdiff.1			\
 		ctfdump.1			\
@@ -296,7 +295,6 @@ MANFILES=	acctcom.1			\
 		printf.1			\
 		priocntl.1			\
 		proc.1				\
-		prof.1				\
 		profiles.1			\
 		projects.1			\
 		ps.1				\
@@ -426,6 +424,7 @@ MANLINKS=	batch.1		\
 		chdir.1		\
 		checkeq.1	\
 		continue.1	\
+		csh.1		\
 		ctags.1		\
 		decrypt.1	\
 		dirname.1	\
@@ -608,6 +607,8 @@ valyorn.1	:= LINKSRC = ckyorn.1
 
 uncompress.1	:= LINKSRC = compress.1
 zcat.1		:= LINKSRC = compress.1
+
+csh.1		:= LINKSRC = ../../../has/man/man1has/csh.1has
 
 ctags.1		:= LINKSRC = ../../../has/man/man1has/ctags.1has
 

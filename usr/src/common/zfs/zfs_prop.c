@@ -298,6 +298,9 @@ zfs_prop_init(void)
 	    ZFS_ACL_RESTRICTED, PROP_INHERIT, ZFS_TYPE_FILESYSTEM,
 	    "discard | noallow | restricted | passthrough | passthrough-x",
 	    "ACLINHERIT", acl_inherit_table);
+	zprop_register_index(ZFS_PROP_ACLIMPLICIT, "aclimplicit", 1,
+	    PROP_INHERIT, ZFS_TYPE_FILESYSTEM, "on | off", "ACLIMPL",
+	    boolean_table);
 	zprop_register_index(ZFS_PROP_COPIES, "copies", 1, PROP_INHERIT,
 	    ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME,
 	    "1 | 2 | 3", "COPIES", copies_table);
@@ -476,7 +479,7 @@ zfs_prop_init(void)
 	    PROP_DEFAULT, ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME,
 	    "<size> | none", "RESERV");
 	zprop_register_number(ZFS_PROP_VOLSIZE, "volsize", 0, PROP_DEFAULT,
-	    ZFS_TYPE_VOLUME, "<size>", "VOLSIZE");
+	    ZFS_TYPE_SNAPSHOT | ZFS_TYPE_VOLUME, "<size>", "VOLSIZE");
 	zprop_register_number(ZFS_PROP_REFQUOTA, "refquota", 0, PROP_DEFAULT,
 	    ZFS_TYPE_FILESYSTEM, "<size> | none", "REFQUOTA");
 	zprop_register_number(ZFS_PROP_REFRESERVATION, "refreservation", 0,
@@ -667,9 +670,9 @@ zfs_prop_random_value(zfs_prop_t prop, uint64_t seed)
  * Returns TRUE if the property applies to any of the given dataset types.
  */
 boolean_t
-zfs_prop_valid_for_type(int prop, zfs_type_t types)
+zfs_prop_valid_for_type(int prop, zfs_type_t types, boolean_t headcheck)
 {
-	return (zprop_valid_for_type(prop, types));
+	return (zprop_valid_for_type(prop, types, headcheck));
 }
 
 zprop_type_t

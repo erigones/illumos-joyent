@@ -21,9 +21,9 @@
 
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2016 Syneto S.R.L.  All rights reserved.
  * Copyright 2011-2022 Tintri by DDN, Inc. All rights reserved.
- * Copyright 2022 RackTop Systems, Inc.
+ * Copyright 2016 Syneto S.R.L.  All rights reserved.
+ * Copyright 2015-2023 RackTop Systems, Inc.
  */
 
 /*
@@ -48,6 +48,7 @@ extern "C" {
 #include <sys/cred.h>
 #include <sys/nbmlock.h>
 #include <sys/sunddi.h>
+#include <sys/uio.h>
 #include <sys/atomic.h>
 #include <smbsrv/smb.h>
 #include <smbsrv/string.h>
@@ -267,6 +268,7 @@ int smb_net_id(uint32_t);
  * Common oplock functions
  */
 uint32_t smb_oplock_request(smb_request_t *, smb_ofile_t *, uint32_t *);
+uint32_t smb_oplock_request_LH(smb_request_t *, smb_ofile_t *, uint32_t *);
 uint32_t smb_oplock_ack_break(smb_request_t *, smb_ofile_t *, uint32_t *);
 uint32_t smb_oplock_break_PARENT(smb_node_t *, smb_ofile_t *);
 uint32_t smb_oplock_break_OPEN(smb_node_t *, smb_ofile_t *,
@@ -280,6 +282,16 @@ uint32_t smb_oplock_break_WRITE(smb_node_t *, smb_ofile_t *);
 uint32_t smb_oplock_break_SETINFO(smb_node_t *,
     smb_ofile_t *ofile, uint32_t InfoClass);
 uint32_t smb_oplock_break_DELETE(smb_node_t *, smb_ofile_t *);
+void smb_oplock_close(smb_ofile_t *);
+
+void smb_oplock_ind_break(smb_ofile_t *, uint32_t, boolean_t, uint32_t);
+void smb_oplock_ind_break_in_ack(smb_request_t *, smb_ofile_t *,
+    uint32_t, boolean_t);
+void smb_oplock_send_break(smb_request_t *);
+
+uint32_t smb_oplock_wait_ack(smb_request_t *, uint32_t);
+uint32_t smb_oplock_wait_break(smb_request_t *, smb_node_t *, int);
+uint32_t smb_oplock_wait_break_fem(smb_node_t *, int);
 
 void smb_oplock_move(smb_node_t *, smb_ofile_t *, smb_ofile_t *);
 
@@ -287,16 +299,12 @@ void smb_oplock_move(smb_node_t *, smb_ofile_t *, smb_ofile_t *);
  * Protocol-specific oplock functions
  * (and "server-level" functions)
  */
+void smb1_oplock_ack_break(smb_request_t *, uchar_t);
 void smb1_oplock_acquire(smb_request_t *, boolean_t);
-void smb1_oplock_break_notification(smb_request_t *, uint32_t);
-void smb2_oplock_break_notification(smb_request_t *, uint32_t);
-void smb2_lease_break_notification(smb_request_t *, uint32_t, boolean_t);
-void smb_oplock_ind_break(smb_ofile_t *, uint32_t, boolean_t, uint32_t);
-void smb_oplock_ind_break_in_ack(smb_request_t *, smb_ofile_t *,
-    uint32_t, boolean_t);
-void smb_oplock_send_brk(smb_request_t *);
-uint32_t smb_oplock_wait_break(smb_request_t *, smb_node_t *, int);
-uint32_t smb_oplock_wait_break_fem(smb_node_t *, int);
+void smb1_oplock_send_break(smb_request_t *);
+void smb2_oplock_send_break(smb_request_t *);
+void smb2_lease_ofile_close(smb_ofile_t *);
+void smb2_lease_send_break(smb_request_t *);
 
 /*
  * range lock functions - node operations
@@ -417,7 +425,8 @@ void smb_sodestroy(ksocket_t so);
 int smb_sorecv(ksocket_t so, void *msg, size_t len);
 void smb_net_txl_constructor(smb_txlst_t *);
 void smb_net_txl_destructor(smb_txlst_t *);
-int smb_net_send_uio(smb_session_t *, struct uio *);
+int smb_net_send_mbufs(smb_session_t *, mbuf_t *);
+int smb_net_recv_mbufs(smb_session_t *, mbuf_t **, size_t);
 
 /*
  * SMB RPC interface
@@ -464,6 +473,7 @@ int smb_server_share_lookup(smb_server_t *, const char *, smb_node_t **);
 int smb_server_unshare(const char *);
 
 void smb_server_logoff_ssnid(smb_request_t *, uint64_t);
+smb_user_t *smb_server_lookup_user(smb_server_t *, uint64_t, uint64_t);
 
 void smb_server_get_cfg(smb_server_t *, smb_kmod_cfg_t *);
 
@@ -593,8 +603,8 @@ int smb_sign_check_secondary(smb_request_t *, unsigned int);
 void smb_sign_reply(smb_request_t *, mbuf_chain_t *);
 /* SMB2, but here because it's called from common code. */
 void smb2_sign_begin(smb_request_t *, smb_token_t *);
-void smb3_encrypt_begin(smb_request_t *, smb_token_t *);
-void smb3_encrypt_fini(smb_session_t *);
+void smb3_encrypt_begin(smb_user_t *, smb_token_t *);
+void smb3_encrypt_ssn_fini(smb_session_t *);
 
 boolean_t smb_sattr_check(uint16_t, uint16_t);
 
@@ -652,6 +662,7 @@ void smb_request_free(smb_request_t *);
 /*
  * ofile functions (file smb_ofile.c)
  */
+int smb_ofile_avl_compare(const void *, const void *);
 smb_ofile_t *smb_ofile_lookup_by_fid(smb_request_t *, uint16_t);
 smb_ofile_t *smb_ofile_lookup_by_uniqid(smb_tree_t *, uint32_t);
 smb_ofile_t *smb_ofile_lookup_by_persistid(smb_request_t *, uint64_t);
@@ -780,7 +791,10 @@ int smb_xa_complete(smb_xa_t *xa);
 smb_xa_t *smb_xa_find(smb_session_t *session, uint32_t pid, uint16_t mid);
 
 struct mbuf *smb_mbuf_get(uchar_t *buf, int nbytes);
+struct mbuf *smb_mbuf_alloc_kmem(int len);
+struct mbuf *smb_mbuf_alloc_chain(int nbytes);
 struct mbuf *smb_mbuf_allocate(struct uio *uio);
+int smb_mbuf_mkuio(mbuf_t *m, uio_t *uio);
 void smb_mbuf_trim(struct mbuf *mhead, int nbytes);
 
 int32_t smb_time_gmt_to_local(smb_request_t *, int32_t);
@@ -801,6 +815,26 @@ int	smb_idpool_constructor(smb_idpool_t *pool);
 void	smb_idpool_destructor(smb_idpool_t  *pool);
 int	smb_idpool_alloc(smb_idpool_t *pool, uint16_t *id);
 void	smb_idpool_free(smb_idpool_t *pool, uint16_t id);
+
+/*
+ * SMB locked AVL function prototypes
+ */
+void	smb_lavl_init(void);
+void	smb_lavl_fini(void);
+void	smb_lavl_constructor(smb_lavl_t *,
+    int (*compar) (const void *, const void *),
+    size_t, size_t);
+void	smb_lavl_destructor(smb_lavl_t *);
+void	smb_lavl_enter(smb_lavl_t *, krw_t);
+void	smb_lavl_exit(smb_lavl_t *);
+void	smb_lavl_post(smb_lavl_t *, void *, smb_dtorproc_t);
+void	smb_lavl_flush(smb_lavl_t *);
+void	smb_lavl_insert(smb_lavl_t *, void *);
+void	smb_lavl_remove(smb_lavl_t *, void *);
+int	smb_lavl_upgrade(smb_lavl_t *);
+uint32_t smb_lavl_get_count(smb_lavl_t *);
+#define	smb_lavl_first(la)	avl_first(&(la)->la_tree)
+#define	smb_lavl_next(la, obj)	avl_walk(&(la)->la_tree, obj, AVL_AFTER)
 
 /*
  * SMB locked list function prototypes
@@ -846,7 +880,7 @@ int	smb_rwx_cvwait(smb_rwx_t *rwx, clock_t timeout);
 void    smb_rwx_cvbcast(smb_rwx_t *rwx);
 
 void	smb_thread_init(smb_thread_t *, char *, smb_thread_ep_t,
-		void *, pri_t);
+		void *, pri_t, smb_server_t *);
 void	smb_thread_destroy(smb_thread_t *);
 int	smb_thread_start(smb_thread_t *);
 void	smb_thread_stop(smb_thread_t *);
@@ -928,6 +962,7 @@ void smb_kshare_stop(smb_server_t *);
 int smb_kshare_export_list(smb_ioc_share_t *);
 int smb_kshare_unexport_list(smb_ioc_share_t *);
 int smb_kshare_info(smb_ioc_shareinfo_t *);
+int smb_kshare_access(smb_ioc_shareaccess_t *);
 void smb_kshare_enum(smb_server_t *, smb_enumshare_info_t *);
 smb_kshare_t *smb_kshare_lookup(smb_server_t *, const char *);
 void smb_kshare_release(smb_server_t *, smb_kshare_t *);

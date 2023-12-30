@@ -29,7 +29,7 @@
 # Copyright 2016 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
 # Copyright 2019 Peter Tribble.
 # Copyright 2015, Joyent, Inc. All rights reserved.
-# Copyright 2022 Oxide Computer Company
+# Copyright 2023 Oxide Computer Company
 #
 
 include $(SRC)/uts/Makefile.uts
@@ -52,8 +52,7 @@ i386_HDRS=			\
 	firmload.h		\
 	gfx_private.h		\
 	mouse.h			\
-	nvme.h			\
-	ucode.h
+	nvme.h
 
 sparc_HDRS=			\
 	mouse.h			\
@@ -285,6 +284,7 @@ CHKHDRS=			\
 	idmap.h			\
 	ieeefp.h		\
 	id_space.h		\
+	ilstr.h			\
 	inotify.h		\
 	instance.h		\
 	int_const.h		\
@@ -551,6 +551,7 @@ CHKHDRS=			\
 	stat.h			\
 	statfs.h		\
 	statvfs.h		\
+	stdalign.h		\
 	stdbool.h		\
 	stddef.h		\
 	stdint.h		\

@@ -15,9 +15,9 @@
 # Copyright 2019 Joyent, Inc.
 # Copyright 2016 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
 # Copyright 2018 Nexenta Systems, Inc.
-# Copyright 2020 Peter Tribble
-# Copyright 2022 RackTop Systems, Inc.
+# Copyright 2023 Peter Tribble
 # Copyright 2022 Oxide Computer Company
+# Copyright 2023 RackTop Systems, Inc.
 #
 
 include		$(SRC)/Makefile.master
@@ -84,6 +84,7 @@ _MANFILES=	aac.4d		\
 		ksensor.4d	\
 		ksyms.4d	\
 		llc1.4d		\
+		lmrc.4d		\
 		lockstat.4d	\
 		lofi.4d		\
 		log.4d		\
@@ -122,6 +123,7 @@ _MANFILES=	aac.4d		\
 		ses.4d		\
 		sfe.4d		\
 		sgen.4d		\
+		smartpqi.4d	\
 		srpt.4d		\
 		st.4d		\
 		sysmsg.4d	\
@@ -153,31 +155,6 @@ _MANFILES=	aac.4d		\
 		zcons.4d	\
 		zero.4d		\
 		zfd.4d
-
-sparc_MANFILES=	audiocs.4d	\
-		bbc_beep.4d	\
-		dad.4d		\
-		dm2s.4d		\
-		dr.4d		\
-		eri.4d		\
-		fas.4d		\
-		gpio_87317.4d	\
-		grbeep.4d	\
-		mc-opl.4d	\
-		n2rng.4d	\
-		ntwdt.4d	\
-		oplkmdrv.4d	\
-		oplmsu.4d	\
-		oplpanel.4d	\
-		pcicmu.4d	\
-		pcipsy.4d	\
-		pcisch.4d	\
-		smbus.4d	\
-		su.4d		\
-		todopl.4d	\
-		tsalarm.4d	\
-		zs.4d		\
-		zsh.4d
 
 i386_MANFILES=	ahci.4d		\
 		amd8111s.4d	\
@@ -224,6 +201,7 @@ i386_MANFILES=	ahci.4d		\
 		nvme.4d		\
 		pchtemp.4d	\
 		pcn.4d		\
+		pvscsi.4d	\
 		qede.4d		\
 		ral.4d		\
 		rtw.4d		\
@@ -246,6 +224,7 @@ i386_MANFILES=	ahci.4d		\
 		vioif.4d	\
 		vioscsi.4d	\
 		virtio.4d	\
+		vmxnet3s.4d	\
 		wpi.4d		\
 		xhci.4d		\
 		zen_udf.4d	\
@@ -263,16 +242,12 @@ _MANLINKS=	1394.4d		\
 		urandom.4d	\
 		usb.4d
 
-sparc_MANLINKS=	drmach.4d
-
 i386_MANLINKS=	amdzen_stub.4d
 
 MANFILES =	$(_MANFILES) $($(MACH)_MANFILES)
 MANLINKS =	$(_MANLINKS) $($(MACH)_MANLINKS)
 
 amdzen_stub.4d	:= LINKSRC = amdzen.4d
-
-drmach.4d	:= LINKSRC = dr.4d
 
 fdc.4d		:= LINKSRC = fd.4d
 

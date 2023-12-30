@@ -102,15 +102,13 @@ FPOBJS=				\
 
 FPASMOBJS=			\
 	_Q_get_rp_rd.o		\
+	__quad.o		\
 	fpgetmask.o		\
 	fpgetrnd.o		\
 	fpgetsticky.o		\
 	fpsetmask.o		\
 	fpsetrnd.o		\
 	fpsetsticky.o
-
-$(__GNUC)FPASMOBJS +=		\
-	__quad.o
 
 ATOMICOBJS=			\
 	atomic.o
@@ -1110,10 +1108,6 @@ SONAME = libc.so.1
 
 CFLAGS += $(CCVERBOSE)
 
-# This is necessary to avoid problems with calling _ex_unwind().
-# We probably don't want any inlining anyway.
-CFLAGS += -xinline=
-
 CERRWARN += -_gcc=-Wno-parentheses
 CERRWARN += -_gcc=-Wno-switch
 CERRWARN += $(CNOWARN_UNINIT)
@@ -1132,9 +1126,6 @@ CERRWARN += -_gcc=-Wno-address
 THREAD_DEBUG =
 $(NOT_RELEASE_BUILD)THREAD_DEBUG = -DTHREAD_DEBUG
 
-# Make string literals read-only to save memory.
-CFLAGS += $(XSTRCONST)
-
 ALTPICS= $(TRACEOBJS:%=pics/%)
 
 $(DYNLIB) := BUILD.SO = $(LD) -o $@ $(GSHARED) $(DYNFLAGS) $(PICS) $(ALTPICS) $(EXTPICS)
@@ -1144,7 +1135,8 @@ MAPFILES =	$(LIBCDIR)/port/mapfile-vers
 CFLAGS +=	$(EXTN_CFLAGS)
 CPPFLAGS=	-D_REENTRANT -Dsparc $(EXTN_CPPFLAGS) $(THREAD_DEBUG) \
 		-I$(LIBCBASE)/inc -I$(LIBCDIR)/inc $(CPPFLAGS.master)
-ASFLAGS=	$(EXTN_ASFLAGS) $(AS_PICFLAGS) -P -D__STDC__ -D_ASM $(CPPFLAGS) $(sparc_AS_XARCH)
+ASFLAGS=	$(EXTN_ASFLAGS) $(AS_WITH_CPP) -D__STDC__ \
+		-D_ASM $(CPPFLAGS) $(sparc_XARCH)
 
 # As a favor to the dtrace syscall provider, libc still calls the
 # old syscall traps that have been obsoleted by the *at() interfaces.
@@ -1171,7 +1163,7 @@ DYNFLAGS +=	$(DTRACE_DATA)
 # DTrace needs an executable data segment.
 MAPFILE.NED=
 
-BUILD.s=	$(AS) $(ASFLAGS) $< -o $@
+BUILD.s=	$(AS) $(ASFLAGS) $< -c -o $@
 
 # Override this top level flag so the compiler builds in its native
 # C99 mode.  This has been enabled to support the complex arithmetic
@@ -1207,8 +1199,8 @@ $(DYNLIB) := CRTN = crtn.o
 pics/rwlock.o pics/synch.o pics/lwp.o pics/door_calls.o := \
 	sparc_CFLAGS += -_gcc=-Wa,-xarch=v8plus
 
-pics/_Q%.o := sparc_COPTFLAG = -xO4 -dalign
-pics/__quad%.o := sparc_COPTFLAG = -xO4 -dalign
+pics/_Q%.o := sparc_COPTFLAG = -xO4
+pics/__quad%.o := sparc_COPTFLAG = -xO4
 
 # large-file-aware components that should be built large
 
@@ -1278,15 +1270,15 @@ $(STRETS:%=pics/%): $(LIBCBASE)/crt/stret.s
 	$(AS) $(ASFLAGS) -DSTRET$(@F:stret%.o=%) $(LIBCBASE)/crt/stret.s -o $@
 	$(POST_PROCESS_S_O)
 
-$(LIBCBASE)/crt/_rtbootld.s:	$(LIBCBASE)/crt/_rtboot.s $(LIBCBASE)/crt/_rtld.c
+$(LIBCBASE)/crt/_rtbootld.S:	$(LIBCBASE)/crt/_rtboot.S $(LIBCBASE)/crt/_rtld.c
 	$(CC) $(CPPFLAGS) $(CTF_FLAGS) -O -S $(C_PICFLAGS) \
 	    $(LIBCBASE)/crt/_rtld.c -o $(LIBCBASE)/crt/_rtld.s
-	$(CAT) $(LIBCBASE)/crt/_rtboot.s $(LIBCBASE)/crt/_rtld.s > $@
+	$(CAT) $(LIBCBASE)/crt/_rtboot.S $(LIBCBASE)/crt/_rtld.s > $@
 	$(RM) $(LIBCBASE)/crt/_rtld.s
 
 # partially built from C source
-pics/_rtbootld.o: $(LIBCBASE)/crt/_rtbootld.s
-	$(AS) $(ASFLAGS) $(LIBCBASE)/crt/_rtbootld.s -o $@
+pics/_rtbootld.o: $(LIBCBASE)/crt/_rtbootld.S
+	$(AS) $(ASFLAGS) $(LIBCBASE)/crt/_rtbootld.S -o $@
 	$(CTFCONVERT_O)
 
 ASSYMDEP_OBJS=			\

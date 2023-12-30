@@ -14,6 +14,8 @@
 # Copyright 2015 Garrett D'Amore <garrett@damore.org>
 # Copyright 2019 Joyent, Inc.
 # Copyright 2022 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2023 Bill Sommerfeld <sommerfeld@alum.mit.edu>
+# Copyright 2023 Oxide Computer Company
 #
 
 SUBDIRS = \
@@ -42,18 +44,22 @@ PROGS = \
 	c11_threads \
 	c11_tss \
 	call_once \
+	closefrom \
 	endian \
 	env-7076 \
 	fnmatch \
+	isatty \
 	memchr \
 	memset_s \
 	posix_memalign \
+	printf-15294 \
 	printf-9511 \
 	psignal-5097 \
 	quick_exit_order \
 	quick_exit_status \
 	set_constraint_handler_s \
 	strcoll-strxfrm-6907 \
+	strtonum \
 	timespec_get \
 	wcsncasecmp \
 	wcsncasecmp-7344 \
@@ -84,6 +90,12 @@ memset_s.32 :=	CPPFLAGS += -D__STDC_WANT_LIB_EXT1__=1
 memset_s.64 :=	CPPFLAGS += -D__STDC_WANT_LIB_EXT1__=1
 set_constraint_handler_s.32 := CPPFLAGS += -D__STDC_WANT_LIB_EXT1__=1
 set_constraint_handler_s.64 := CPPFLAGS += -D__STDC_WANT_LIB_EXT1__=1
+
+isatty.32 :=	CSTD=$(GNU_C99)
+isatty.64 :=	CSTD=$(GNU_C99)
+
+strtonum.32 :=		CSTD=$(GNU_C99)
+strtonum.64 :=		CSTD=$(GNU_C99)
 
 ROOTOPTDIR = $(ROOT)/opt/libc-tests/tests
 ROOTOPTPROGS = $(PROGS32:%=$(ROOTOPTDIR)/%) \

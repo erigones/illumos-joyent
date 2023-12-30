@@ -12,7 +12,8 @@
 /*
  * Copyright 2013 Pluribus Networks Inc.
  * Copyright 2018 Joyent, Inc.
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2022 OmniOS Community Edition (OmniOSce) Association.
+ * Copyright 2023 Oxide Computer Company
  */
 
 #ifndef	_VIONA_IO_H_
@@ -36,6 +37,7 @@
 #define	VNA_IOC_SET_FEATURES	(VNA_IOC | 0x21)
 #define	VNA_IOC_GET_FEATURES	(VNA_IOC | 0x22)
 #define	VNA_IOC_SET_NOTIFY_IOP	(VNA_IOC | 0x23)
+#define	VNA_IOC_SET_PROMISC	(VNA_IOC | 0x24)
 
 
 /*
@@ -52,7 +54,7 @@
  * change when the version is modified.  It follows no rules like semver.
  *
  */
-#define	VIONA_CURRENT_INTERFACE_VERSION	1
+#define	VIONA_CURRENT_INTERFACE_VERSION	2
 
 typedef struct vioc_create {
 	datalink_id_t	c_linkid;
@@ -84,6 +86,13 @@ enum viona_vq_id {
 	VIONA_VQ_TX = 1,
 	VIONA_VQ_MAX = 2
 };
+
+typedef enum {
+	VIONA_PROMISC_NONE = 0,
+	VIONA_PROMISC_MULTI,
+	VIONA_PROMISC_ALL,
+	VIONA_PROMISC_MAX,
+} viona_promisc_t;
 
 typedef struct vioc_intr_poll {
 	uint32_t	vip_status[VIONA_VQ_MAX];

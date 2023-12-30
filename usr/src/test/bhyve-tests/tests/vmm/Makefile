@@ -10,8 +10,8 @@
 #
 
 #
-# Copyright 2022 Oxide Computer Company
 # Copyright 2022 MNX Cloud, Inc.
+# Copyright 2023 Oxide Computer Company
 #
 
 include $(SRC)/cmd/Makefile.cmd
@@ -31,7 +31,12 @@ PROG =	mem_partial \
 	cpuid_ioctl \
 	default_capabs \
 	datarw_constraints \
-	pause_resume
+	datarw_msrs \
+	datarw_vcpu \
+	pause_resume \
+	import_vlapic \
+	time_data \
+	maxcpu
 
 SCRIPT = vmm_drv_test_fini vmm_drv_test_init
 

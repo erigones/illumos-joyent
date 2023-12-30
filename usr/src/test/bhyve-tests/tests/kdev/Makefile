@@ -9,7 +9,7 @@
 # http://www.illumos.org/license/CDDL.
 #
 
-# Copyright 2022 Oxide Computer Company
+# Copyright 2023 Oxide Computer Company
 
 include $(SRC)/cmd/Makefile.cmd
 include $(SRC)/cmd/Makefile.cmd.64
@@ -21,12 +21,20 @@ PROG =	vpmtmr_freq \
 	vlapic_freq_periodic \
 	vlapic_mmio_access \
 	vlapic_msr_access \
-	vatpit_freq
+	vatpit_freq \
+	vrtc_ops
+
+# These should probably go in the `vmm` tests, but since they depend on
+# in-guest payloads, it is easier to build them here.
+PROG += guest_tsc_adjust \
+	tsc_freq_ctrl \
+	wrmsr_tsc \
+	rdmsr_tsc
 
 PAYLOADS = $(PROG)
 include ../Makefile.in_guest
 
-COMMON_OBJS =	in_guest.o
+COMMON_OBJS =	in_guest.o common.o
 
 CLEANFILES =	$(COMMON_OBJS) $(PAYLOAD_CLEANFILES) payload_utils.o
 CLOBBERFILES =	$(PROG)
@@ -45,7 +53,8 @@ CPPFLAGS =	-I$(COMPAT)/bhyve -I$(CONTRIB)/bhyve \
 		-I$(SRC)/uts/intel \
 		-I../common
 
-ASFLAGS += -P -D__STDC__ -D_ASM
+ASFLAGS +=	-D_ASM
+ASFLAGS64 +=	-D_ASM
 
 
 CFLAGS = -m64

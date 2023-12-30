@@ -476,13 +476,10 @@ c_type(void)
 			    nparts++) {
 				if (cur_parts->etoc->efi_parts[nparts].p_tag ==
 				    V_RESERVED) {
-					if (cur_parts->etoc->efi_parts[nparts].
-					    p_name) {
-						(void) strcpy(volname,
-						    cur_parts->etoc->efi_parts
-						    [nparts].p_name);
-						volinit = 1;
-					}
+					(void) strcpy(volname,
+					    cur_parts->etoc->efi_parts
+					    [nparts].p_name);
+					volinit = 1;
 					break;
 				}
 			}
@@ -1941,7 +1938,7 @@ c_backup(void)
 			continue;
 		}
 
-		(void *) memcpy((char *)&label, buf, sizeof (struct dk_label));
+		(void) memcpy((char *)&label, buf, sizeof (struct dk_label));
 
 		/*
 		 * Verify that it is a reasonable label.
@@ -2084,12 +2081,8 @@ c_verify_efi(void)
 	}
 	tmp_pinfo.etoc = efi_info.e_parts;
 	fmt_print("\n");
-	if (cur_parts->etoc->efi_parts[8].p_name) {
-		fmt_print("Volume name = <%8s>\n",
-		    cur_parts->etoc->efi_parts[8].p_name);
-	} else {
-		fmt_print("Volume name = <        >\n");
-	}
+	fmt_print("Volume name = <%8s>\n",
+	    cur_parts->etoc->efi_parts[8].p_name);
 	fmt_print("ascii name  = ");
 	print_efi_string(efi_info.vendor, efi_info.product,
 	    efi_info.revision, efi_info.capacity);
@@ -2216,7 +2209,7 @@ Warning: Primary label on disk appears to be different from\ncurrent label.\n");
 		    1, buf, F_NORMAL, NULL))
 			continue;
 
-		(void *) memcpy((char *)&b_label, buf,
+		(void) memcpy((char *)&b_label, buf,
 		    sizeof (struct dk_label));
 
 		/*

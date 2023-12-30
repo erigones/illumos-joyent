@@ -109,10 +109,8 @@ COPTIMIZE_32	= -xO3
 COPTIMIZE_64	= -xO3
 COPTIMIZE	= $(COPTIMIZE_$(CLASS))
 
-CCMODE		= -Xa
-
 CFLAGS_32	= -xcg92
-CFLAGS_64	= -xchip=ultra $(CCABS32) $(CCREGSYM)
+CFLAGS_64	= -xchip=ultra
 CFLAGS		= $(CFLAGS_$(CLASS))
 
 CFLAGS		+= $(XARCH)
@@ -120,19 +118,11 @@ CFLAGS		+= $(COPTIMIZE)
 CFLAGS		+= $(EXTRA_CFLAGS)
 CFLAGS		+= $(XAOPT)
 CFLAGS		+= -D_ASM_INLINES
-CFLAGS		+= $(CCMODE)
-CFLAGS		+= $(SPACEFLAG)
 CFLAGS		+= $(CERRWARN)
 CFLAGS		+= $(CTF_FLAGS_$(CLASS))
 CFLAGS		+= $(CSTD)
-CFLAGS		+= $(CCUNBOUND)
-CFLAGS		+= $(CCSTATICSYM)
 CFLAGS		+= $(CC32BITCALLERS)
 CFLAGS		+= $(CCNOAUTOINLINE)
-CFLAGS		+= $(IROPTFLAG)
-CFLAGS		+= $(CGLOBALSTATIC)
-CFLAGS		+= -xregs=no%float
-CFLAGS		+= -xstrconst
 CFLAGS		+= $(CSOURCEDEBUGFLAGS)
 CFLAGS		+= $(CUSERFLAGS)
 
@@ -144,7 +134,7 @@ ASFLAGS		+= $(XARCH)
 #
 #	MODSTUBS:	Module stubs source file.
 #
-MODSTUBS	 = $(UTSBASE)/sparc/ml/modstubs.s
+MODSTUBS	 = $(UTSBASE)/sparc/ml/modstubs.S
 
 #
 #	Define the actual specific platforms - obviously none.
@@ -424,8 +414,10 @@ MISC_KMODS	+= qlc_fw_2200
 MISC_KMODS	+= qlc_fw_2300
 MISC_KMODS	+= qlc_fw_2400
 MISC_KMODS	+= qlc_fw_2500
+MISC_KMODS	+= qlc_fw_2700
 MISC_KMODS	+= qlc_fw_6322
 MISC_KMODS	+= qlc_fw_8100
+MISC_KMODS	+= qlc_fw_8301fc
 MISC_KMODS	+= mii
 
 MISC_KMODS	+= klmmod klmops

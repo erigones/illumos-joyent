@@ -95,9 +95,6 @@ CLEANFILES	+= $(UNIX_O) $(MODSTUBS_O) $(KRTLD_O) $(KRTLD_OBJECTS) \
 
 CLOBBERFILES	= $(CLEANFILES) $(UNIX_BIN)
 
-# Turn on doubleword alignment for 64 bit counter timer registers
-CFLAGS += -dalign
-
 #
 # For now, disable these warnings; maintainers should endeavor
 # to investigate and remove these for maximum coverage.
@@ -138,7 +135,6 @@ $(UNIX_BIN):	$(UNIX_O) $(KRTLD_O) $(MODSTUBS_O) $(UNIX_MAPFILE) $(LIBS) \
 	    $(UNIX_O) $(KRTLD_O) $(MODSTUBS_O) $(LIBOPTS) $(DTRACESTUBS)
 	$(CTFMERGE_UNIQUIFY_AGAINST_GENUNIX)
 	$(POST_PROCESS)
-	$(CHK4UBINARY)
 
 $(UNIX32_LINK):	$(ROOT_PSM_KERN_DIR_32) $(UNIX_BIN)
 	-$(RM) $@; ln -s $(SUBDIR64)/$(UNIX) $@

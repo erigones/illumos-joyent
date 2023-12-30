@@ -125,6 +125,7 @@ typedef enum {
 	ZFS_PROP_SNAPDIR,
 	ZFS_PROP_ACLMODE,
 	ZFS_PROP_ACLINHERIT,
+	ZFS_PROP_ACLIMPLICIT,	/* ACL Implicit Owner Rights (RackTop) */
 	ZFS_PROP_CREATETXG,
 	ZFS_PROP_NAME,			/* not exposed to the user */
 	ZFS_PROP_CANMOUNT,
@@ -313,7 +314,7 @@ boolean_t zfs_prop_written(const char *);
 int zfs_prop_index_to_string(zfs_prop_t, uint64_t, const char **);
 int zfs_prop_string_to_index(zfs_prop_t, const char *, uint64_t *);
 uint64_t zfs_prop_random_value(zfs_prop_t, uint64_t seed);
-boolean_t zfs_prop_valid_for_type(int, zfs_type_t);
+boolean_t zfs_prop_valid_for_type(int, zfs_type_t, boolean_t);
 
 /*
  * Pool property functions shared between libzfs and kernel.
