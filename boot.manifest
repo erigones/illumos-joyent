@@ -71,8 +71,6 @@ f boot/solaris/bin/extract_boot_filelist 0555 root sys
 f boot/solaris/bin/symdef 0555 root sys
 f boot/solaris/bin/update_grub 0555 root sys
 f boot/solaris/bootenv.rc 0644 root sys
-d boot/solaris/devicedb 0755 root sys
-f boot/solaris/devicedb/master 0644 root sys
 f boot/solaris/filelist.ramdisk 0644 root sys
 f boot/solaris/filelist.safe 0644 root sys
 f boot/splashimage.xpm 0644 root sys
