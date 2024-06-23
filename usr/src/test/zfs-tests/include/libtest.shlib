@@ -418,7 +418,7 @@ function default_raidz_setup
 	fi
 
 	[[ -d /$TESTPOOL ]] && rm -rf /$TESTPOOL
-	log_must zpool create -f $TESTPOOL raidz $1 $2 $3
+	log_must zpool create -f $TESTPOOL raidz $disklist
 	log_must zfs create $TESTPOOL/$TESTFS
 	log_must zfs set mountpoint=$TESTDIR $TESTPOOL/$TESTFS
 
@@ -2329,6 +2329,7 @@ function datasetcksum
 {
 	typeset cksum
 	sync
+	sync_all_pools
 	cksum=$(zdb -vvv $1 | grep "^Dataset $1 \[" | grep "cksum" \
 		| awk -F= '{print $7}')
 	echo $cksum
@@ -2721,6 +2722,24 @@ function sync_pool #pool <force>
 		log_must zpool sync -f $pool
 	else
 		log_must zpool sync $pool
+	fi
+
+	return 0
+}
+
+#
+# Sync all pools
+#
+# $1 boolean to force uberblock (and config including zpool cache file) update
+#
+function sync_all_pools #<force>
+{
+	typeset force=${1:-false}
+
+	if [[ $force == true ]]; then
+		log_must zpool sync -f
+	else
+		log_must zpool sync
 	fi
 
 	return 0

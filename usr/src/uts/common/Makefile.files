@@ -28,7 +28,7 @@
 # Copyright 2021 Joyent, Inc.
 # Copyright 2016 OmniTI Computer Consulting, Inc.  All rights reserved.
 # Copyright 2016 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
-# Copyright 2023 Oxide Computer Company
+# Copyright 2024 Oxide Computer Company
 # Copyright 2023 RackTop Systems, Inc.
 #
 
@@ -569,7 +569,8 @@ IP_ICMP_OBJS =	icmp.o icmp_opt_data.o
 IP_RTS_OBJS =	rts.o rts_opt_data.o
 IP_TCP_OBJS =	tcp.o tcp_fusion.o tcp_opt_data.o tcp_sack.o tcp_stats.o \
 		tcp_misc.o tcp_timers.o tcp_time_wait.o tcp_tpi.o tcp_output.o \
-		tcp_input.o tcp_socket.o tcp_bind.o tcp_cluster.o tcp_tunables.o
+		tcp_input.o tcp_socket.o tcp_bind.o tcp_cluster.o \
+		tcp_tunables.o tcp_sig.o
 IP_UDP_OBJS =	udp.o udp_opt_data.o udp_tunables.o udp_stats.o
 IP_SCTP_OBJS =	sctp.o sctp_opt_data.o sctp_output.o \
 		sctp_init.o sctp_input.o sctp_cookie.o \
@@ -1139,14 +1140,16 @@ NFS_OBJS +=	nfs_client.o	nfs_common.o	nfs_dump.o \
 		nfs4_acache.o	nfs4_common.o	nfs4_client_state.o \
 		nfs4_callback.o	nfs4_recovery.o nfs4_client_secinfo.o \
 		nfs4_client_debug.o	nfs_stats.o \
-		nfs4_acl.o	nfs4_stub_vnops.o	nfs_cmd.o
+		nfs4_acl.o	nfs4_stub_vnops.o	nfs_cmd.o \
+		nfs4x_xdr.o
 
 NFSSRV_OBJS +=	nfs_server.o	nfs_srv.o	nfs3_srv.o \
 		nfs_acl_srv.o	nfs_auth.o	nfs_auth_xdr.o \
 		nfs_export.o	nfs_log.o	nfs_log_xdr.o \
 		nfs4_srv.o	nfs4_state.o	nfs4_srv_attr.o \
 		nfs4_srv_ns.o	nfs4_db.o	nfs4_srv_deleg.o \
-		nfs4_deleg_ops.o nfs4_srv_readdir.o nfs4_dispatch.o
+		nfs4_deleg_ops.o nfs4_srv_readdir.o nfs4_dispatch.o \
+		nfs4x_srv.o	nfs4x_state.o	nfs4x_dispatch.o
 
 SMBSRV_SHARED_OBJS += \
 		smb_cfg_util.o \
@@ -1484,14 +1487,22 @@ ZFS_COMMON_OBJS +=		\
 	zrlock.o		\
 	zthr.o
 
+amd64_ZFS_SHARED_OBJS +=	\
+	zfs_fletcher_avx512.o	\
+	zfs_fletcher_intel.o	\
+	zfs_fletcher_sse.o
+
 ZFS_SHARED_OBJS +=		\
-	zfeature_common.o	\
-	zfs_comutil.o		\
-	zfs_deleg.o		\
-	zfs_fletcher.o		\
-	zfs_namecheck.o		\
-	zfs_prop.o		\
-	zpool_prop.o		\
+	$($(MACH64)_ZFS_SHARED_OBJS)	\
+	zfeature_common.o		\
+	zfs_comutil.o			\
+	zfs_deleg.o			\
+	zfs_fletcher.o			\
+	zfs_fletcher_superscalar.o	\
+	zfs_fletcher_superscalar4.o	\
+	zfs_namecheck.o			\
+	zfs_prop.o			\
+	zpool_prop.o			\
 	zprop_common.o
 
 ZFS_OBJS +=			\
@@ -1660,6 +1671,8 @@ ECCPROV_OBJS += ecc.o ec.o ec2_163.o ec2_mont.o ecdecode.o ecl_mult.o \
 RSAPROV_OBJS += rsa.o rsa_impl.o pkcs1.o
 
 SWRANDPROV_OBJS += swrand.o
+
+VIORANDPROV_OBJS += viorand.o
 
 #
 #			misc. modules
@@ -1961,7 +1974,12 @@ YGE_OBJS = yge.o
 
 SKD_OBJS = skd.o
 
-NVME_OBJS = nvme.o
+#
+# Objects in the driver followed by common objects.
+#
+NVME_OBJS += nvme.o nvme_validate.o nvme_lock.o
+NVME_OBJS += nvme_feature.o nvme_field.o nvme_firmware.o nvme_format.o \
+		nvme_identify.o nvme_log.o nvme_version.o nvme_vuc.o
 
 PVSCSI_OBJS = pvscsi.o
 
@@ -2353,5 +2371,8 @@ MLXCX_OBJS +=	mlxcx.o mlxcx_dma.o mlxcx_cmd.o mlxcx_intr.o mlxcx_gld.o \
 #
 # ena(4D)
 #
-ENA_OBJS +=	ena.o ena_admin.o ena_dma.o ena_gld.o ena_hw.o ena_intr.o \
-		ena_stats.o ena_tx.o ena_rx.o
+ENA_OBJS +=	ena.o ena_admin.o ena_dma.o ena_aenq.o ena_gld.o ena_hw.o \
+		ena_intr.o ena_stats.o ena_tx.o ena_rx.o ena_watchdog.o
+
+IGC_CORE_OBJS += igc_api.o igc_base.o igc_i225.o igc_mac.o igc_nvm.o igc_phy.o
+IGC_OBJS += $(IGC_CORE_OBJS) igc.o igc_osdep.o igc_gld.o igc_ring.o igc_stat.o

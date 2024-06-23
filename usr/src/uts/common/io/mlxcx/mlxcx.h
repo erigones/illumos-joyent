@@ -10,9 +10,9 @@
  */
 
 /*
- * Copyright 2021, The University of Queensland
+ * Copyright 2023 The University of Queensland
  * Copyright (c) 2018, Joyent, Inc.
- * Copyright 2020 RackTop Systems, Inc.
+ * Copyright 2023 RackTop Systems, Inc.
  * Copyright 2023 MNX Cloud, Inc.
  */
 
@@ -56,6 +56,27 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#define	MLXCX_VENDOR_ID			0x15b3
+
+/*
+ * The PCI device ids for the cards we support. The device IDs correspond to
+ * the device ids in the driver manifest, and the names were obtained from
+ * the PCI id database in /usr/share/hwdata/pci.ids
+ */
+#define	MLXCX_CX4_DEVID			0x1013
+#define	MLXCX_CX4_VF_DEVID		0x1014
+#define	MLXCX_CX4_LX_DEVID		0x1015
+#define	MLXCX_CX4_LX_VF_DEVID		0x1016
+#define	MLXCX_CX5_DEVID			0x1017
+#define	MLXCX_CX5_VF_DEVID		0x1018
+#define	MLXCX_CX5_EX_DEVID		0x1019
+#define	MLXCX_CX5_EX_VF_DEVID		0x101a
+#define	MLXCX_CX6_DEVID			0x101b
+#define	MLXCX_CX6_VF_DEVID		0x101c
+#define	MLXCX_CX6_DF_DEVID		0x101d
+#define	MLXCX_CX5_GEN_VF_DEVID		0x101e
+#define	MLXCX_CX6_LX_DEVID		0x101f
 
 /*
  * Get access to the first PCI BAR.
@@ -163,6 +184,12 @@ extern "C" {
 #define	MLXCX_RX_PER_CQ_DEFAULT			256
 #define	MLXCX_RX_PER_CQ_MIN			16
 #define	MLXCX_RX_PER_CQ_MAX			4096
+
+/*
+ * Minimum size for packets loaned when >50% of a ring's buffers are already
+ * on loan to MAC.
+ */
+#define	MLXCX_P50_LOAN_MIN_SIZE_DFLT		256
 
 #define	MLXCX_DOORBELL_TRIES_DFLT		3
 extern uint_t mlxcx_doorbell_tries;
@@ -515,6 +542,10 @@ typedef struct mlxcx_buf_shard {
 	mlxcx_shard_state_t	mlbs_state;
 	list_node_t		mlbs_entry;
 	kmutex_t		mlbs_mtx;
+	uint64_t		mlbs_ntotal;
+	uint64_t		mlbs_nloaned;
+	uint64_t		mlbs_hiwat1;
+	uint64_t		mlbs_hiwat2;
 	list_t			mlbs_busy;
 	list_t			mlbs_free;
 	list_t			mlbs_loaned;
@@ -1014,6 +1045,7 @@ typedef struct {
 	uint64_t		mldp_eq_check_interval_sec;
 	uint64_t		mldp_cq_check_interval_sec;
 	uint64_t		mldp_wq_check_interval_sec;
+	uint_t			mldp_rx_p50_loan_min_size;
 } mlxcx_drv_props_t;
 
 typedef struct {
@@ -1024,6 +1056,19 @@ typedef struct {
 	int16_t	mlts_max_value;
 	uint8_t	mlts_name[MLXCX_MTMP_NAMELEN];
 } mlxcx_temp_sensor_t;
+
+/*
+ * The oldest card supported by this driver is ConnectX-4. So far (at least),
+ * newer models tend to just add features vs. replacing them, so it seems
+ * reasonable to assume an unknown model likely supports everything the
+ * ConnectX-6 cards do.
+ */
+typedef enum {
+	MLXCX_DEV_CX4		= 0,
+	MLXCX_DEV_CX5		= 1,
+	MLXCX_DEV_CX6		= 2,
+	MLXCX_DEV_UNKNOWN	= 3,
+} mlxcx_dev_type_t;
 
 typedef enum {
 	MLXCX_ATTACH_FM		= 1 << 0,
@@ -1055,6 +1100,7 @@ struct mlxcx {
 	int			mlx_inst;
 	mlxcx_attach_progress_t	mlx_attach;
 
+	mlxcx_dev_type_t	mlx_type;
 	mlxcx_drv_props_t	mlx_props;
 
 	/*

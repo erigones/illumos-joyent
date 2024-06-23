@@ -32,7 +32,7 @@
 #include <sys/sdt.h>
 #include <atomic.h>
 
-#if defined(THREAD_DEBUG)
+#if defined(DEBUG)
 #define	INCR32(x)	(((x) != UINT32_MAX)? (x)++ : 0)
 #define	INCR(x)		((x)++)
 #define	DECR(x)		((x)--)
@@ -488,14 +488,14 @@ queue_alloc(void)
 		qp->qh_lock.mutex_flag = LOCK_INITED;
 		qp->qh_lock.mutex_magic = MUTEX_MAGIC;
 		qp->qh_hlist = &qp->qh_def_root;
-#if defined(THREAD_DEBUG)
+#if defined(DEBUG)
 		qp->qh_hlen = 1;
 		qp->qh_hmax = 1;
 #endif
 	}
 }
 
-#if defined(THREAD_DEBUG)
+#if defined(DEBUG)
 
 /*
  * Debugging: verify correctness of a sleep queue.
@@ -545,11 +545,11 @@ QVERIFY(queue_head_t *qp)
 	ASSERT(qp->qh_qlen == cnt);
 }
 
-#else	/* THREAD_DEBUG */
+#else	/* DEBUG */
 
 #define	QVERIFY(qp)
 
-#endif	/* THREAD_DEBUG */
+#endif	/* DEBUG */
 
 /*
  * Acquire a queue head.
@@ -2270,9 +2270,16 @@ mutex_lock_impl(mutex_t *mp, timespec_t *tsp)
 		 * us that the signal handlers are safe by setting:
 		 *	export _THREAD_ASYNC_SAFE=1
 		 * we return EDEADLK rather than actually deadlocking.
+		 *
+		 * A lock may explicitly override this with the
+		 * LOCK_DEADLOCK flag which is currently set for POSIX
+		 * NORMAL mutexes as the specification requires deadlock
+		 * behavior and applications _do_ rely on that for their
+		 * correctness guarantees.
 		 */
 		if (tsp == NULL &&
-		    MUTEX_OWNER(mp) == self && !self->ul_async_safe) {
+		    MUTEX_OWNER(mp) == self && !self->ul_async_safe &&
+		    (mp->mutex_flag & LOCK_DEADLOCK) == 0) {
 			DTRACE_PROBE2(plockstat, mutex__error, mp, EDEADLK);
 			return (EDEADLK);
 		}
@@ -3927,7 +3934,7 @@ cond_destroy(cond_t *cvp)
 	return (0);
 }
 
-#if defined(THREAD_DEBUG)
+#if defined(DEBUG)
 void
 assert_no_libc_locks_held(void)
 {

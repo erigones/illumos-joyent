@@ -464,7 +464,8 @@ so_ux_lookup(struct sonode *so, struct sockaddr_un *soun, int checkaccess,
 		 * vnode. This check is not done in BSD but it is required
 		 * by X/Open.
 		 */
-		if (error = VOP_ACCESS(vp, VREAD|VWRITE, 0, CRED(), NULL)) {
+		error = VOP_ACCESS(vp, VREAD|VWRITE, 0, CRED(), NULL);
+		if (error != 0) {
 			eprintsoline(so, error);
 			goto done2;
 		}
@@ -1977,7 +1978,7 @@ soreadfile(file_t *fp, uchar_t *buf, u_offset_t fileoff, int *err, size_t size)
 
 	if (error == EINTR && cnt != 0)
 		error = 0;
-out:
+
 	if (error != 0) {
 		*err = error;
 		return (0);

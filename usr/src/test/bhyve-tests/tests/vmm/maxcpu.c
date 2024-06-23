@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 
 #include <stdio.h>
@@ -47,40 +47,52 @@ main(int argc, char *argv[])
 	uint16_t sockets, cores, threads, maxcpus;
 	if (vm_get_topology(ctx, &sockets, &cores, &threads, &maxcpus) != 0) {
 		err(EXIT_FAILURE,
-		    "cound not query maxcpu via vm_get_topology()");
+		    "could not query maxcpu via vm_get_topology()");
 	}
 
-	/* Check that all valid vCPUs can be activated... */
 	for (int i = 0; i < maxcpus; i++) {
-		if (vm_activate_cpu(ctx, i) != 0) {
-			err(EXIT_FAILURE, "could not activate vcpu %d", i);
-		}
-	}
-
-	/* ... And that we can do something basic (like read a register) */
-	for (int i = 0; i < maxcpus; i++) {
+		struct vcpu *vcpu;
 		uint64_t val = 0;
 
-		if (vm_get_register(ctx, i, VM_REG_GUEST_RAX, &val) != 0) {
+		if ((vcpu = vm_vcpu_open(ctx, i)) == NULL) {
+			err(EXIT_FAILURE, "could not open vcpu %d", i);
+		}
+
+		/* Check that all valid vCPUs can be activated... */
+		if (vm_activate_cpu(vcpu) != 0) {
+			err(EXIT_FAILURE, "could not activate vcpu %d", i);
+		}
+
+		/* and that we can do something basic (like read a register) */
+		if (vm_get_register(vcpu, VM_REG_GUEST_RAX, &val) != 0) {
 			err(EXIT_FAILURE, "could not read %%rax on vcpu %d", i);
 		}
+
+		vm_vcpu_close(vcpu);
 	}
 
 	/* Check some bogus inputs as well */
 	const int bad_inputs[] = {-1, maxcpus, maxcpus + 1};
 	for (uint_t i = 0; i < ARRAY_SIZE(bad_inputs); i++) {
-		const int vcpu = bad_inputs[i];
-		uint64_t val = 0;
+		const int vcpuid = bad_inputs[i];
 
-		if (vm_activate_cpu(ctx, vcpu) == 0) {
+		/*
+		 * There is no logic (currently) in vm_vcpu_open() checking
+		 * vcpuid for validity, so we must use a further operation to
+		 * perform a useful test.
+		 */
+		struct vcpu *vcpu = vm_vcpu_open(ctx, vcpuid);
+		if (vcpu == NULL) {
 			errx(EXIT_FAILURE,
-			    "unexpected activation for invalid vcpu %d", vcpu);
+			    "unexpected failure from vm_vcpu_open()");
 		}
-		if (vm_get_register(ctx, vcpu, VM_REG_GUEST_RAX, &val) == 0) {
-			errx(EXIT_FAILURE,
-			    "unexpected get_register for invalid vcpu %d",
-			    vcpu);
+
+		if (vm_activate_cpu(vcpu) == 0) {
+			err(EXIT_FAILURE,
+			    "unexpected VM_ACTIVATE success for bad vcpuid %d",
+			    vcpuid);
 		}
+		vm_vcpu_close(vcpu);
 	}
 
 	vm_destroy(ctx);

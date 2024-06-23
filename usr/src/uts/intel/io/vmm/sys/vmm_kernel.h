@@ -1,5 +1,5 @@
 /*-
- * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ * SPDX-License-Identifier: BSD-2-Clause
  *
  * Copyright (c) 2011 NetApp, Inc.
  * All rights reserved.
@@ -24,8 +24,6 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
- *
- * $FreeBSD$
  */
 /*
  * This file and its contents are supplied under the terms of the
@@ -39,7 +37,7 @@
  *
  * Copyright 2015 Pluribus Networks Inc.
  * Copyright 2019 Joyent, Inc.
- * Copyright 2023 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  * Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
  */
 
@@ -155,6 +153,8 @@ bool vm_is_paused(struct vm *);
  * APIs that race against hardware.
  */
 int vm_track_dirty_pages(struct vm *, uint64_t, size_t, uint8_t *);
+int vm_npt_do_operation(struct vm *, uint64_t, size_t, uint32_t, uint8_t *,
+    int *);
 
 /*
  * APIs that modify the guest memory map require all vcpus to be frozen.
@@ -506,6 +506,7 @@ typedef struct vmm_data_req {
 	uint32_t	vdr_len;
 	void		*vdr_data;
 	uint32_t	*vdr_result_len;
+	int		vdr_vcpuid;
 } vmm_data_req_t;
 
 typedef int (*vmm_data_writef_t)(void *, const vmm_data_req_t *);
@@ -564,8 +565,8 @@ typedef struct vmm_data_version_entry {
 
 #define	VMM_DATA_VERSION(sym)	SET_ENTRY(vmm_data_version_entries, sym)
 
-int vmm_data_read(struct vm *, int, const vmm_data_req_t *);
-int vmm_data_write(struct vm *, int, const vmm_data_req_t *);
+int vmm_data_read(struct vm *, const vmm_data_req_t *);
+int vmm_data_write(struct vm *, const vmm_data_req_t *);
 
 /*
  * TSC Scaling

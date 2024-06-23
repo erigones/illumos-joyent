@@ -1,5 +1,5 @@
 /*-
- * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ * SPDX-License-Identifier: BSD-2-Clause
  *
  * Copyright (c) 2011 NetApp, Inc.
  * All rights reserved.
@@ -24,8 +24,6 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
- *
- * $FreeBSD$
  */
 /*
  * This file and its contents are supplied under the terms of the
@@ -39,7 +37,7 @@
  *
  * Copyright 2014 Pluribus Networks Inc.
  * Copyright 2018 Joyent, Inc.
- * Copyright 2022 Oxide Computer Company
+ * Copyright 2024 Oxide Computer Company
  */
 
 #include <sys/types.h>
@@ -553,7 +551,7 @@ legacy_emulate_cpuid(struct vm *vm, int vcpu_id, uint32_t *eax, uint32_t *ebx,
 				goto default_leaf;
 
 			/*
-			 * Similar to Intel, generate a ficticious cache
+			 * Similar to Intel, generate a fictitious cache
 			 * topology for the guest with L3 shared by the
 			 * package, and L1 and L2 local to a core.
 			 */
@@ -582,10 +580,15 @@ legacy_emulate_cpuid(struct vm *vm, int vcpu_id, uint32_t *eax, uint32_t *ebx,
 				break;
 			}
 
-			logical_cpus = MIN(0xfff, logical_cpus - 1);
-			regs[0] = (logical_cpus << 14) | (1 << 8) |
-			    (level << 5) | func;
-			regs[1] = (func > 0) ? (CACHE_LINE_SIZE - 1) : 0;
+			if (level == 0) {
+				regs[0] = 0;
+				regs[1] = 0;
+			} else {
+				logical_cpus = MIN(0xfff, logical_cpus - 1);
+				regs[0] = (logical_cpus << 14) | (1 << 8) |
+				    (level << 5) | func;
+				regs[1] = func > 0 ? CACHE_LINE_SIZE - 1 : 0;
+			}
 			regs[2] = 0;
 			regs[3] = 0;
 			break;
@@ -740,18 +743,22 @@ legacy_emulate_cpuid(struct vm *vm, int vcpu_id, uint32_t *eax, uint32_t *ebx,
 				/*
 				 * Expose known-safe features.
 				 */
-				regs[1] &= (CPUID_STDEXT_FSGSBASE |
+				regs[1] &= CPUID_STDEXT_FSGSBASE |
 				    CPUID_STDEXT_BMI1 | CPUID_STDEXT_HLE |
 				    CPUID_STDEXT_AVX2 | CPUID_STDEXT_SMEP |
 				    CPUID_STDEXT_BMI2 |
 				    CPUID_STDEXT_ERMS | CPUID_STDEXT_RTM |
 				    CPUID_STDEXT_AVX512F |
+				    CPUID_STDEXT_AVX512DQ |
 				    CPUID_STDEXT_RDSEED |
 				    CPUID_STDEXT_SMAP |
 				    CPUID_STDEXT_AVX512PF |
 				    CPUID_STDEXT_AVX512ER |
-				    CPUID_STDEXT_AVX512CD | CPUID_STDEXT_SHA);
-				regs[2] = 0;
+				    CPUID_STDEXT_AVX512CD | CPUID_STDEXT_SHA |
+				    CPUID_STDEXT_AVX512BW |
+				    CPUID_STDEXT_AVX512VL;
+				regs[2] &= CPUID_STDEXT2_VAES |
+				    CPUID_STDEXT2_VPCLMULQDQ;
 				regs[3] &= CPUID_STDEXT3_MD_CLEAR;
 
 				/* Advertise INVPCID if it is enabled. */

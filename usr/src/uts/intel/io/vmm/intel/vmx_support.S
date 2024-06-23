@@ -23,8 +23,6 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
- *
- * $FreeBSD$
  */
 /*
  * This file and its contents are supplied under the terms of the
@@ -38,7 +36,7 @@
  *
  * Copyright 2013 Pluribus Networks Inc.
  * Copyright 2018 Joyent, Inc.
- * Copyright 2022 MNX Cloud, Inc.
+ * Copyright 2024 MNX Cloud, Inc.
  */
 
 #include <sys/asm_linkage.h>
@@ -228,7 +226,7 @@ ENTRY_NP(vmx_exit_guest)
 	 * NOTE: If RSB mitigations are disabled (see cpuid.c), this call is
 	 * entirely a NOP.
 	 */
-	call	x86_rsb_stuff
+	call	x86_rsb_stuff_vmexit
 
 	/*
 	 * This will return to the caller of 'vmx_enter_guest()' with a return

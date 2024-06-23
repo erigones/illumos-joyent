@@ -166,6 +166,7 @@ s dev/full=../devices/pseudo/mm@0:full
 s dev/icmp6=../devices/pseudo/icmp6@0:icmp6
 s dev/icmp=../devices/pseudo/icmp@0:icmp
 s dev/igb=../devices/pseudo/clone@0:igb
+s dev/igc=../devices/pseudo/clone@0:igc
 s dev/ip6=../devices/pseudo/ip6@0:ip6
 s dev/ip=../devices/pseudo/ip@0:ip
 s dev/ipauth=../devices/pseudo/ipf@0:ipauth
@@ -464,6 +465,7 @@ d etc/inet/secret 0700 root sys
 f etc/inet/secret/ike.preshared 0600 root sys
 d etc/inet/secret/ike.privatekeys 0700 root sys
 f etc/inet/secret/ipseckeys.sample 0600 root sys
+f etc/inet/secret/tcpkeys.sample 0600 root sys
 f etc/inet/services 0644 root sys
 s etc/inetd.conf=inet/inetd.conf
 d etc/init.d 0755 root sys
@@ -770,6 +772,7 @@ f kernel/drv/amd64/i8042 0755 root sys
 f kernel/drv/amd64/icmp 0755 root sys
 f kernel/drv/amd64/icmp6 0755 root sys
 f kernel/drv/amd64/igb 0755 root sys
+f kernel/drv/amd64/igc 0755 root sys
 f kernel/drv/amd64/imc 0755 root sys
 f kernel/drv/amd64/imcstub 0755 root sys
 f kernel/drv/amd64/intel_nb5000 0755 root sys
@@ -897,6 +900,7 @@ f kernel/drv/amd64/vgatext 0755 root sys
 f kernel/drv/amd64/vio9p 0755 root sys
 f kernel/drv/amd64/vioblk 0755 root sys
 f kernel/drv/amd64/vioif 0755 root sys
+f kernel/drv/amd64/viorand 0755 root sys
 f kernel/drv/amd64/vioscsi 0755 root sys
 f kernel/drv/amd64/vmxnet 0755 root sys
 f kernel/drv/amd64/vmxnet3s 0755 root sys
@@ -1444,6 +1448,8 @@ f lib/amd64/libnsl.so.1 0755 root bin
 s lib/amd64/libnsl.so=libnsl.so.1
 f lib/amd64/libnvpair.so.1 0755 root bin
 s lib/amd64/libnvpair.so=libnvpair.so.1
+f lib/amd64/libnwam.so.1 0755 root bin
+s lib/amd64/libnwam.so=libnvpair.so.1
 f lib/amd64/libofmt.so.1 0755 root bin
 s lib/amd64/libofmt.so=libofmt.so.1
 f lib/amd64/libpam.so.1 0755 root bin
@@ -1772,6 +1778,7 @@ f lib/svc/manifest/network/ipsec/ike.xml 0444 root sys
 f lib/svc/manifest/network/ipsec/ipsecalgs.xml 0444 root sys
 f lib/svc/manifest/network/ipsec/manual-key.xml 0444 root sys
 f lib/svc/manifest/network/ipsec/policy.xml 0444 root sys
+f lib/svc/manifest/network/ipsec/tcpkey.xml 0444 root sys
 d lib/svc/manifest/network/iscsi 0755 root sys
 f lib/svc/manifest/network/iscsi/iscsi-initiator.xml 0444 root sys
 f lib/svc/manifest/network/iscsi/iscsi-target.xml 0444 root sys
@@ -1952,6 +1959,7 @@ f lib/svc/method/net-physical 0555 root sys
 f lib/svc/method/net-routing-setup 0555 root bin
 f lib/svc/method/net-svc 0555 root bin
 f lib/svc/method/net-virtual 0555 root sys
+f lib/svc/method/net-tcpkey 0555 root bin
 f lib/svc/method/nfs-client 0555 root bin
 f lib/svc/method/nfs-server 0555 root sys
 f lib/svc/method/nlockmgr 0555 root bin
@@ -2558,10 +2566,15 @@ f platform/i86pc/ucode/GenuineIntel/000A0652-20 0444 root sys
 f platform/i86pc/ucode/GenuineIntel/000A0653-02 0444 root sys
 h platform/i86pc/ucode/GenuineIntel/000A0653-20=platform/i86pc/ucode/GenuineIntel/000A0653-02
 f platform/i86pc/ucode/GenuineIntel/000A0655-02 0444 root sys
-h platform/i86pc/ucode/GenuineIntel/000A0655-20=platform/i86pc/ucode/GenuineIntel/000A0653-02
+h platform/i86pc/ucode/GenuineIntel/000A0655-20=platform/i86pc/ucode/GenuineIntel/000A0655-02
 f platform/i86pc/ucode/GenuineIntel/000A0660-80 0444 root sys
 f platform/i86pc/ucode/GenuineIntel/000A0661-80 0444 root sys
 f platform/i86pc/ucode/GenuineIntel/000A0671-02 0444 root sys
+f platform/i86pc/ucode/GenuineIntel/000A06A4-02 0444 root sys
+h platform/i86pc/ucode/GenuineIntel/000A06A4-04=platform/i86pc/ucode/GenuineIntel/000A06A4-02
+h platform/i86pc/ucode/GenuineIntel/000A06A4-20=platform/i86pc/ucode/GenuineIntel/000A06A4-02
+h platform/i86pc/ucode/GenuineIntel/000A06A4-40=platform/i86pc/ucode/GenuineIntel/000A06A4-02
+h platform/i86pc/ucode/GenuineIntel/000A06A4-80=platform/i86pc/ucode/GenuineIntel/000A06A4-02
 f platform/i86pc/ucode/GenuineIntel/000B0671-02 0444 root sys
 h platform/i86pc/ucode/GenuineIntel/000B0671-10=platform/i86pc/ucode/GenuineIntel/000B0671-02
 h platform/i86pc/ucode/GenuineIntel/000B0671-20=platform/i86pc/ucode/GenuineIntel/000B0671-02
@@ -2571,6 +2584,9 @@ h platform/i86pc/ucode/GenuineIntel/000B06A2-80=platform/i86pc/ucode/GenuineInte
 h platform/i86pc/ucode/GenuineIntel/000B06A3-20=platform/i86pc/ucode/GenuineIntel/000B06A2-20
 h platform/i86pc/ucode/GenuineIntel/000B06A3-40=platform/i86pc/ucode/GenuineIntel/000B06A2-20
 h platform/i86pc/ucode/GenuineIntel/000B06A3-80=platform/i86pc/ucode/GenuineIntel/000B06A2-20
+h platform/i86pc/ucode/GenuineIntel/000B06A8-20=platform/i86pc/ucode/GenuineIntel/000B06A2-20
+h platform/i86pc/ucode/GenuineIntel/000B06A8-40=platform/i86pc/ucode/GenuineIntel/000B06A2-20
+h platform/i86pc/ucode/GenuineIntel/000B06A8-80=platform/i86pc/ucode/GenuineIntel/000B06A2-20
 f platform/i86pc/ucode/GenuineIntel/000B06E0-01 0444 root sys
 h platform/i86pc/ucode/GenuineIntel/000B06E0-10=platform/i86pc/ucode/GenuineIntel/000B06E0-01
 h platform/i86pc/ucode/GenuineIntel/000B06F2-01=platform/i86pc/ucode/GenuineIntel/00090672-01
@@ -2579,6 +2595,14 @@ h platform/i86pc/ucode/GenuineIntel/000B06F2-04=platform/i86pc/ucode/GenuineInte
 h platform/i86pc/ucode/GenuineIntel/000B06F5-01=platform/i86pc/ucode/GenuineIntel/00090672-01
 h platform/i86pc/ucode/GenuineIntel/000B06F5-02=platform/i86pc/ucode/GenuineIntel/00090672-01
 h platform/i86pc/ucode/GenuineIntel/000B06F5-04=platform/i86pc/ucode/GenuineIntel/00090672-01
+f platform/i86pc/ucode/GenuineIntel/000C06F1-01 0444 root sys
+h platform/i86pc/ucode/GenuineIntel/000C06F1-02=platform/i86pc/ucode/GenuineIntel/000C06F1-01
+h platform/i86pc/ucode/GenuineIntel/000C06F1-04=platform/i86pc/ucode/GenuineIntel/000C06F1-01
+h platform/i86pc/ucode/GenuineIntel/000C06F1-80=platform/i86pc/ucode/GenuineIntel/000C06F1-01
+h platform/i86pc/ucode/GenuineIntel/000C06F2-01=platform/i86pc/ucode/GenuineIntel/000C06F1-01
+h platform/i86pc/ucode/GenuineIntel/000C06F2-02=platform/i86pc/ucode/GenuineIntel/000C06F1-01
+h platform/i86pc/ucode/GenuineIntel/000C06F2-04=platform/i86pc/ucode/GenuineIntel/000C06F1-01
+h platform/i86pc/ucode/GenuineIntel/000C06F2-80=platform/i86pc/ucode/GenuineIntel/000C06F1-01
 d proc 0755 root root
 d root 0755 root root
 f root/.bash_profile 0644 root root
@@ -2653,7 +2677,7 @@ f usr/bin/addbadsec 0555 root bin
 f usr/bin/alias 0555 root bin
 d usr/bin/amd64 0755 root bin
 f usr/bin/amd64/amt 0555 root bin
-f usr/bin/amd64/cputrack 0555 root bin
+s usr/bin/amd64/cputrack=../cputrack
 f usr/bin/amd64/crle 0555 root bin
 s usr/bin/amd64/decrypt=../decrypt
 s usr/bin/amd64/digest=../digest
@@ -2663,8 +2687,8 @@ f usr/bin/amd64/elfedit 0555 root bin
 f usr/bin/amd64/elfwrap 0555 root bin
 s usr/bin/amd64/encrypt=../encrypt
 f usr/bin/amd64/gcore 0555 root bin
-f usr/bin/amd64/ksh93 0555 root bin
-h usr/bin/amd64/ksh=usr/bin/amd64/ksh93
+s usr/bin/amd64/ksh93=../ksh93
+s usr/bin/amd64/ksh=../ksh
 s usr/bin/amd64/ld=../ld
 s usr/bin/amd64/ldd=../ldd
 f usr/bin/amd64/ls 0555 root bin
@@ -2700,8 +2724,8 @@ f usr/bin/amd64/ptree 0555 root bin
 s usr/bin/amd64/pvs=../pvs
 f usr/bin/amd64/pwait 0555 root bin
 f usr/bin/amd64/pwdx 0555 root bin
-h usr/bin/amd64/rksh93=usr/bin/amd64/ksh93
-h usr/bin/amd64/rksh=usr/bin/amd64/ksh93
+s usr/bin/amd64/rksh=../rksh
+s usr/bin/amd64/rksh93=../rksh93
 s usr/bin/amd64/savecore=../savecore
 s usr/bin/amd64/size=../size
 s usr/bin/amd64/sort=../sort
@@ -2760,7 +2784,7 @@ f usr/bin/connstat 0555 root bin
 f usr/bin/coreadm 0555 root bin
 f usr/bin/cp 0555 root bin
 f usr/bin/cpio 0555 root bin
-h usr/bin/cputrack=usr/lib/isaexec
+f usr/bin/cputrack 0555 root bin
 f usr/bin/crle 0555 root bin
 f usr/bin/crontab 4555 root bin
 f usr/bin/crypt 0555 root bin
@@ -2882,8 +2906,8 @@ f usr/bin/klist 0555 root bin
 f usr/bin/kmfcfg 0555 root bin
 f usr/bin/kpasswd 0555 root bin
 f usr/bin/krb5-config 0555 root bin
-h usr/bin/ksh93=usr/lib/isaexec
-h usr/bin/ksh=usr/lib/isaexec
+h usr/bin/ksh=usr/bin/ksh93
+f usr/bin/ksh93 0555 root bin
 f usr/bin/kstat 0555 root bin
 f usr/bin/ktutil 0555 root bin
 f usr/bin/kvmstat 0555 root bin
@@ -3028,8 +3052,8 @@ f usr/bin/regcmp 0555 root bin
 s usr/bin/remsh=rsh
 f usr/bin/renice 0555 root bin
 h usr/bin/rev=usr/bin/alias
-h usr/bin/rksh93=usr/lib/isaexec
-h usr/bin/rksh=usr/lib/isaexec
+h usr/bin/rksh=usr/bin/ksh93
+h usr/bin/rksh93=usr/bin/ksh93
 f usr/bin/rlogin 4555 root bin
 f usr/bin/rm 0555 root bin
 s usr/bin/rmail=mail
@@ -3636,6 +3660,7 @@ f usr/include/libmilter/README 0644 root bin
 f usr/include/libmilter/mfapi.h 0644 root bin
 f usr/include/libmilter/mfdef.h 0644 root bin
 f usr/include/libndmp.h 0644 root bin
+f usr/include/libnvme.h 0644 root bin
 f usr/include/libnvpair.h 0644 root bin
 f usr/include/libnwam.h 0644 root bin
 f usr/include/libnwam_priv.h 0644 root bin
@@ -3782,6 +3807,7 @@ f usr/include/nfs/mapid.h 0644 root bin
 f usr/include/nfs/mount.h 0644 root bin
 f usr/include/nfs/nfs.h 0644 root bin
 f usr/include/nfs/nfs4.h 0644 root bin
+f usr/include/nfs/nfs4x.h 0644 root bin
 f usr/include/nfs/nfs4_attr.h 0644 root bin
 f usr/include/nfs/nfs4_clnt.h 0644 root bin
 f usr/include/nfs/nfs4_db_impl.h 0644 root bin
@@ -4307,6 +4333,7 @@ f usr/include/sys/exacct.h 0644 root bin
 f usr/include/sys/exacct_catalog.h 0644 root bin
 f usr/include/sys/exacct_impl.h 0644 root bin
 f usr/include/sys/exec.h 0644 root bin
+f usr/include/sys/execx.h 0644 root bin
 f usr/include/sys/exechdr.h 0644 root bin
 f usr/include/sys/extdirent.h 0644 root bin
 f usr/include/sys/fasttrap.h 0644 root bin
@@ -4687,6 +4714,16 @@ f usr/include/sys/netstack.h 0644 root bin
 f usr/include/sys/nexusdefs.h 0644 root bin
 f usr/include/sys/note.h 0644 root bin
 f usr/include/sys/null.h 0644 root bin
+d usr/include/sys/nvme 0755 root bin
+f usr/include/sys/nvme/discovery.h 0644 root bin
+f usr/include/sys/nvme/micron.h 0644 root bin
+f usr/include/sys/nvme/micron_7300.h 0644 root bin
+f usr/include/sys/nvme/micron_74x0.h 0644 root bin
+f usr/include/sys/nvme/micron_x500.h 0644 root bin
+f usr/include/sys/nvme/ocp.h 0644 root bin
+f usr/include/sys/nvme/wdc.h 0644 root bin
+f usr/include/sys/nvme/wdc_sn65x.h 0644 root bin
+f usr/include/sys/nvme/wdc_sn840.h 0644 root bin
 f usr/include/sys/nvpair.h 0644 root bin
 f usr/include/sys/nvpair_impl.h 0644 root bin
 f usr/include/sys/objfs.h 0644 root bin
@@ -5531,6 +5568,8 @@ s usr/lib/amd64/libnsl.so.1=../../../lib/amd64/libnsl.so.1
 s usr/lib/amd64/libnsl.so=../../../lib/amd64/libnsl.so.1
 f usr/lib/amd64/libnvfru.so.1 0755 root bin
 s usr/lib/amd64/libnvfru.so=libnvfru.so.1
+f usr/lib/amd64/libnvme.so.1 0755 root bin
+s usr/lib/amd64/libnvme.so=libnvme.so.1
 s usr/lib/amd64/libnvpair.so.1=../../../lib/amd64/libnvpair.so.1
 s usr/lib/amd64/libnvpair.so=../../../lib/amd64/libnvpair.so.1
 s usr/lib/amd64/libpam.so.1=../../../lib/amd64/libpam.so.1
@@ -6592,6 +6631,7 @@ f usr/lib/help/profiles/locale/C/RtNetLinkSecure.html 0444 root bin
 f usr/lib/help/profiles/locale/C/RtNetMngmnt.html 0444 root bin
 f usr/lib/help/profiles/locale/C/RtNetObservability.html 0444 root bin
 f usr/lib/help/profiles/locale/C/RtNetSecure.html 0444 root bin
+f usr/lib/help/profiles/locale/C/RtNetTCPMngmnt.html 0444 root bin
 f usr/lib/help/profiles/locale/C/RtNetVRRP.html 0444 root bin
 f usr/lib/help/profiles/locale/C/RtNetWifiMngmnt.html 0444 root bin
 f usr/lib/help/profiles/locale/C/RtNetWifiSecure.html 0444 root bin
@@ -6669,6 +6709,7 @@ f usr/lib/help/profiles/locale/RtNetLinkSecure.html 0444 root bin
 f usr/lib/help/profiles/locale/RtNetMngmnt.html 0444 root bin
 f usr/lib/help/profiles/locale/RtNetObservability.html 0444 root bin
 f usr/lib/help/profiles/locale/RtNetSecure.html 0444 root bin
+f usr/lib/help/profiles/locale/RtNetTCPMngmnt.html 0444 root bin
 f usr/lib/help/profiles/locale/RtNetVRRP.html 0444 root bin
 f usr/lib/help/profiles/locale/RtNetWifiMngmnt.html 0444 root bin
 f usr/lib/help/profiles/locale/RtNetWifiSecure.html 0444 root bin
@@ -7039,6 +7080,8 @@ s usr/lib/libnsl.so.1=../../lib/libnsl.so.1
 s usr/lib/libnsl.so=../../lib/libnsl.so.1
 f usr/lib/libnvfru.so.1 0755 root bin
 s usr/lib/libnvfru.so=libnvfru.so.1
+f usr/lib/libnvme.so.1 0755 root bin
+s usr/lib/libnvme.so=libnvme.so.1
 s usr/lib/libnvpair.so.1=../../lib/libnvpair.so.1
 s usr/lib/libnvpair.so=../../lib/libnvpair.so.1
 s usr/lib/libnwam.so.1=../../lib/libnwam.so.1
@@ -10969,10 +11012,10 @@ f usr/sbin/acpixtract 0555 root bin
 f usr/sbin/add_drv 0555 root bin
 f usr/sbin/allocate 4555 root bin
 d usr/sbin/amd64 0755 root bin
-f usr/sbin/amd64/dtrace 0555 root bin
-f usr/sbin/amd64/intrstat 0555 root bin
-f usr/sbin/amd64/lockstat 0555 root bin
-f usr/sbin/amd64/plockstat 0555 root bin
+s usr/sbin/amd64/dtrace=../dtrace
+s usr/sbin/amd64/intrstat=../intrstat
+s usr/sbin/amd64/lockstat=../lockstat
+s usr/sbin/amd64/plockstat=../plockstat
 f usr/sbin/arp 0555 root bin
 f usr/sbin/audit 0555 root bin
 f usr/sbin/auditconfig 0555 root bin
@@ -11017,7 +11060,7 @@ s usr/sbin/dlstat=../../sbin/dlstat
 f usr/sbin/dmesg 0555 root bin
 f usr/sbin/dminfo 0555 root bin
 h usr/sbin/drvconfig=usr/sbin/devfsadm
-h usr/sbin/dtrace=usr/lib/isaexec
+f usr/sbin/dtrace 0555 root bin
 f usr/sbin/dumpadm 0555 root bin
 f usr/sbin/editmap 0555 root bin
 s usr/sbin/edquota=../lib/fs/ufs/edquota
@@ -11080,7 +11123,7 @@ s usr/sbin/init=../../sbin/init
 f usr/sbin/install 0555 root bin
 f usr/sbin/installboot 0555 root sys
 s usr/sbin/installgrub=../../sbin/installgrub
-h usr/sbin/intrstat=usr/lib/isaexec
+f usr/sbin/intrstat 0555 root bin
 f usr/sbin/ipaddrsel 0555 root bin
 s usr/sbin/ipadm=../../sbin/ipadm
 f usr/sbin/ipdadm 0555 root bin
@@ -11105,7 +11148,7 @@ f usr/sbin/link 0555 root bin
 h usr/sbin/list_devices=usr/sbin/allocate
 f usr/sbin/locator 0555 root bin
 s usr/sbin/lockfs=../lib/fs/ufs/lockfs
-h usr/sbin/lockstat=usr/lib/isaexec
+f usr/sbin/lockstat 0555 root bin
 f usr/sbin/lofiadm 0555 root bin
 f usr/sbin/logadm 0555 root bin
 f usr/sbin/makedbm 0555 root bin
@@ -11139,7 +11182,7 @@ f usr/sbin/nwamcfg 0555 root bin
 f usr/sbin/pbind 0555 root sys
 f usr/sbin/pcitool 0555 root bin
 f usr/sbin/ping 4555 root bin
-h usr/sbin/plockstat=usr/lib/isaexec
+f usr/sbin/plockstat 0555 root bin
 f usr/sbin/pmadm 0555 root sys
 f usr/sbin/pmconfig 4555 root bin
 h usr/sbin/ports=usr/sbin/devfsadm
@@ -11219,6 +11262,7 @@ f usr/sbin/tar 0555 root bin
 f usr/sbin/tcpd 0555 root bin
 f usr/sbin/tcpdchk 0555 root bin
 f usr/sbin/tcpdmatch 0555 root bin
+h usr/sbin/tcpkey=usr/sbin/ipseckey
 f usr/sbin/traceroute 4555 root bin
 h usr/sbin/trapstat=usr/lib/platexec
 f usr/sbin/try-from 0555 root bin
@@ -11727,7 +11771,7 @@ f usr/share/lib/zoneinfo/Antarctica/Rothera 0644 root bin
 f usr/share/lib/zoneinfo/Antarctica/South_Pole 0644 root bin
 h usr/share/lib/zoneinfo/Antarctica/Syowa=usr/share/lib/zoneinfo/Asia/Riyadh
 f usr/share/lib/zoneinfo/Antarctica/Troll 0644 root bin
-h usr/share/lib/zoneinfo/Antarctica/Vostok=usr/share/lib/zoneinfo/Asia/Urumqi
+f usr/share/lib/zoneinfo/Antarctica/Vostok 0644 root bin
 d usr/share/lib/zoneinfo/Arctic 0755 root bin
 h usr/share/lib/zoneinfo/Arctic/Longyearbyen=usr/share/lib/zoneinfo/Europe/Berlin
 d usr/share/lib/zoneinfo/Asia 0755 root bin
@@ -12994,7 +13038,9 @@ s usr/share/man/man2/execle.2=exec.2
 s usr/share/man/man2/execlp.2=exec.2
 s usr/share/man/man2/execv.2=exec.2
 s usr/share/man/man2/execve.2=exec.2
+f usr/share/man/man2/execvex.2 0444 root bin
 s usr/share/man/man2/execvp.2=exec.2
+s usr/share/man/man2/execvpe.2=exec.2
 f usr/share/man/man2/exit.2 0444 root bin
 s usr/share/man/man2/faccessat.2=access.2
 s usr/share/man/man2/facl.2=acl.2
@@ -13005,6 +13051,7 @@ s usr/share/man/man2/fchown.2=chown.2
 s usr/share/man/man2/fchownat.2=chown.2
 s usr/share/man/man2/fchroot.2=chroot.2
 f usr/share/man/man2/fcntl.2 0444 root bin
+s usr/share/man/man2/fexecve.2=exec.2
 f usr/share/man/man2/fork.2 0444 root bin
 s usr/share/man/man2/fork1.2=fork.2
 s usr/share/man/man2/forkall.2=fork.2
@@ -13215,6 +13262,9 @@ f usr/share/man/man3avl/avl_nearest.3avl 0444 root bin
 f usr/share/man/man3avl/avl_numnodes.3avl 0444 root bin
 s usr/share/man/man3avl/avl_remove.3avl=avl_add.3avl
 f usr/share/man/man3avl/avl_swap.3avl 0444 root bin
+f usr/share/man/man3avl/avl_update.3avl 0444 root bin
+s usr/share/man/man3avl/avl_update_gt.3avl=avl_update.3avl
+s usr/share/man/man3avl/avl_update_lt.3avl=avl_update.3avl
 d usr/share/man/man3bsm 0755 root bin
 s usr/share/man/man3bsm/au_close.3bsm=au_open.3bsm
 f usr/share/man/man3bsm/au_open.3bsm 0444 root bin
@@ -14399,6 +14449,8 @@ s usr/share/man/man3c/strdupa.3c=string.3c
 f usr/share/man/man3c/strerror.3c 0444 root bin
 s usr/share/man/man3c/strerror_l.3c=strerror.3c
 s usr/share/man/man3c/strerror_r.3c=strerror.3c
+s usr/share/man/man3c/strerrordesc_np.3c=strerror.3c
+s usr/share/man/man3c/strerrorname_np.3c=strerror.3c
 f usr/share/man/man3c/strfmon.3c 0444 root bin
 s usr/share/man/man3c/strfmon_l.3c=strfmon.3c
 f usr/share/man/man3c/strftime.3c 0444 root bin
@@ -14884,6 +14936,7 @@ f usr/share/man/man3cpc/amd_f17h_zen1_events.3cpc 0444 root bin
 f usr/share/man/man3cpc/amd_f17h_zen2_events.3cpc 0444 root bin
 f usr/share/man/man3cpc/amd_f19h_zen3_events.3cpc 0444 root bin
 f usr/share/man/man3cpc/amd_f19h_zen4_events.3cpc 0444 root bin
+f usr/share/man/man3cpc/amd_f1ah_zen5_events.3cpc 0444 root bin
 f usr/share/man/man3cpc/bdw_de_events.3cpc 0444 root bin
 f usr/share/man/man3cpc/bdw_events.3cpc 0444 root bin
 f usr/share/man/man3cpc/bdx_events.3cpc 0444 root bin
@@ -19436,6 +19489,7 @@ f usr/share/man/man4d/hxge.4d 0444 root bin
 f usr/share/man/man4d/i40e.4d 0444 root bin
 f usr/share/man/man4d/ieee1394.4d 0444 root bin
 f usr/share/man/man4d/igb.4d 0444 root bin
+f usr/share/man/man4d/igc.4d 0444 root bin
 f usr/share/man/man4d/imc.4d 0444 root bin
 f usr/share/man/man4d/imcstub.4d 0444 root bin
 f usr/share/man/man4d/ipmi.4d 0444 root bin
@@ -20004,6 +20058,7 @@ s usr/share/man/man7/standard.7=attributes.7
 f usr/share/man/man7/standards.7 0444 root bin
 s usr/share/man/man7/step.7=regexp.7
 f usr/share/man/man7/sticky.7 0444 root bin
+f usr/share/man/man7/style.7 0444 root bin
 f usr/share/man/man7/tbl.7 0444 root bin
 f usr/share/man/man7/tecla.7 0444 root bin
 s usr/share/man/man7/teclarc.7=tecla.7
@@ -20366,6 +20421,7 @@ f usr/share/man/man8/syslogd.8 0444 root bin
 f usr/share/man/man8/tapes.8 0444 root bin
 f usr/share/man/man8/tcpd.8 0444 root bin
 f usr/share/man/man8/tcpdchk.8 0444 root bin
+f usr/share/man/man8/tcpkey.8 0444 root bin
 f usr/share/man/man8/tcpdmatch.8 0444 root bin
 f usr/share/man/man8/tic.8 0444 root bin
 f usr/share/man/man8/traceroute.8 0444 root bin
@@ -22115,6 +22171,7 @@ f usr/xpg4/bin/who 0555 root bin
 d usr/xpg4/include 0755 root bin
 f usr/xpg4/include/curses.h 0644 root bin
 f usr/xpg4/include/term.h 0644 root bin
+f usr/xpg4/include/termcap.h 0644 root bin
 f usr/xpg4/include/unctrl.h 0644 root bin
 d usr/xpg4/lib 0755 root bin
 s usr/xpg4/lib/64=amd64

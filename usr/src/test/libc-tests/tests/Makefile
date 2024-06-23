@@ -15,12 +15,13 @@
 # Copyright 2019 Joyent, Inc.
 # Copyright 2022 OmniOS Community Edition (OmniOSce) Association.
 # Copyright 2023 Bill Sommerfeld <sommerfeld@alum.mit.edu>
-# Copyright 2023 Oxide Computer Company
+# Copyright 2024 Oxide Computer Company
 #
 
 SUBDIRS = \
 	catopen \
 	err \
+	fexecve \
 	fpround \
 	i18n \
 	newlocale \
@@ -31,7 +32,6 @@ SUBDIRS = \
 	regex \
 	select \
 	stdio \
-	strerror \
 	symbols \
 	threads \
 	wcsrtombs \
@@ -40,6 +40,7 @@ SUBDIRS = \
 PROGS = \
 	env-OS-4089 \
 	aligned_alloc \
+	ascftime \
 	asprintf-14933 \
 	c11_threads \
 	c11_tss \
@@ -51,6 +52,7 @@ PROGS = \
 	isatty \
 	memchr \
 	memset_s \
+	mutex-16200 \
 	posix_memalign \
 	printf-15294 \
 	printf-9511 \
@@ -59,6 +61,7 @@ PROGS = \
 	quick_exit_status \
 	set_constraint_handler_s \
 	strcoll-strxfrm-6907 \
+	strerror \
 	strtonum \
 	timespec_get \
 	wcsncasecmp \
@@ -68,6 +71,7 @@ PROGS = \
 	utimes
 
 SCRIPTS = \
+	aligned_alloc \
 	quick_exit \
 	psignal
 
@@ -78,6 +82,8 @@ PROGS64 = \
 	$(PROGS:%=%.64) \
 	printf-6961.64
 
+aligned_alloc.32 :=	CSTD=$(GNU_C99)
+aligned_alloc.64 :=	CSTD=$(GNU_C99)
 aligned_alloc.32 :=	LDLIBS += -lproc
 aligned_alloc.64 :=	LDLIBS64 += -lproc
 posix_memalign.32 :=	LDLIBS += -lproc
@@ -93,6 +99,11 @@ set_constraint_handler_s.64 := CPPFLAGS += -D__STDC_WANT_LIB_EXT1__=1
 
 isatty.32 :=	CSTD=$(GNU_C99)
 isatty.64 :=	CSTD=$(GNU_C99)
+
+mutex-16200.32 :=	LDLIBS += -lproc
+mutex-16200.64 :=	LDLIBS64 += -lproc
+mutex-16200.32 :=	CSTD=$(GNU_C99)
+mutex-16200.64 :=	CSTD=$(GNU_C99)
 
 strtonum.32 :=		CSTD=$(GNU_C99)
 strtonum.64 :=		CSTD=$(GNU_C99)

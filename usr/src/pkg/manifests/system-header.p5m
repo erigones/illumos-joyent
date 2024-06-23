@@ -28,7 +28,7 @@
 # Copyright 2016 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
 # Copyright 2020 Joyent, Inc.
 # Copyright 2019 Peter Tribble.
-# Copyright 2021 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2024 OmniOS Community Edition (OmniOSce) Association.
 # Copyright 2023 Oxide Computer company
 #
 
@@ -477,6 +477,7 @@ file path=usr/include/nfs/nfs4_clnt.h
 file path=usr/include/nfs/nfs4_db_impl.h
 file path=usr/include/nfs/nfs4_idmap_impl.h
 file path=usr/include/nfs/nfs4_kprot.h
+file path=usr/include/nfs/nfs4x.h
 file path=usr/include/nfs/nfs_acl.h
 file path=usr/include/nfs/nfs_clnt.h
 file path=usr/include/nfs/nfs_cmd.h
@@ -870,6 +871,7 @@ file path=usr/include/sys/exacct_catalog.h
 file path=usr/include/sys/exacct_impl.h
 file path=usr/include/sys/exec.h
 file path=usr/include/sys/exechdr.h
+file path=usr/include/sys/execx.h
 file path=usr/include/sys/fault.h
 file path=usr/include/sys/fbio.h
 file path=usr/include/sys/fbuf.h
@@ -1958,6 +1960,7 @@ dir  path=usr/xpg4
 dir  path=usr/xpg4/include
 file path=usr/xpg4/include/curses.h
 file path=usr/xpg4/include/term.h
+file path=usr/xpg4/include/termcap.h
 file path=usr/xpg4/include/unctrl.h
 legacy pkg=SUNWhea \
     desc="SunOS C/C++ header files for general development of software" \

@@ -691,6 +691,7 @@ usr/src/lib/libsmbfs/smb/derparse.h
 usr/src/lib/libsmbfs/smb/spnego.c
 usr/src/lib/libsmbfs/smb/spnegoparse.c
 usr/src/lib/libsmbfs/smb/spnegoparse.h
+usr/src/lib/libxcurses/h/mks.h
 usr/src/test/libc-tests/tests/regex/testregex.c
 usr/src/test/os-tests/tests/sockfs/conn.c
 usr/src/test/os-tests/tests/sockfs/dgram.c
@@ -903,6 +904,7 @@ usr/src/uts/common/io/i40e/core/i40e_register.h
 usr/src/uts/common/io/i40e/core/i40e_status.h
 usr/src/uts/common/io/i40e/core/i40e_type.h
 usr/src/uts/common/io/i40e/core/virtchnl.h
+usr/src/uts/common/io/igc/core/*
 usr/src/uts/common/io/iwn/if_iwn.c
 usr/src/uts/common/io/iwn/if_iwnreg.h
 usr/src/uts/common/io/iwn/if_iwnvar.h
@@ -1209,6 +1211,7 @@ usr/src/uts/intel/sys/acpi/platform/acwin64.h
 # bhyve sources
 syntax: glob
 usr/src/cmd/bhyve/acpi.[ch]
+usr/src/cmd/bhyve/acpi_device.[ch]
 usr/src/cmd/bhyve/ahci.h
 usr/src/cmd/bhyve/atkbdc.[ch]
 usr/src/cmd/bhyve/audio.[ch]
@@ -1217,12 +1220,14 @@ usr/src/cmd/bhyve/bhyvegc.[ch]
 usr/src/cmd/bhyve/bhyverun.[ch]
 usr/src/cmd/bhyve/block_if.[ch]
 usr/src/cmd/bhyve/bootrom.[ch]
+usr/src/cmd/bhyve/crc16.[ch]
 usr/src/cmd/bhyve/config.[ch]
 usr/src/cmd/bhyve/console.[ch]
 usr/src/cmd/bhyve/console.[ch]
 usr/src/cmd/bhyve/consport.c
 usr/src/cmd/bhyve/dbgport.[ch]
 usr/src/cmd/bhyve/debug.h
+usr/src/cmd/bhyve/e820.[ch]
 usr/src/cmd/bhyve/fwctl.[ch]
 usr/src/cmd/bhyve/gdb.[ch]
 usr/src/cmd/bhyve/hda_codec.c
@@ -1262,11 +1267,14 @@ usr/src/cmd/bhyve/pm.c
 usr/src/cmd/bhyve/post.c
 usr/src/cmd/bhyve/ps2kbd.[ch]
 usr/src/cmd/bhyve/ps2mouse.[ch]
+usr/src/cmd/bhyve/qemu_fwcfg.[ch]
+usr/src/cmd/bhyve/qemu_loader.[ch]
 usr/src/cmd/bhyve/rtc.[ch]
 usr/src/cmd/bhyve/smbiostbl.[ch]
 usr/src/cmd/bhyve/sockstream.[ch]
 usr/src/cmd/bhyve/spinup_ap.[ch]
 usr/src/cmd/bhyve/task_switch.c
+usr/src/cmd/bhyve/tpm*
 usr/src/cmd/bhyve/uart_emul.[ch]
 usr/src/cmd/bhyve/usb_emul.[ch]
 usr/src/cmd/bhyve/usb_mouse.c
@@ -1284,3 +1292,15 @@ usr/src/uts/intel/io/vmm/amd/ivrs_*.c
 usr/src/uts/intel/sys/vmm.h
 usr/src/uts/intel/sys/vmm_dev.h
 usr/src/lib/lib9p/common/*
+
+# loader UEFI headers
+usr/src/boot/efi/include/Base.h
+usr/src/boot/efi/include/amd64/*.h
+usr/src/boot/efi/include/arm/*.h
+usr/src/boot/efi/include/arm64/*.h
+usr/src/boot/efi/include/i386/*.h
+usr/src/boot/efi/include/Guid/*.h
+usr/src/boot/efi/include/IndustryStandard/*.h
+usr/src/boot/efi/include/Pi/*.h
+usr/src/boot/efi/include/Protocol/*.h
+usr/src/boot/efi/include/Uefi/*.h
