@@ -1,4 +1,6 @@
 \ Copyright (c) 2006-2015 Devin Teske <dteske@FreeBSD.org>
+\ Copyright (c) 2016 Erigones, s. r. o.
+\ Copyright (c) 2024 Danube Cloud
 \ All rights reserved.
 \
 \ Redistribution and use in source and binary forms, with or without
@@ -302,6 +304,45 @@ create chaincmd 1030 chars allot
 ;
 
 \
+\ Destroy zpools at boot
+\
+
+: destroy_zpools_enabled? ( -- flag )
+	s" destroy_zpools" getenv -1 <> dup if
+		swap drop ( c-addr flag -- flag )
+	then
+;
+
+: destroy_zpools_enable ( -- )
+	s" set destroy_zpools=true" evaluate
+;
+
+: destroy_zpools_disable ( -- )
+	s" destroy_zpools" unsetenv
+;
+
+: init_destroy_zpools ( N -- N )
+	destroy_zpools_enabled? if
+		toggle_menuitem ( n -- n )
+	then
+;
+
+: toggle_destroy_zpools ( N -- N TRUE )
+	toggle_menuitem
+	menu-redraw
+
+	\ Now we're going to make the change effective
+
+	dup toggle_stateN @ 0= if
+		destroy_zpools_disable
+	else
+		destroy_zpools_enable
+	then
+
+	TRUE \ loop menu again
+;
+
+\
 \ Disaster Recovery boot
 \
 
@@ -315,16 +356,16 @@ create chaincmd 1030 chars allot
 	s" set noimport=true" evaluate
 	s" smartos" getenv? if
 		s" set standalone=true" evaluate
-		s" set smartos=false" evaluate
+		s" set hostname=danubecloud" evaluate
 	then
+	singleuser_enable
 ;
 
 : rescue_disable ( -- )
 	s" noimport" unsetenv
 	s" standalone" unsetenv
-	s" smartos" getenv? if
-		s" set smartos=true" evaluate
-	then
+	s" hostname" unsetenv
+	singleuser_disable
 ;
 
 : init_rescue ( N -- N )
@@ -358,7 +399,7 @@ create chaincmd 1030 chars allot
 
 	cr
 	." To get back to the menu, type `menu' and press ENTER" cr
-	." or type `boot' and press ENTER to start illumos." cr
+	." or type `boot' and press ENTER to start Danube Cloud." cr
 	cr
 
 	FALSE \ exit the menu
@@ -396,9 +437,6 @@ create chaincmd 1030 chars allot
 	then				( n c-addr/u | n 0 )
 
 	dup 0<> if			( n c-addr/u )
-		\ because all usable console names have 4 chars,
-		\ we can only compare first 4 chars.
-		drop 4
 		2dup s" ttyd" compare 0= if
 			2drop 4
 		else 2dup s" ttyc" compare 0= if
@@ -603,7 +641,7 @@ create chaincmd 1030 chars allot
 : be_draw_screen
 	clear		\ Clear the screen (in screen.4th)
 	print_version	\ print version string (bottom-right; see version.4th)
-	draw-beastie	\ Draw FreeBSD logo at right (in beastie.4th)
+	\ draw-beastie	\ Draw FreeBSD logo at right (in beastie.4th)
 	draw-brand	\ Draw brand.4th logo at top (in brand.4th)
 	menu-init	\ Initialize menu and draw bounding box (in menu.4th)
 ;

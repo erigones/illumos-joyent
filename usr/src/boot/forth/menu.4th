@@ -4,7 +4,7 @@
 \ Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
 \ All rights reserved.
 \ Copyright 2019 Joyent, Inc.
-\ Copyright 2023 MNX Cloud, Inc.
+\ Copyright 2024 Danube Cloud
 \
 \ Redistribution and use in source and binary forms, with or without
 \ modification, are permitted provided that the following conditions
@@ -134,12 +134,8 @@ create init_text8 64 allot
 only forth definitions
 
 : arch-i386? ( -- BOOL ) \ Returns TRUE (-1) on i386, FALSE (0) otherwise.
-	\ FICL_PLATFORM_ARCHITECTURE is always defined, drop flag
-	s" FICL_PLATFORM_ARCHITECTURE" environment? drop
-	s" i386" compare 0<> if
-		true
-	else
-		false
+	s" arch-i386" environment? dup if
+		drop
 	then
 ;
 
@@ -576,7 +572,8 @@ also menu-infrastructure definitions
 \
 : menu-timeout-update ( N -- )
 
-	\ Enforce minimum
+	\ Enforce minimum/maximum
+	dup 9 > if drop 9 then
 	dup 0 < if drop 0 then
 
 	s" headnode" getenv? if
@@ -589,13 +586,16 @@ also menu-infrastructure definitions
 		s" Autoboot in N seconds. [Space] to pause" ( n -- n c-addr/u )
 	then
 
-	dup 0> if
-		s" Autoboot in " type
-		dup . s" second" type
-		1 > if [char] s emit then
-		s" . [Space] to pause " type
+	2 pick 0> if
+		rot 48 + -rot ( n c-addr/u -- n' c-addr/u ) \ convert to ASCII
+		12 +c!        ( n' c-addr/u -- c-addr/u )   \ replace 'N' above
+
+		menu_timeout_x @ menu_timeout_y @ at-xy \ position cursor
+		type ( c-addr/u -- ) \ print message
 	else
-		drop 40 spaces \ erase message
+		menu_timeout_x @ menu_timeout_y @ at-xy \ position cursor
+		spaces ( n c-addr/u -- n c-addr ) \ erase message
+		2drop ( n c-addr -- )
 	then
 
 	at-bl
@@ -1020,21 +1020,14 @@ also menu-namespace
 		then
 	then
 
-	cursor-invisible cursor-set
 	menu-create
 
 	begin \ Loop forever
 
 		at-bl
-		\ restore cursor for case the getkey ends up in
-		\ booting the kernel. This does restore cursor for
-		\ serial terminals.
-		cursor-normal cursor-set
 		getkey     \ Block here, waiting for a key to be pressed
-		cursor-invisible cursor-set
 
 		dup -1 = if
-			cursor-normal cursor-set
 			drop exit \ Caught abort (abnormal return)
 		then
 
@@ -1042,7 +1035,6 @@ also menu-namespace
 		\ Ctrl-Enter/Ctrl-J (10)
 		dup over 13 = swap 10 = or if
 			drop ( no longer needed )
-			cursor-normal cursor-set
 			do_ipxe if
 				s" efi-version" getenv? if
 					s" ipxe_chainload" evaluate
@@ -1078,7 +1070,6 @@ also menu-namespace
 				dup menu_command[x]
 				getenv dup -1 <> if
 					\ Execute the stored procedure
-					cursor-normal cursor-set
 					evaluate
 
 					\ We expect there to be a non-zero
@@ -1093,7 +1084,6 @@ also menu-namespace
 					else
 						swap \ need iterator on top
 					then
-					cursor-invisible cursor-set
 				then
 
 				\ Re-adjust for missing ACPI menuitem
@@ -1121,15 +1111,11 @@ also menu-namespace
 						swap
 						dup menu_command[x]
 						getenv dup -1 <> if
-							cursor-normal
-							cursor-set
 							evaluate
 							0= if
 								2drop
 								exit
 							then
-							cursor-invisible
-							cursor-set
 						else
 							drop
 						then
@@ -1190,8 +1176,6 @@ also menu-namespace
 	s" menu_options"         unsetenv	\ Options separator flag
 	s" menu_optionstext"     unsetenv	\ separator display text
 	s" menu_init"            unsetenv	\ menu initializer
-	s" pimenu_optionstext"   unsetenv	\ PI menu separator display text
-	s" pitext"               unsetenv	\ PI menu text
 
 	0 menureboot !
 	0 menuacpi !
