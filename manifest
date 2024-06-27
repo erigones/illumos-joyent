@@ -127,8 +127,6 @@ f boot/solaris/bin/extract_boot_filelist 0555 root sys
 f boot/solaris/bin/symdef 0555 root sys
 f boot/solaris/bin/update_grub 0555 root sys
 f boot/solaris/bootenv.rc 0644 root root
-d boot/solaris/devicedb 0755 root sys
-f boot/solaris/devicedb/master 0644 root sys
 f boot/solaris/filelist.ramdisk 0644 root sys
 f boot/solaris/filelist.safe 0644 root sys
 f boot/splashimage.xpm 0644 root sys
@@ -20094,6 +20092,7 @@ f usr/share/man/man8/autopush.8 0444 root bin
 f usr/share/man/man8/bart.8 0444 root bin
 f usr/share/man/man8/bhyve.8 0444 root bin
 f usr/share/man/man8/bhyvectl.8 0444 root bin
+f usr/share/man/man8/beadm.8 0444 root bin
 f usr/share/man/man8/bootadm.8 0444 root bin
 f usr/share/man/man8/busstat.8 0444 root bin
 f usr/share/man/man8/captoinfo.8 0444 root bin
