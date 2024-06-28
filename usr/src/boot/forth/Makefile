@@ -13,6 +13,7 @@
 # Copyright 2022 Toomas Soome <tsoome@me.com>
 # Copyright 2022 Joyent, Inc.
 # Copyright 2022 MNX Cloud, Inc.
+# Copyright 2024 Danube Cloud
 #
 include $(SRC)/Makefile.master
 
@@ -28,6 +29,7 @@ FILEMODE=0444
 FORTH =	beastie.4th
 FORTH +=	beadm.4th
 FORTH +=	brand.4th
+FORTH +=    brand-danubecloud.4th
 FORTH +=	brand-illumos.4th
 FORTH +=	brand-smartos.4th
 FORTH +=	check-password.4th
@@ -39,6 +41,7 @@ FORTH +=	loader.4th
 DEFFILES =	loader.conf
 FORTH +=	logo-beastie.4th
 FORTH +=	logo-beastiebw.4th
+FORTH +=	logo-danubecloud.4th
 FORTH +=	logo-fbsdbw.4th
 FORTH +=	logo-illumos.4th
 FORTH +=	logo-orb.4th
@@ -53,6 +56,9 @@ FORTH +=	screen.4th
 FORTH +=	shortcuts.4th
 FORTH +=	support.4th
 FORTH +=	version.4th
+FILES +=	danubecloud.png
+FILES +=	danubecloud-banner.png
+FILES +=	danubecloud-logo.png
 FILES +=	illumos-logo.png
 FILES +=	illumos-brand.png
 FILES +=	triton-logo.png
