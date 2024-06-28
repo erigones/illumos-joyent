@@ -22,6 +22,7 @@
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012, 2017 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
+ * Copyright 2024 Bill Sommerfeld <sommerfeld@hamachi.org>
  */
 
 #ifndef	_SYS_ARC_H
@@ -179,6 +180,16 @@ typedef enum arc_space_type {
 	ARC_SPACE_NUMTYPES
 } arc_space_type_t;
 
+typedef enum arc_state_type {
+	ARC_STATE_ANON,
+	ARC_STATE_MRU,
+	ARC_STATE_MRU_GHOST,
+	ARC_STATE_MFU,
+	ARC_STATE_MFU_GHOST,
+	ARC_STATE_L2C_ONLY,
+	ARC_STATE_NUMTYPES
+} arc_state_type_t;
+
 void arc_space_consume(uint64_t space, arc_space_type_t type);
 void arc_space_return(uint64_t space, arc_space_type_t type);
 boolean_t arc_is_metadata(arc_buf_t *buf);
@@ -236,6 +247,7 @@ void arc_flush(spa_t *spa, boolean_t retry);
 void arc_tempreserve_clear(uint64_t reserve);
 int arc_tempreserve_space(spa_t *spa, uint64_t reserve, uint64_t txg);
 
+boolean_t arc_memory_is_low(void);
 uint64_t arc_all_memory(void);
 uint64_t arc_max_bytes(void);
 void arc_init(void);

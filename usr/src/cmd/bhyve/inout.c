@@ -1,5 +1,5 @@
 /*-
- * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ * SPDX-License-Identifier: BSD-2-Clause
  *
  * Copyright (c) 2011 NetApp, Inc.
  * All rights reserved.
@@ -24,8 +24,6 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
- *
- * $FreeBSD$
  */
 /*
  * This file and its contents are supplied under the terms of the
@@ -41,7 +39,6 @@
  */
 
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD$");
 
 #include <sys/param.h>
 #include <sys/linker_set.h>
@@ -59,6 +56,7 @@ __FBSDID("$FreeBSD$");
 #include <assert.h>
 
 #include "bhyverun.h"
+#include "config.h"
 #include "inout.h"
 
 SET_DECLARE(inout_port_set, struct inout_port);
@@ -78,8 +76,8 @@ struct inout_handler {
 static struct inout_handler inout_handlers[MAX_IOPORTS];
 
 static int
-default_inout(struct vmctx *ctx, int vcpu, int in, int port, int bytes,
-              uint32_t *eax, void *arg)
+default_inout(struct vmctx *ctx __unused, int in,
+    int port __unused, int bytes, uint32_t *eax, void *arg __unused)
 {
 	if (in) {
 		switch (bytes) {
@@ -116,7 +114,7 @@ register_default_iohandler(int start, int size)
 }
 
 int
-emulate_inout(struct vmctx *ctx, int vcpu, struct vm_inout *inout, bool strict)
+emulate_inout(struct vmctx *ctx, struct vcpu *vcpu, struct vm_inout *inout)
 {
 	struct inout_handler handler;
 	inout_func_t hfunc;
@@ -134,7 +132,8 @@ emulate_inout(struct vmctx *ctx, int vcpu, struct vm_inout *inout, bool strict)
 	hfunc = handler.handler;
 	harg = handler.arg;
 
-	if (strict && hfunc == default_inout)
+	if (hfunc == default_inout &&
+	    get_config_bool_default("x86.strictio", false))
 		return (-1);
 
 	if (in) {
@@ -145,7 +144,7 @@ emulate_inout(struct vmctx *ctx, int vcpu, struct vm_inout *inout, bool strict)
 			return (-1);
 	}
 
-	error = hfunc(ctx, vcpu, in, inout->port, bytes, &inout->eax, harg);
+	error = hfunc(ctx, in, inout->port, bytes, &inout->eax, harg);
 	return (error);
 }
 

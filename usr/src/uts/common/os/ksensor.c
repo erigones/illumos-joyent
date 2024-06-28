@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2020 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 /*
@@ -67,8 +67,8 @@
  *
  * The implementation of (1) is all in this file. The implementation of (2) is
  * in uts/common/io/ksensor/ksensor_drv.c. The implementation of (3) is found in
- * all of the different leaf devices. Examples of (3) include pchtemp(7D) and
- * igb(7D).
+ * all of the different leaf devices. Examples of (3) include pchtemp(4D) and
+ * igb(4D).
  *
  * We separate numbers one and two into two different components for a few
  * reasons. The most important thing is that drivers that provide sensors should
@@ -638,7 +638,6 @@ ksensor_remove(dev_info_t *dip, id_t id)
 static void
 ksensor_release(ksensor_t *sensor)
 {
-	int circ;
 	dev_info_t *pdip;
 
 	ddi_release_devi(sensor->ksensor_ksdip->ksdip_dip);
@@ -652,7 +651,6 @@ ksensor_release(ksensor_t *sensor)
 static int
 ksensor_hold_by_id(id_t id, ksensor_t **outp)
 {
-	int circ;
 	ksensor_t *sensor;
 	dev_info_t *pdip;
 
@@ -704,9 +702,9 @@ restart:
 	/*
 	 * Grab a reference on the device node to ensure that it won't go away.
 	 */
-	ndi_devi_enter(pdip, &circ);
+	ndi_devi_enter(pdip);
 	e_ddi_hold_devi(sensor->ksensor_ksdip->ksdip_dip);
-	ndi_devi_exit(pdip, circ);
+	ndi_devi_exit(pdip);
 
 	/*
 	 * Now that we have an NDI hold, check if it's valid or not. It may have

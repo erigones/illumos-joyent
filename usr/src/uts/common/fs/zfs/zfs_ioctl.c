@@ -37,6 +37,8 @@
  * Copyright (c) 2017, loli10K <ezomori.nozomu@gmail.com>. All rights reserved.
  * Copyright 2017 RackTop Systems.
  * Copyright (c) 2017, Datto, Inc. All rights reserved.
+ * Copyright 2021 The University of Queensland
+ * Copyright 2024 Oxide Computer Company
  */
 
 /*
@@ -3608,6 +3610,58 @@ zfs_ioc_log_history(const char *unused, nvlist_t *innvl, nvlist_t *outnvl)
 }
 
 /*
+ * This ioctl is used to set the bootenv configuration on the current
+ * pool. This configuration is stored in the second padding area of the label,
+ * and it is used by the bootloader(s) to store bootloader and/or system
+ * specific data.
+ * The data is stored as nvlist data stream, and is protected by
+ * an embedded checksum.
+ * The version can have two possible values:
+ * VB_RAW: nvlist should have key GRUB_ENVMAP, value DATA_TYPE_STRING.
+ * VB_NVLIST: nvlist with arbitrary <key, value> pairs.
+ */
+static const zfs_ioc_key_t zfs_keys_set_bootenv[] = {
+	{"version",	DATA_TYPE_UINT64, 0},
+	{"<keys>",	DATA_TYPE_ANY, ZK_OPTIONAL | ZK_WILDCARDLIST},
+};
+
+static int
+zfs_ioc_set_bootenv(const char *name, nvlist_t *innvl,
+    nvlist_t *outnvl __unused)
+{
+	int error;
+	spa_t *spa;
+
+	if ((error = spa_open(name, &spa, FTAG)) != 0)
+		return (error);
+	spa_vdev_state_enter(spa, SCL_ALL);
+	error = vdev_label_write_bootenv(spa->spa_root_vdev, innvl);
+	(void) spa_vdev_state_exit(spa, NULL, 0);
+	spa_close(spa, FTAG);
+	return (error);
+}
+
+static const zfs_ioc_key_t zfs_keys_get_bootenv[] = {
+	/* no nvl keys */
+};
+
+static int
+zfs_ioc_get_bootenv(const char *name, nvlist_t *innvl __unused,
+    nvlist_t *outnvl)
+{
+	spa_t *spa;
+	int error;
+
+	if ((error = spa_open(name, &spa, FTAG)) != 0)
+		return (error);
+	spa_vdev_state_enter(spa, SCL_ALL);
+	error = vdev_label_read_bootenv(spa->spa_root_vdev, outnvl);
+	(void) spa_vdev_state_exit(spa, NULL, 0);
+	spa_close(spa, FTAG);
+	return (error);
+}
+
+/*
  * The dp_config_rwlock must not be held when calling this, because the
  * unmount may need to write out data.
  *
@@ -3823,6 +3877,7 @@ zfs_ioc_destroy_bookmarks(const char *poolname, nvlist_t *innvl,
 static const zfs_ioc_key_t zfs_keys_channel_program[] = {
 	{"program",	DATA_TYPE_STRING,		0},
 	{"arg",		DATA_TYPE_ANY,			0},
+	{"hidden_args",	DATA_TYPE_ANY,			ZK_OPTIONAL},
 	{"sync",	DATA_TYPE_BOOLEAN_VALUE,	ZK_OPTIONAL},
 	{"instrlimit",	DATA_TYPE_UINT64,		ZK_OPTIONAL},
 	{"memlimit",	DATA_TYPE_UINT64,		ZK_OPTIONAL},
@@ -5056,8 +5111,9 @@ zfs_ioc_recv(zfs_cmd_t *zc)
 
 	if (dataset_namecheck(zc->zc_value, NULL, NULL) != 0 ||
 	    strchr(zc->zc_value, '@') == NULL ||
-	    strchr(zc->zc_value, '%'))
+	    strchr(zc->zc_value, '%') != NULL) {
 		return (SET_ERROR(EINVAL));
+	}
 
 	(void) strlcpy(tofs, zc->zc_value, sizeof (tofs));
 	tosnap = strchr(tofs, '@');
@@ -5065,18 +5121,21 @@ zfs_ioc_recv(zfs_cmd_t *zc)
 
 	if (zc->zc_nvlist_src != 0 &&
 	    (error = get_nvlist(zc->zc_nvlist_src, zc->zc_nvlist_src_size,
-	    zc->zc_iflags, &recvdprops)) != 0)
-		return (error);
+	    zc->zc_iflags, &recvdprops)) != 0) {
+		goto out;
+	}
 
 	if (zc->zc_nvlist_conf != 0 &&
 	    (error = get_nvlist(zc->zc_nvlist_conf, zc->zc_nvlist_conf_size,
-	    zc->zc_iflags, &localprops)) != 0)
-		return (error);
+	    zc->zc_iflags, &localprops)) != 0) {
+		goto out;
+	}
 
 	if (zc->zc_history_offset != 0 &&
 	    (error = get_nvlist(zc->zc_history_offset, zc->zc_history_len,
-	    zc->zc_iflags, &hidden_args)) != 0)
-		return (error);
+	    zc->zc_iflags, &hidden_args)) != 0) {
+		goto out;
+	}
 
 	if (zc->zc_string[0])
 		origin = zc->zc_string;
@@ -5089,8 +5148,6 @@ zfs_ioc_recv(zfs_cmd_t *zc)
 	    hidden_args, zc->zc_guid, zc->zc_resumable, zc->zc_cookie,
 	    &begin_record, zc->zc_cleanup_fd, &zc->zc_cookie, &zc->zc_obj,
 	    &zc->zc_action_handle, &errors);
-	nvlist_free(recvdprops);
-	nvlist_free(localprops);
 
 	/*
 	 * Now that all props, initial and delayed, are set, report the prop
@@ -5106,6 +5163,10 @@ zfs_ioc_recv(zfs_cmd_t *zc)
 		error = SET_ERROR(EINVAL);
 	}
 
+out:
+	nvlist_free(hidden_args);
+	nvlist_free(recvdprops);
+	nvlist_free(localprops);
 	nvlist_free(errors);
 
 	return (error);
@@ -5624,9 +5685,6 @@ zfs_ioc_id_quota_upgrade(zfs_cmd_t *zc)
 	if (error != 0)
 		return (error);
 
-	dsl_dataset_long_hold(dmu_objset_ds(os), FTAG);
-	dsl_pool_rele(dmu_objset_pool(os), FTAG);
-
 	if (dmu_objset_userobjspace_upgradable(os) ||
 	    dmu_objset_projectquota_upgradable(os)) {
 		mutex_enter(&os->os_upgrade_lock);
@@ -5640,11 +5698,14 @@ zfs_ioc_id_quota_upgrade(zfs_cmd_t *zc)
 			mutex_exit(&os->os_upgrade_lock);
 		}
 
+		dsl_pool_rele(dmu_objset_pool(os), FTAG);
+
 		taskq_wait_id(os->os_spa->spa_upgrade_taskq, os->os_upgrade_id);
 		error = os->os_upgrade_status;
+	} else {
+		dsl_pool_rele(dmu_objset_pool(os), FTAG);
 	}
 
-	dsl_dataset_long_rele(dmu_objset_ds(os), FTAG);
 	dsl_dataset_rele(dmu_objset_ds(os), FTAG);
 
 	return (error);
@@ -6812,6 +6873,16 @@ zfs_ioctl_init(void)
 	    zfs_ioc_pool_trim, zfs_secpolicy_config, POOL_NAME,
 	    POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_TRUE, B_TRUE,
 	    zfs_keys_pool_trim, ARRAY_SIZE(zfs_keys_pool_trim));
+
+	zfs_ioctl_register("set_bootenv", ZFS_IOC_SET_BOOTENV,
+	    zfs_ioc_set_bootenv, zfs_secpolicy_config, POOL_NAME,
+	    POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_FALSE, B_TRUE,
+	    zfs_keys_set_bootenv, ARRAY_SIZE(zfs_keys_set_bootenv));
+
+	zfs_ioctl_register("get_bootenv", ZFS_IOC_GET_BOOTENV,
+	    zfs_ioc_get_bootenv, zfs_secpolicy_none, POOL_NAME,
+	    POOL_CHECK_SUSPENDED, B_FALSE, B_TRUE,
+	    zfs_keys_get_bootenv, ARRAY_SIZE(zfs_keys_get_bootenv));
 
 	/* IOCTLS that use the legacy function signature */
 

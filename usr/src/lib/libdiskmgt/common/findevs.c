@@ -28,7 +28,8 @@
  * Copyright (c) 2011 by Delphix. All rights reserved.
  * Copyright 2017 Nexenta Systems, Inc.
  * Copyright 2017 Joyent, Inc.
- * Copyright 2020 Oxide Computer Company
+ * Copyright 2021 Oxide Computer Company
+ * Copyright 2024 Sebastian Wiedenroth
  */
 
 #include <fcntl.h>
@@ -57,6 +58,7 @@
 
 #define	MAXPROPLEN		1024
 #define	DEVICE_ID_PROP		"devid"
+#define	INQUIRY_SERIAL_NO	"inquiry-serial-no"
 #define	PROD_ID_PROP		"inquiry-product-id"
 #define	PROD_ID_USB_PROP	"usb-product-name"
 #define	REMOVABLE_PROP		"removable-media"
@@ -629,6 +631,28 @@ add_disk2controller(disk_t *diskp, struct search_args *args)
 		return (0);
 	}
 
+	/*
+	 * Certain pseudo-device nodes do not all immediately have a valid
+	 * parent-node. In particular, lofi (and zfs) would point to the generic
+	 * /pseudo node. As a result, if we find a lofi disk, redirect it to the
+	 * actual path. If we don't find it in this, then just fall back to the
+	 * traditional path.
+	 */
+	if (libdiskmgt_str_eq(di_node_name(pnode), "pseudo") &&
+	    libdiskmgt_str_eq(di_node_name(node), "lofi")) {
+		di_node_t n;
+
+		n = di_drv_first_node("lofi", pnode);
+		while (n != DI_NODE_NIL) {
+			if (di_instance(n) == 0) {
+				pnode = n;
+				break;
+			}
+
+			n = di_drv_next_node(n);
+		}
+	}
+
 	minor = di_minor_next(pnode, NULL);
 	if (minor == NULL) {
 		return (0);
@@ -917,6 +941,7 @@ create_disk(char *deviceid, char *kernel_name, struct search_args *args)
 	char	*type;
 	char	*prod_id;
 	char	*vendor_id;
+	char	*serial;
 
 	if (dm_debug) {
 		(void) fprintf(stderr, "INFO: create_disk %s\n", kernel_name);
@@ -992,6 +1017,14 @@ create_disk(char *deviceid, char *kernel_name, struct search_args *args)
 		}
 	}
 
+	serial = get_str_prop(INQUIRY_SERIAL_NO, args->node);
+	if (serial != NULL) {
+		if ((diskp->serial = strdup(serial)) == NULL) {
+			cache_free_disk(diskp);
+			return (NULL);
+		}
+	}
+
 	/*
 	 * DVD, CD-ROM, CD-RW, MO, etc. are all reported as CD-ROMS.
 	 * We try to use uscsi later to determine the real type.
@@ -1062,6 +1095,10 @@ ctype(di_node_t node, di_minor_t minor)
 	if (libdiskmgt_str_eq(type, DDI_PSEUDO) &&
 	    libdiskmgt_str_eq(name, "xpvd"))
 		return (DM_CTYPE_XEN);
+
+	if (libdiskmgt_str_eq(type, DDI_PSEUDO) &&
+	    libdiskmgt_str_eq(name, "lofi"))
+		return (DM_CTYPE_LOFI);
 
 	if (dm_debug) {
 		(void) fprintf(stderr,
@@ -1439,6 +1476,11 @@ is_ctrl(di_node_t node, di_minor_t minor)
 	if (libdiskmgt_str_eq(type, DDI_PSEUDO) &&
 	    (libdiskmgt_str_eq(name, "ide") ||
 	    libdiskmgt_str_eq(name, "xpvd")))
+		return (1);
+
+	if (libdiskmgt_str_eq(type, DDI_PSEUDO) &&
+	    libdiskmgt_str_eq(name, "lofi") &&
+	    libdiskmgt_str_eq(di_minor_name(minor), "ctl"))
 		return (1);
 
 	return (0);

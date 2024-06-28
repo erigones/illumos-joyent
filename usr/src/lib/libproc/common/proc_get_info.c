@@ -24,6 +24,7 @@
  */
 /*
  * Copyright 2015, Joyent, Inc.
+ * Copyright 2023 Oxide Computer Company
  */
 
 #include <stdio.h>
@@ -213,6 +214,40 @@ proc_get_auxv(pid_t pid, auxv_t *pauxv, int naux)
 	if ((fd = open(fname, O_RDONLY)) >= 0) {
 		if ((rv = read(fd, pauxv, naux * sizeof (auxv_t))) >= 0)
 			rv /= sizeof (auxv_t);
+		(void) close(fd);
+	}
+	return (rv);
+}
+
+int
+proc_get_lwpsinfo(pid_t pid, uint_t thr, lwpsinfo_t *lwpip)
+{
+	char fname[PATH_MAX];
+	int fd;
+	int rv = -1;
+
+	(void) snprintf(fname, sizeof (fname), "%s/%d/lwp/%u/lwpsinfo",
+	    procfs_path, (int)pid, thr);
+	if ((fd = open(fname, O_RDONLY)) >= 0) {
+		if (read(fd, lwpip, sizeof (*lwpip)) == sizeof (*lwpip))
+			rv = 0;
+		(void) close(fd);
+	}
+	return (rv);
+}
+
+int
+proc_get_lwpstatus(pid_t pid, uint_t thr, lwpstatus_t *lwp)
+{
+	char fname[PATH_MAX];
+	int fd;
+	int rv = -1;
+
+	(void) snprintf(fname, sizeof (fname), "%s/%d/lwp/%u/lwpstatus",
+	    procfs_path, (int)pid, thr);
+	if ((fd = open(fname, O_RDONLY)) >= 0) {
+		if (read(fd, lwp, sizeof (*lwp)) == sizeof (*lwp))
+			rv = 0;
 		(void) close(fd);
 	}
 	return (rv);

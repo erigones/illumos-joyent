@@ -25,6 +25,7 @@
  * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2015, Joyent, Inc. All rights reserved.
  * Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
+ * Copyright 2022 Garrett D'Amore
  */
 
 #include <sys/types.h>
@@ -73,7 +74,6 @@
 
 #include <c2/audit.h>
 
-#include <fs/sockfs/nl7c.h>
 #include <fs/sockfs/sockcommon.h>
 #include <fs/sockfs/sockfilter_impl.h>
 #include <fs/sockfs/socktpi.h>
@@ -95,7 +95,6 @@
 #define	SO_LOCK_WAKEUP_TIME	3000	/* Wakeup time in milliseconds */
 
 dev_t sockdev;	/* For fsid in getattr */
-int sockfs_defer_nl7c_init = 0;
 
 struct socklist socklist;
 
@@ -112,8 +111,6 @@ static int sockfs_snapshot(kstat_t *, void *, int);
 extern smod_info_t *sotpi_smod_create(void);
 
 extern void sendfile_init();
-
-extern void nl7c_init(void);
 
 extern int modrootloaded;
 
@@ -283,11 +280,6 @@ sockinit(int fstype, char *name)
 
 	mutex_init(&socklist.sl_lock, NULL, MUTEX_DEFAULT, NULL);
 	sendfile_init();
-	if (!modrootloaded) {
-		sockfs_defer_nl7c_init = 1;
-	} else {
-		nl7c_init();
-	}
 
 	/* Initialize socket filters */
 	sof_init();
@@ -472,7 +464,8 @@ so_ux_lookup(struct sonode *so, struct sockaddr_un *soun, int checkaccess,
 		 * vnode. This check is not done in BSD but it is required
 		 * by X/Open.
 		 */
-		if (error = VOP_ACCESS(vp, VREAD|VWRITE, 0, CRED(), NULL)) {
+		error = VOP_ACCESS(vp, VREAD|VWRITE, 0, CRED(), NULL);
+		if (error != 0) {
 			eprintsoline(so, error);
 			goto done2;
 		}
@@ -1985,7 +1978,7 @@ soreadfile(file_t *fp, uchar_t *buf, u_offset_t fileoff, int *err, size_t size)
 
 	if (error == EINTR && cnt != 0)
 		error = 0;
-out:
+
 	if (error != 0) {
 		*err = error;
 		return (0);

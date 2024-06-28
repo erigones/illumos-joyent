@@ -53,6 +53,7 @@
 #include "zfs_prop.h"
 #include "zfs_comutil.h"
 #include "zfeature_common.h"
+#include <zfs_fletcher.h>
 #include <libzutil.h>
 
 int
@@ -142,9 +143,9 @@ libzfs_error_description(libzfs_handle_t *hdl)
 	case EZFS_UMOUNTFAILED:
 		return (dgettext(TEXT_DOMAIN, "umount failed"));
 	case EZFS_UNSHARENFSFAILED:
-		return (dgettext(TEXT_DOMAIN, "unshare(1M) failed"));
+		return (dgettext(TEXT_DOMAIN, "unshare(8) failed"));
 	case EZFS_SHARENFSFAILED:
-		return (dgettext(TEXT_DOMAIN, "share(1M) failed"));
+		return (dgettext(TEXT_DOMAIN, "share(8) failed"));
 	case EZFS_UNSHARESMBFAILED:
 		return (dgettext(TEXT_DOMAIN, "smb remove share failed"));
 	case EZFS_SHARESMBFAILED:
@@ -714,6 +715,8 @@ libzfs_handle_t *
 libzfs_init(void)
 {
 	libzfs_handle_t *hdl;
+	int error;
+	char *env;
 
 	if ((hdl = calloc(1, sizeof (libzfs_handle_t))) == NULL) {
 		return (NULL);
@@ -752,10 +755,25 @@ libzfs_init(void)
 	zpool_prop_init();
 	zpool_feature_init();
 	libzfs_mnttab_init(hdl);
+	fletcher_4_init();
 
 	hdl->libzfs_cachedprops = B_FALSE;
 	if (getenv("ZFS_PROP_DEBUG") != NULL) {
 		hdl->libzfs_prop_debug = B_TRUE;
+	}
+	if ((env = getenv("ZFS_SENDRECV_MAX_NVLIST")) != NULL) {
+		if ((error = zfs_nicestrtonum(hdl, env,
+		    &hdl->libzfs_max_nvlist))) {
+			errno = error;
+			(void) close(hdl->libzfs_fd);
+			(void) fclose(hdl->libzfs_mnttab);
+			(void) fclose(hdl->libzfs_sharetab);
+			regfree(&hdl->libzfs_urire);
+			free(hdl);
+			return (NULL);
+		}
+	} else {
+		hdl->libzfs_max_nvlist = (SPA_MAXBLOCKSIZE * 4);
 	}
 
 	return (hdl);
@@ -778,6 +796,7 @@ libzfs_fini(libzfs_handle_t *hdl)
 	libzfs_mnttab_fini(hdl);
 	libzfs_core_fini();
 	regfree(&hdl->libzfs_urire);
+	fletcher_4_fini();
 	free(hdl);
 }
 
@@ -1179,8 +1198,9 @@ str2shift(libzfs_handle_t *hdl, const char *buf)
 			break;
 	}
 	if (i == strlen(ends)) {
-		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
-		    "invalid numeric suffix '%s'"), buf);
+		if (hdl != NULL)
+			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
+			    "invalid numeric suffix '%s'"), buf);
 		return (-1);
 	}
 
@@ -1190,10 +1210,11 @@ str2shift(libzfs_handle_t *hdl, const char *buf)
 	 */
 	if (buf[1] == '\0' || (toupper(buf[1]) == 'B' && buf[2] == '\0' &&
 	    toupper(buf[0]) != 'B'))
-		return (10*i);
+		return (10 * i);
 
-	zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
-	    "invalid numeric suffix '%s'"), buf);
+	if (hdl != NULL)
+		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
+		    "invalid numeric suffix '%s'"), buf);
 	return (-1);
 }
 
@@ -1438,7 +1459,7 @@ addlist(libzfs_handle_t *hdl, char *propname, zprop_list_t **listp,
 
 	prop = zprop_name_to_prop(propname, type);
 
-	if (prop != ZPROP_INVAL && !zprop_valid_for_type(prop, type))
+	if (prop != ZPROP_INVAL && !zprop_valid_for_type(prop, type, B_FALSE))
 		prop = ZPROP_INVAL;
 
 	/*

@@ -317,10 +317,6 @@ apic_init(void)
 
 	apic_pir_vect = apic_get_ipivect(XC_CPUPOKE_PIL, -1);
 
-#if !defined(__amd64)
-	if (cpuid_have_cr8access(CPU))
-		apic_have_32bit_cr8 = 1;
-#endif
 }
 
 static void
@@ -704,12 +700,6 @@ apic_post_cpu_start(void)
 
 	splx(ipltospl(LOCK_LEVEL));
 	apic_init_intr();
-
-	/*
-	 * since some systems don't enable the internal cache on the non-boot
-	 * cpus, so we have to enable them here
-	 */
-	setcr0(getcr0() & ~(CR0_CD | CR0_NW));
 
 	APIC_AV_PENDING_SET();
 

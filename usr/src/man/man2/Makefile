@@ -48,6 +48,7 @@ MANFILES=	Intro.2			\
 		creat.2			\
 		dup.2			\
 		exec.2			\
+		execvex.2		\
 		exit.2			\
 		fcntl.2			\
 		fork.2			\
@@ -155,6 +156,7 @@ MANFILES=	Intro.2			\
 		umount.2		\
 		uname.2			\
 		unlink.2		\
+		upanic.2		\
 		ustat.2			\
 		utime.2			\
 		utimes.2		\
@@ -182,6 +184,7 @@ MANLINKS=	_Exit.2				\
 		execv.2				\
 		execve.2			\
 		execvp.2			\
+		execvpe.2			\
 		faccessat.2			\
 		facl.2				\
 		fchdir.2			\
@@ -190,6 +193,7 @@ MANLINKS=	_Exit.2				\
 		fchown.2			\
 		fchownat.2			\
 		fchroot.2			\
+		fexecve.2			\
 		fork1.2				\
 		forkall.2			\
 		forkallx.2			\
@@ -201,6 +205,7 @@ MANLINKS=	_Exit.2				\
 		futimesat.2			\
 		futimens.2			\
 		getaudit_addr.2			\
+		getcontext_extd.2		\
 		getegid.2			\
 		geteuid.2			\
 		getgid.2			\
@@ -299,6 +304,8 @@ execlp.2			:= LINKSRC = exec.2
 execv.2				:= LINKSRC = exec.2
 execve.2			:= LINKSRC = exec.2
 execvp.2			:= LINKSRC = exec.2
+execvpe.2			:= LINKSRC = exec.2
+fexecve.2			:= LINKSRC = exec.2
 
 _Exit.2				:= LINKSRC = exit.2
 _exit.2				:= LINKSRC = exit.2
@@ -319,6 +326,7 @@ setaudit_addr.2			:= LINKSRC = getaudit.2
 
 setauid.2			:= LINKSRC = getauid.2
 
+getcontext_extd.2		:= LINKSRC = getcontext.2
 setcontext.2			:= LINKSRC = getcontext.2
 
 setgroups.2			:= LINKSRC = getgroups.2

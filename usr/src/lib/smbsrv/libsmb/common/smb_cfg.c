@@ -20,12 +20,19 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
- * Copyright 2020 RackTop Systems, Inc.
+ * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
+ * Copyright 2022 RackTop Systems, Inc.
  */
 
 /*
  * CIFS configuration management library
+ */
+
+/*
+ * Checking for things like unsupportable parameter combinations are
+ * the responsibility of callers of these functions.  Example include:
+ * trying to set min_protocol above max_protocol, or requiring encryption
+ * with an allowed protocol range that can't support it.
  */
 
 #include <stdio.h>
@@ -151,7 +158,10 @@ static smb_cfg_param_t smb_cfg_table[] =
 	{SMB_CI_MIN_PROTOCOL, "min_protocol", SCF_TYPE_ASTRING, 0},
 	{SMB_CI_BYPASS_TRAVERSE_CHECKING,
 	    "bypass_traverse_checking", SCF_TYPE_BOOLEAN, 0},
-	{SMB_CI_ENCRYPT_CIPHER, "encrypt_cipher", SCF_TYPE_ASTRING, 0},
+	{SMB_CI_ENCRYPT_CIPHERS, "encrypt_ciphers", SCF_TYPE_ASTRING, 0},
+	{SMB_CI_NETLOGON_FLAGS, "netlogon_flags", SCF_TYPE_INTEGER, 0},
+	{SMB_CI_SHORT_NAMES, "short_names", SCF_TYPE_BOOLEAN, 0},
+	{SMB_CI_MAX_OPENS, "max_opens", SCF_TYPE_INTEGER, 0},
 
 	/* SMB_CI_MAX */
 };
@@ -181,10 +191,15 @@ smb_versions[] = {
  */
 static struct str_val
 smb31_encrypt_ciphers[] = {
-	{ "aes128-ccm",	SMB3_CIPHER_AES128_CCM },	/* SMB 3.x */
-	{ "aes128-gcm",	SMB3_CIPHER_AES128_GCM },	/* SMB 3.1.1 */
+	{ "aes128-ccm",	SMB3_CIPHER_FLAG_AES128_CCM },	/* SMB 3.x */
+	{ "aes128-gcm",	SMB3_CIPHER_FLAG_AES128_GCM },	/* SMB 3.1.1 */
+	{ "aes256-ccm",	SMB3_CIPHER_FLAG_AES256_CCM },	/* SMB 3.1.1 */
+	{ "aes256-gcm",	SMB3_CIPHER_FLAG_AES256_GCM },	/* SMB 3.1.1 */
+	{ "all",	SMB3_CIPHER_FLAGS_ALL },
 	{ NULL,		0 }
 };
+/* Buffer large enough to hold all cipher names. */
+#define	SMB_CIPHERS_MAXLEN	64
 
 static smb_cfg_param_t *smb_config_getent(smb_cfg_id_t);
 
@@ -196,7 +211,7 @@ static int smb_config_set_idmap_preferred_dc(char *);
 static int smb_config_get_idmap_site_name(char *, int);
 static int smb_config_set_idmap_site_name(char *);
 
-static uint32_t
+uint32_t
 smb_convert_version_str(const char *version)
 {
 	uint32_t dialect = 0;
@@ -254,7 +269,7 @@ smb_base64_encode(char *str_to_encode)
 			arr_4[3] = arr_3[2] & 0x3f;
 
 			for (i = 0; i < 4; i++)
-				ret[ret_cnt++] = b64_data[arr_4[i]];
+				ret[ret_cnt++] = b64_data[(int)arr_4[i]];
 			i = 0;
 		}
 	}
@@ -271,7 +286,7 @@ smb_base64_encode(char *str_to_encode)
 		arr_4[3] = arr_3[2] & 0x3f;
 
 		for (j = 0; j < (i + 1); j++)
-			ret[ret_cnt++] = b64_data[arr_4[j]];
+			ret[ret_cnt++] = b64_data[(int)arr_4[j]];
 
 		while (i++ < 3)
 			ret[ret_cnt++] = '=';
@@ -308,8 +323,10 @@ smb_base64_decode(char *encoded_str)
 		en_ind++;
 		if (i == 4) {
 			for (i = 0; i < 4; i++) {
-				if ((p = strchr(b64_data, arr_4[i])) == NULL)
+				if ((p = strchr(b64_data, arr_4[i])) == NULL) {
+					free(ret);
 					return (NULL);
+				}
 
 				arr_4[i] = (int)(p - b64_data);
 			}
@@ -333,8 +350,10 @@ smb_base64_decode(char *encoded_str)
 			arr_4[j] = 0;
 
 		for (j = 0; j < 4; j++) {
-			if ((p = strchr(b64_data, arr_4[j])) == NULL)
+			if ((p = strchr(b64_data, arr_4[j])) == NULL) {
+				free(ret);
 				return (NULL);
+			}
 
 			arr_4[j] = (int)(p - b64_data);
 		}
@@ -681,49 +700,7 @@ smb_config_setstr(smb_cfg_id_t id, char *value)
 		value = tmp;
 	}
 
-	/*
-	 * We don't want people who care enough about protecting their data
-	 * by requiring encryption to accidentally expose their data
-	 * by lowering the protocol, so prevent them from going below 3.0
-	 * if encryption is required.
-	 * Also, ensure that max_protocol >= min_protocol.
-	 */
-	if (id == SMB_CI_MAX_PROTOCOL) {
-		smb_cfg_val_t encrypt;
-		uint32_t min;
-		uint32_t val;
-
-		encrypt = smb_config_get_require(SMB_CI_ENCRYPT);
-		min = smb_config_get_min_protocol();
-		val = smb_convert_version_str(value);
-
-		if (encrypt == SMB_CONFIG_REQUIRED &&
-		    val < SMB_VERS_3_0) {
-			syslog(LOG_ERR, "Cannot set smbd/max_protocol below 3.0"
-			    " while smbd/encrypt == required.");
-			rc = SMBD_SMF_INVALID_ARG;
-		} else if (val < min) {
-			syslog(LOG_ERR, "Cannot set smbd/max_protocol to less"
-			    " than smbd/min_protocol.");
-			rc = SMBD_SMF_INVALID_ARG;
-		}
-	} else if (id == SMB_CI_MIN_PROTOCOL) {
-		uint32_t max;
-		uint32_t val;
-
-		max = smb_config_get_max_protocol();
-		val = smb_convert_version_str(value);
-
-		if (val > max) {
-			syslog(LOG_ERR, "Cannot set smbd/min_protocol to more"
-			    " than smbd/max_protocol.");
-			rc = SMBD_SMF_INVALID_ARG;
-		}
-	}
-
-	if (rc == SMBD_SMF_OK) {
-		rc = smb_smf_set_string_property(handle, cfg->sc_name, value);
-	}
+	rc = smb_smf_set_string_property(handle, cfg->sc_name, value);
 
 	free(tmp);
 	(void) smb_smf_end_transaction(handle);
@@ -937,6 +914,7 @@ int
 smb_config_get_localuuid(uuid_t uu)
 {
 	char *s;
+	int rc = 0;
 
 	uuid_clear(uu);
 	s = smb_config_getenv_generic(MACHINE_UUID, IDMAP_FMRI_PREFIX,
@@ -944,12 +922,11 @@ smb_config_get_localuuid(uuid_t uu)
 	if (s == NULL)
 		return (-1);
 
-	if (uuid_parse(s, uu) < 0) {
-		free(s);
-		return (-1);
-	}
+	if (uuid_parse(s, uu) < 0)
+		rc = -1;
 
-	return (0);
+	free(s);
+	return (rc);
 }
 
 static int
@@ -1231,11 +1208,14 @@ smb_config_get_protocol(smb_cfg_id_t id, char *name, uint32_t default_val)
 }
 
 /*
- * The service manifest has empty values by default for min_protocol and
- * max_protocol. The expectation is that when those values are empty, we don't
- * constrain the range of supported protocol versions (and allow use of the
- * whole range that we implement). For that reason, this should usually be the
- * highest protocol version we implement.
+ * If the service properties min_protocol and max_protocol are empty values,
+ * the built-in defaults allow clients to use any supported protocol version.
+ * Policy choices (such as "let's disable SMB1") should be implemented by
+ * setting values in the SMB service, either via the service manifest (if a
+ * distribution policy) or via svccfg/svcprop (if a local policy).
+ *
+ * max_protocol_default should be the highest implemented protocol version.
+ * See also $UTS/common/fs/smbsrv/smb2_negotiate.c
  */
 uint32_t max_protocol_default = SMB_VERS_3_11;
 
@@ -1251,7 +1231,7 @@ smb_config_get_max_protocol(void)
 }
 
 /*
- * This should eventually be SMB_VERS_2_BASE
+ * See comment above max_protocol_default
  */
 uint32_t min_protocol_default = SMB_VERS_1;
 
@@ -1266,137 +1246,70 @@ smb_config_get_min_protocol(void)
 	return (min);
 }
 
+/*
+ * Convert a list of ciphers to a bitmask.
+ * Returns mask or -1 for errors.
+ *
+ * Note this is used both below and in libshare_smb
+ * for validation of new setting.
+ */
 int
-smb_config_check_protocol(char *value)
+smb_convert_encrypt_ciphers(char *value)
 {
-	if (smb_convert_version_str(value) != 0)
-		return (0);
+	const char *sep = ",:";
+	char buf[SMB_CIPHERS_MAXLEN];
+	char *last;
+	char *cn;
+	struct str_val *sv;
+	int ciphers = 0;
 
-	return (-1);
+	if (value == NULL)
+		return (-1);
+
+	if (strlen(value) >= SMB_CIPHERS_MAXLEN)
+		return (-1);
+
+	(void) strlcpy(buf, value, sizeof (buf));
+
+	cn = strtok_r(buf, sep, &last);
+	while (cn != NULL) {
+		boolean_t valid = B_FALSE;
+		/* # of ciphers is small - don't care about O(n2) */
+		for (sv = smb31_encrypt_ciphers; sv->str != NULL; sv++) {
+			if (strcmp(cn, sv->str) == 0) {
+				ciphers |= sv->val;
+				valid = B_TRUE;
+			}
+		}
+		if (!valid)
+			return (-1);
+		cn = strtok_r(NULL, sep, &last);
+	}
+	return (ciphers);
 }
 
 /*
- * Only SMB 3.x supports encryption.
- * SMB 3.0.2 uses AES128-CCM only.
- * SMB 3.1.1 - AES128-CCM or AES128-GCM.
+ * Return a bitmask indicating enabled cipher algorithms.
+ * If the config does not have at least one known cipher,
+ * that's a configuration error, so just enable all.
  */
-uint16_t
-smb31_config_get_encrypt_cipher(void)
+uint32_t
+smb_config_get_encrypt_ciphers(void)
 {
-	uint32_t max_proto = smb_config_get_max_protocol();
-	uint16_t cipher = SMB3_CIPHER_AES128_GCM; /* by default AES128-GCM */
-	char str[12];
-	int i;
+	char buf[SMB_CIPHERS_MAXLEN];
+	int ciphers = 0;
 
-	if (max_proto < SMB_VERS_3_11)
-		return (SMB3_CIPHER_NONE);
+	if (smb_config_getstr(SMB_CI_ENCRYPT_CIPHERS, buf, sizeof (buf))
+	    != SMBD_SMF_OK)
+		buf[0] = '\0';
 
-	/* SMB 3.1.1 */
-	if (smb_config_getstr(SMB_CI_ENCRYPT_CIPHER, str, sizeof (str))
-	    == SMBD_SMF_OK) {
-		for (i = 0; smb31_encrypt_ciphers[i].str != NULL; i++) {
-			if (strcmp(str, smb31_encrypt_ciphers[i].str) == 0)
-				cipher = smb31_encrypt_ciphers[i].val;
-		}
-	}
+	ciphers = smb_convert_encrypt_ciphers(buf);
 
-	return (cipher);
+	if (ciphers <= 0)
+		ciphers = SMB3_CIPHER_FLAGS_ALL;
+
+	return ((uint32_t)ciphers);
 }
-
-/*
- * If smb2_enable is present and max_protocol is empty,
- * set max_protocol.  Delete smb2_enable.
- */
-static void
-upgrade_smb2_enable()
-{
-	smb_scfhandle_t *handle;
-	char *s2e_name = "smb2_enable";
-	char *s2e_sval;
-	uint8_t	s2e_bval;
-	char *maxp_name = "max_protocol";
-	char *maxp_sval;
-	char verstr[SMB_VERSTR_LEN];
-	int rc;
-
-	handle = smb_smf_scf_init(SMBD_FMRI_PREFIX);
-	if (handle == NULL)
-		return;
-	rc = smb_smf_create_service_pgroup(handle, SMBD_PG_NAME);
-	if (rc != SMBD_SMF_OK)
-		goto out;
-
-	/* Is there an "smb2_enable" property? */
-	rc = smb_smf_get_boolean_property(handle, s2e_name, &s2e_bval);
-	if (rc != SMBD_SMF_OK) {
-		syslog(LOG_DEBUG, "upgrade: smb2_enable not found");
-		goto out;
-	}
-
-	/*
-	 * We will try to delete the smb2_enable property, so we need
-	 * the transaction to start now, before we modify max_protocol
-	 */
-	if ((rc = smb_smf_start_transaction(handle)) != 0) {
-		syslog(LOG_DEBUG, "upgrade_smb2_enable: start trans (%d)", rc);
-		goto out;
-	}
-
-	/*
-	 * Old (smb2_enable) property exists.
-	 * Does the new one? (max_protocol)
-	 */
-	rc = smb_smf_get_string_property(handle, maxp_name,
-	    verstr, sizeof (verstr));
-	if (rc == SMBD_SMF_OK && !smb_config_check_protocol(verstr)) {
-		syslog(LOG_DEBUG, "upgrade: found %s = %s",
-		    maxp_name, verstr);
-		/* Leave existing max_protocol as we found it. */
-	} else {
-		/*
-		 * New property missing or invalid.
-		 * Upgrade from "smb2_enable".
-		 */
-		if (s2e_bval == 0) {
-			s2e_sval = "false";
-			maxp_sval = "1";
-		} else {
-			s2e_sval = "true";
-			maxp_sval = "2.1";
-		}
-		/*
-		 * Note: Need this in the same transaction as the
-		 * delete of smb2_enable below.
-		 */
-		rc = smb_smf_set_string_property(handle, maxp_name, maxp_sval);
-		if (rc != SMBD_SMF_OK) {
-			syslog(LOG_ERR, "failed to set smbd/%d (%d)",
-			    maxp_name, rc);
-			goto out;
-		}
-		syslog(LOG_INFO, "upgrade smbd/smb2_enable=%s "
-		    "converted to smbd/max_protocol=%s",
-		    s2e_sval, maxp_sval);
-	}
-
-	/*
-	 * Delete the old smb2_enable property.
-	 */
-	if ((rc = smb_smf_delete_property(handle, s2e_name)) != 0) {
-		syslog(LOG_DEBUG, "upgrade_smb2_enable: delete prop (%d)", rc);
-	} else if ((rc = smb_smf_end_transaction(handle)) != 0) {
-		syslog(LOG_DEBUG, "upgrade_smb2_enable: end trans (%d)", rc);
-	}
-	if (rc != 0) {
-		syslog(LOG_ERR, "failed to delete property smbd/%d (%d)",
-		    s2e_name, rc);
-	}
-
-out:
-	(void) smb_smf_end_transaction(handle);
-	smb_smf_scf_fini(handle);
-}
-
 
 /*
  * Run once at startup convert old SMF settings to current.
@@ -1404,7 +1317,6 @@ out:
 void
 smb_config_upgrade(void)
 {
-	upgrade_smb2_enable();
 }
 
 smb_cfg_val_t

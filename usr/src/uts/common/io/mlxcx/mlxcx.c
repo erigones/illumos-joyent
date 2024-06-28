@@ -10,9 +10,10 @@
  */
 
 /*
- * Copyright 2020, The University of Queensland
+ * Copyright 2023, The University of Queensland
  * Copyright (c) 2018, Joyent, Inc.
- * Copyright 2020 RackTop Systems, Inc.
+ * Copyright 2023 RackTop Systems, Inc.
+ * Copyright 2023 MNX Cloud, Inc.
  */
 
 /*
@@ -20,9 +21,12 @@
  */
 
 /*
- * The PRM for this family of parts is freely available, and can be found at:
+ * The PRM for this family of parts was freely available at:
+ *
  * https://www.mellanox.com/related-docs/user_manuals/ \
  *   Ethernet_Adapters_Programming_Manual.pdf
+ *
+ * but has since disappeared.
  */
 /*
  * ConnectX glossary
@@ -438,7 +442,7 @@
 #include <sys/devops.h>
 #include <sys/sysmacros.h>
 #include <sys/time.h>
-
+#include <sys/pci.h>
 #include <sys/mac_provider.h>
 
 #include <mlxcx.h>
@@ -481,12 +485,17 @@ mlxcx_load_prop_defaults(mlxcx_t *mlxp)
 	 * maximum speed of 10Gb/s, and another for those above that.
 	 */
 	if ((port->mlp_max_proto & (MLXCX_PROTO_25G | MLXCX_PROTO_40G |
-	    MLXCX_PROTO_50G | MLXCX_PROTO_100G)) != 0) {
+	    MLXCX_PROTO_50G | MLXCX_PROTO_100G)) != 0 ||
+	    (port->mlp_ext_max_proto & (MLXCX_EXTPROTO_25G |
+	    MLXCX_EXTPROTO_40G | MLXCX_EXTPROTO_50G | MLXCX_EXTPROTO_100G |
+	    MLXCX_EXTPROTO_200G | MLXCX_EXTPROTO_400G)) != 0) {
 		p->mldp_cq_size_shift_default = MLXCX_CQ_SIZE_SHIFT_25G;
 		p->mldp_rq_size_shift_default = MLXCX_RQ_SIZE_SHIFT_25G;
 		p->mldp_sq_size_shift_default = MLXCX_SQ_SIZE_SHIFT_25G;
 	} else if ((port->mlp_max_proto & (MLXCX_PROTO_100M | MLXCX_PROTO_1G |
-	    MLXCX_PROTO_10G)) != 0) {
+	    MLXCX_PROTO_10G)) != 0 ||
+	    (port->mlp_ext_max_proto & (MLXCX_EXTPROTO_100M |
+	    MLXCX_EXTPROTO_5G | MLXCX_EXTPROTO_1G | MLXCX_EXTPROTO_10G)) != 0) {
 		p->mldp_cq_size_shift_default = MLXCX_CQ_SIZE_SHIFT_DFLT;
 		p->mldp_rq_size_shift_default = MLXCX_RQ_SIZE_SHIFT_DFLT;
 		p->mldp_sq_size_shift_default = MLXCX_SQ_SIZE_SHIFT_DFLT;
@@ -593,6 +602,10 @@ mlxcx_load_props(mlxcx_t *mlxp)
 		    MLXCX_RX_PER_CQ_MIN, MLXCX_RX_PER_CQ_MAX);
 		p->mldp_rx_per_cq = MLXCX_RX_PER_CQ_DEFAULT;
 	}
+
+	p->mldp_rx_p50_loan_min_size = ddi_getprop(DDI_DEV_T_ANY,
+	    mlxp->mlx_dip, DDI_PROP_CANSLEEP | DDI_PROP_DONTPASS,
+	    "rx_p50_loan_min_size", MLXCX_P50_LOAN_MIN_SIZE_DFLT);
 }
 
 void
@@ -1188,6 +1201,44 @@ mlxcx_teardown(mlxcx_t *mlxp)
 	VERIFY3S(mlxp->mlx_attach, ==, 0);
 	ddi_soft_state_free(mlxcx_softstate, mlxp->mlx_inst);
 	ddi_set_driver_private(dip, NULL);
+}
+
+static void
+mlxcx_get_model(mlxcx_t *mlxp)
+{
+	uint16_t venid;
+	uint16_t devid;
+
+	venid = pci_config_get16(mlxp->mlx_cfg_handle, PCI_CONF_VENID);
+	if (venid != MLXCX_VENDOR_ID) {
+		/* Currently, all supported cards have a Mellanox vendor id. */
+		mlxp->mlx_type = MLXCX_DEV_UNKNOWN;
+		return;
+	}
+
+	devid = pci_config_get16(mlxp->mlx_cfg_handle, PCI_CONF_DEVID);
+	switch (devid) {
+	case MLXCX_CX4_DEVID:
+	case MLXCX_CX4_VF_DEVID:
+	case MLXCX_CX4_LX_VF_DEVID:
+		mlxp->mlx_type = MLXCX_DEV_CX4;
+		break;
+	case MLXCX_CX5_DEVID:
+	case MLXCX_CX5_VF_DEVID:
+	case MLXCX_CX5_EX_DEVID:
+	case MLXCX_CX5_EX_VF_DEVID:
+	case MLXCX_CX5_GEN_VF_DEVID:
+		mlxp->mlx_type = MLXCX_DEV_CX5;
+		break;
+	case MLXCX_CX6_DEVID:
+	case MLXCX_CX6_VF_DEVID:
+	case MLXCX_CX6_DF_DEVID:
+	case MLXCX_CX6_LX_DEVID:
+		mlxp->mlx_type = MLXCX_DEV_CX6;
+		break;
+	default:
+		mlxp->mlx_type = MLXCX_DEV_UNKNOWN;
+	}
 }
 
 static boolean_t
@@ -2365,10 +2416,26 @@ mlxcx_setup_eq(mlxcx_t *mlxp, uint_t vec, uint64_t events)
 		return (B_FALSE);
 	}
 	mleq->mleq_state |= MLXCX_EQ_INTR_ENABLED;
+	mleq->mleq_state |= MLXCX_EQ_ATTACHING;
 	mlxcx_arm_eq(mlxp, mleq);
 	mutex_exit(&mleq->mleq_mtx);
 
 	return (B_TRUE);
+}
+
+static void
+mlxcx_eq_set_attached(mlxcx_t *mlxp)
+{
+	uint_t vec;
+	mlxcx_event_queue_t *mleq;
+
+	for (vec = 0; vec < mlxp->mlx_intr_count; ++vec) {
+		mleq = &mlxp->mlx_eqs[vec];
+
+		mutex_enter(&mleq->mleq_mtx);
+		mleq->mleq_state &= ~MLXCX_EQ_ATTACHING;
+		mutex_exit(&mleq->mleq_mtx);
+	}
 }
 
 static boolean_t
@@ -2455,6 +2522,39 @@ mlxcx_setup_eqs(mlxcx_t *mlxp)
 }
 
 /*
+ * A more recent ConnectX part will have the Port CApability Mask register.
+ * Explore it and note things here.
+ */
+static void
+mlxcx_explore_pcam(mlxcx_t *mlxp, mlxcx_caps_t *c)
+{
+	mlxcx_register_data_t data;
+	mlxcx_reg_pcam_t *pcam = &data.mlrd_pcam;
+
+	ASSERT(c->mlc_pcam);
+	bzero(&data, sizeof (data));
+
+	/*
+	 * Okay, so we have access the the Ports CApability Mask (PCAM).
+	 * There are various things we need to check about it.
+	 */
+
+	VERIFY(mlxcx_cmd_access_register(mlxp, MLXCX_CMD_ACCESS_REGISTER_READ,
+	    MLXCX_REG_PCAM, &data));
+
+	/*
+	 * NOTE: These ASSERT()s may change in future mlxcx(4D) parts.
+	 * As of now, only 0 is valid, and 1-255 are reserved.  A future part
+	 * may return non-zero in these fields.
+	 */
+	ASSERT0(pcam->mlrd_pcam_feature_group);
+	ASSERT0(pcam->mlrd_pcam_access_reg_group);
+
+	c->mlc_ext_ptys = get_bit64(pcam->mlrd_pcam_feature_cap_mask_low,
+	    MLXCX_PCAM_LOW_FFLAGS_PTYS_EXTENDED);
+}
+
+/*
  * Snapshot all of the hardware capabilities that we care about and then modify
  * the HCA capabilities to get things moving.
  */
@@ -2517,6 +2617,12 @@ mlxcx_init_caps(mlxcx_t *mlxp)
 	}
 	mlxp->mlx_nports = gen->mlcap_general_num_ports;
 	mlxp->mlx_max_sdu = (1 << (gen->mlcap_general_log_max_msg & 0x1F));
+
+	if (mlxp->mlx_type >= MLXCX_DEV_CX5 &&
+	    get_bit16(gen->mlcap_general_flags_c,
+	    MLXCX_CAP_GENERAL_FLAGS_C_PCAM_REG)) {
+		c->mlc_pcam = B_TRUE;
+	}
 
 	c->mlc_max_tir = (1 << gen->mlcap_general_log_max_tir);
 
@@ -2671,6 +2777,7 @@ mlxcx_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 		mlxcx_warn(mlxp, "failed to initial PCI config space");
 		goto err;
 	}
+	mlxcx_get_model(mlxp);
 	mlxp->mlx_attach |= MLXCX_ATTACH_PCI_CONFIG;
 
 	if (!mlxcx_regs_map(mlxp)) {
@@ -2747,6 +2854,10 @@ mlxcx_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 		goto err;
 	}
 
+	if (mlxp->mlx_caps->mlc_pcam) {
+		mlxcx_explore_pcam(mlxp, mlxp->mlx_caps);
+	}
+
 	/*
 	 * The User Access Region (UAR) is needed so we can ring EQ and CQ
 	 * doorbells.
@@ -2764,7 +2875,10 @@ mlxcx_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	 * Set up asynchronous event queue which handles control type events
 	 * like PAGE_REQUEST and CMD completion events.
 	 *
-	 * This will enable and arm the interrupt on EQ 0.
+	 * This will enable and arm the interrupt on EQ 0. Note that only page
+	 * reqs and cmd completions will be handled until we call
+	 * mlxcx_eq_set_attached further down (this way we don't need an extra
+	 * set of locks over the mlxcx_t sub-structs not allocated yet)
 	 */
 	if (!mlxcx_setup_async_eqs(mlxp)) {
 		goto err;
@@ -2874,10 +2988,14 @@ mlxcx_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	}
 	mlxp->mlx_attach |= MLXCX_ATTACH_CHKTIMERS;
 
-	if (!mlxcx_setup_sensors(mlxp)) {
-		goto err;
+	/*
+	 * Some devices may not have a working temperature sensor; however,
+	 * there isn't a great way for us to know. We shouldn't fail attach if
+	 * this doesn't work.
+	 */
+	if (mlxcx_setup_sensors(mlxp)) {
+		mlxp->mlx_attach |= MLXCX_ATTACH_SENSORS;
 	}
-	mlxp->mlx_attach |= MLXCX_ATTACH_SENSORS;
 
 	/*
 	 * Finally, tell MAC that we exist!
@@ -2886,6 +3004,12 @@ mlxcx_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 		goto err;
 	}
 	mlxp->mlx_attach |= MLXCX_ATTACH_MAC_HDL;
+
+	/*
+	 * This tells the interrupt handlers they can start processing events
+	 * other than cmd completions and page requests.
+	 */
+	mlxcx_eq_set_attached(mlxp);
 
 	return (DDI_SUCCESS);
 

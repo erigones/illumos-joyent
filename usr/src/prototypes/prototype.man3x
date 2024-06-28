@@ -9,7 +9,7 @@
 .\" http://www.illumos.org/license/CDDL.
 .\"
 .\"
-.\" Copyright 2020 <contributor>
+.\" Copyright 2024 <contributor>
 .\"
 .Dd Month Day, Year
 .Dt MANUALPAGE 3SECTION
@@ -59,18 +59,18 @@ A Reason why ERRNO1 could occur.
 A Reason why ERRNO2 could occur.
 .El
 .Sh INTERFACE STABILITY
-.\" Indicate the stability per attributes(5). One of:
+.\" Indicate the stability per attributes(7). One of:
 .\" .Sy Committed
 .\" .Sy Uncommitted
 .\" .Sy Volatile
 .\" .Sy Private
 .Sh MT-LEVEL
-.\" Indicate the MT-Level per attributes(5). If there are exceptions,
+.\" Indicate the MT-Level per attributes(7). If there are exceptions,
 .\" start with the level and go from there.
 .\" .Sy Safe
 .\" .Sy Unsafe
 .\" .Sy MT-Safe
-.\" .Sy Aysnc-Signal-Safe
+.\" .Sy Async-Signal-Safe
 .Sh SEE ALSO
 .\" A list of mentioned manuals or others that are relevant to this
 .\" function. If there is a user command that exercises this, for

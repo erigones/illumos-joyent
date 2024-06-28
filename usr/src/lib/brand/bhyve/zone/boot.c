@@ -480,7 +480,7 @@ add_nets(int *argc, char **argv)
 static int
 add_lpc(int *argc, char **argv)
 {
-	char *lpcdevs[] = { "bootrom", "com1", "com2", NULL };
+	char *lpcdevs[] = { "bootrom", "com1", "com2", "com3", "com4", NULL };
 	const int bootrom_idx = 0;
 	int i;
 	char *val;

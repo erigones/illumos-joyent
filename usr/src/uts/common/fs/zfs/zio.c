@@ -24,7 +24,6 @@
  * Copyright (c) 2011 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
- * Copyright (c) 2019 Joyent, Inc.
  * Copyright (c) 2017, Intel Corporation.
  * Copyright 2020 Joyent, Inc.
  */
@@ -52,6 +51,7 @@
 #include <sys/abd.h>
 #include <sys/cityhash.h>
 #include <sys/dsl_crypt.h>
+#include <sys/stdbool.h>
 
 /*
  * ==========================================================================
@@ -1121,7 +1121,7 @@ zio_claim(zio_t *pio, spa_t *spa, uint64_t txg, const blkptr_t *bp,
 	ASSERT3U(spa->spa_uberblock.ub_rootbp.blk_birth, <,
 	    spa_min_claim_txg(spa));
 	ASSERT(txg == spa_min_claim_txg(spa) || txg == 0);
-	ASSERT(!BP_GET_DEDUP(bp) || !spa_writeable(spa));	/* zdb(1M) */
+	ASSERT(!BP_GET_DEDUP(bp) || !spa_writeable(spa));	/* zdb(8) */
 
 	zio = zio_create(pio, spa, txg, bp, NULL, BP_GET_PSIZE(bp),
 	    BP_GET_PSIZE(bp), done, private, ZIO_TYPE_CLAIM, ZIO_PRIORITY_NOW,
@@ -1859,9 +1859,35 @@ zio_execute(zio_t *zio)
 			return;
 		}
 
+#ifdef _KERNEL
+		/*
+		 * The I/O pipeline is a part of the machinery responsible for
+		 * evacuation of memory pages to disk when we are under
+		 * sufficient memory pressure for pageout to run.  By setting
+		 * this flag, allocations may dip into pages in the pageout
+		 * reserved pool in order to try to make forward progress.
+		 */
+		bool set_pushpage = false;
+		if (!(curthread->t_flag & T_PUSHPAGE)) {
+			/*
+			 * We can be called recursively, so we need to remember
+			 * if this frame was the one that first set the flag or
+			 * not.
+			 */
+			set_pushpage = true;
+			curthread->t_flag |= T_PUSHPAGE;
+		}
+#endif
+
 		zio->io_stage = stage;
 		zio->io_pipeline_trace |= zio->io_stage;
 		rv = zio_pipeline[highbit64(stage) - 1](zio);
+
+#ifdef _KERNEL
+		if (set_pushpage) {
+			curthread->t_flag &= ~T_PUSHPAGE;
+		}
+#endif
 
 		if (rv == ZIO_PIPELINE_STOP)
 			return;

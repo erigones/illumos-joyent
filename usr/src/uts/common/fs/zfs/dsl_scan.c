@@ -25,6 +25,7 @@
  * Copyright (c) 2011, 2017 by Delphix. All rights reserved.
  * Copyright 2019 Joyent, Inc.
  * Copyright (c) 2017, 2019, Datto Inc. All rights reserved.
+ * Copyright 2024 Bill Sommerfeld <sommerfeld@hamachi.org>
  */
 
 #include <sys/dsl_scan.h>
@@ -1214,6 +1215,14 @@ dsl_scan_should_clear(dsl_scan_t *scn)
 	spa_t *spa = scn->scn_dp->dp_spa;
 	vdev_t *rvd = scn->scn_dp->dp_spa->spa_root_vdev;
 	uint64_t alloc, mlim_hard, mlim_soft, mused;
+
+	if (arc_memory_is_low()) {
+		/*
+		 * System memory is tight, and scanning requires allocation.
+		 * Throttle the scan until we have more headroom.
+		 */
+		return (B_TRUE);
+	}
 
 	alloc = metaslab_class_get_alloc(spa_normal_class(spa));
 	alloc += metaslab_class_get_alloc(spa_special_class(spa));
@@ -3856,7 +3865,7 @@ dsl_scan_scrub_cb(dsl_pool_t *dp,
 
 		/*
 		 * Keep track of how much data we've examined so that
-		 * zpool(1M) status can make useful progress reports.
+		 * zpool(8) status can make useful progress reports.
 		 */
 		scn->scn_phys.scn_examined += DVA_GET_ASIZE(dva);
 		spa->spa_scan_pass_exam += DVA_GET_ASIZE(dva);

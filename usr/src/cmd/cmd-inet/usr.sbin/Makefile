@@ -21,7 +21,7 @@
 
 #
 # Copyright (c) 1990, 2010, Oracle and/or its affiliates. All rights reserved.
-# Copyright 2014 Garrett D'Amore <garrett@damore.org>
+# Copyright 2022 Garrett D'Amore <garrett@damore.org>
 # Copyright 2019, Joyent, Inc.
 #
 
@@ -33,7 +33,7 @@ PROG=		6to4relay arp if_mpadm \
 		ndd ndp $(SYNCPROG)
 
 MANIFEST=	rarp.xml telnet.xml comsat.xml finger.xml \
-		login.xml shell.xml rexec.xml socket-filter-kssl.xml
+		login.xml shell.xml rexec.xml
 SVCMETHOD=	svc-sockfilter
 
 ROOTFS_PROG=	hostconfig route soconfig
@@ -64,12 +64,12 @@ SRCS=		$(PROGSRCS) $(OTHERSRC)
 
 SUBDIRS=	ifconfig ilbadm in.rdisc in.routed \
 		in.talkd inetadm inetconv ipadm ipmpstat ipqosconf ipsecutils \
-		kssl/kssladm kssl/ksslcfg nwamadm nwamcfg ping routeadm \
+		nwamadm nwamcfg ping routeadm \
 		snoop sppptun traceroute wificonfig
 
 MSGSUBDIRS=	ifconfig ilbadm in.routed in.talkd \
 		inetadm inetconv ipadm ipmpstat ipqosconf ipsecutils \
-		kssl/ksslcfg nwamadm nwamcfg routeadm sppptun snoop wificonfig
+		nwamadm nwamcfg routeadm sppptun snoop wificonfig
 
 # This controls the degree of compiler warnings emitted, and is named for
 # 'lint' for historical reasons.  Eventually this hack should go away, and all
@@ -77,9 +77,6 @@ MSGSUBDIRS=	ifconfig ilbadm in.routed in.talkd \
 LINTCLEAN=	6to4relay arp in.rlogind in.rshd in.telnetd in.tftpd \
 		ipaddrsel ndp route \
 		in.rarpd if_mpadm $(SYNCPROG)
-# And as programs are verified not to attempt to write into constants,
-# -xstrconst should be used to ensure they stay that way.
-CONSTCLEAN=
 
 include ../../Makefile.cmd
 ROOTMANIFESTDIR=	$(ROOTSVCNETWORK)
@@ -130,7 +127,6 @@ K5LIBS=
 # Eventually just plain CFLAGS should be += -v, but not until all in
 # PROGS are lint clean.
 $(LINTCLEAN)		:=	CFLAGS += $(CCVERBOSE)
-$(CONSTCLEAN)		:=	CFLAGS += $(XSTRCONST)
 
 $(SYNCPROG)		:=	LDLIBS += -ldlpi
 $(SOCKETPROG)		:=	LDLIBS += -lsocket
@@ -211,17 +207,8 @@ THIRDPARTYLICENSE.arp: arp.c
 
 CLOBBERFILES += THIRDPARTYLICENSE.arp
 
-#
-# The reason this rule checks for the existence of the
-# Makefile is that some of the directories do not exist
-# in our exportable source builds.
-#
 $(SUBDIRS): FRC
-	@if [ -f $@/Makefile  ]; then \
-		cd $@; pwd; $(MAKE) $(TARGET); \
-	else \
-		true; \
-	fi
+	cd $@; pwd; $(MAKE) $(TARGET)
 
 FRC:
 

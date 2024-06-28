@@ -20,11 +20,10 @@
  */
 /*
  * Copyright (c) 1994, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2017, Joyent, Inc.
  * Copyright (c) 2012, 2017 by Delphix. All rights reserved.
  * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2018, Joyent, Inc.
- * Copyright 2020 Oxide Computer Company
+ * Copyright 2023 Oxide Computer Company
  */
 
 /*
@@ -2251,7 +2250,7 @@ kmem_dumppr(char **pp, char *e, const char *format, ...)
 }
 
 /*
- * Called when dumpadm(1M) configures dump parameters.
+ * Called when dumpadm(8) configures dump parameters.
  */
 void
 kmem_dump_init(size_t size)
@@ -2818,6 +2817,33 @@ kmem_slab_prefill(kmem_cache_t *cp, kmem_slab_t *sp)
 	ASSERT(head == NULL);
 	ASSERT(nbufs == 0);
 	mutex_enter(&cp->cache_lock);
+}
+
+/*
+ * kmem_rezalloc() is currently considered private and subject to change until
+ * we sort out how we want to handle realloc vs. reallocf style interfaces. We
+ * have currently chosen realloc.
+ */
+void *
+kmem_rezalloc(void *oldbuf, size_t oldsize, size_t newsize, int kmflag)
+{
+	void *newbuf = kmem_alloc(newsize, kmflag);
+	if (newbuf == NULL) {
+		return (NULL);
+	}
+
+	bcopy(oldbuf, newbuf, MIN(oldsize, newsize));
+	if (newsize > oldsize) {
+		void *start = (void *)((uintptr_t)newbuf + oldsize);
+		bzero(start, newsize - oldsize);
+	}
+
+	if (oldbuf != NULL) {
+		ASSERT3U(oldsize, !=, 0);
+		kmem_free(oldbuf, oldsize);
+	}
+
+	return (newbuf);
 }
 
 void *
@@ -4463,8 +4489,7 @@ kmem_init(void)
 	if (((kmem_flags & ~(KMF_AUDIT | KMF_DEADBEEF | KMF_REDZONE |
 	    KMF_CONTENTS | KMF_LITE)) != 0) ||
 	    ((kmem_flags & KMF_LITE) && kmem_flags != KMF_LITE))
-		cmn_err(CE_WARN, "kmem_flags set to unsupported value 0x%x. "
-		    "See the Solaris Tunable Parameters Reference Manual.",
+		cmn_err(CE_WARN, "kmem_flags set to unsupported value 0x%x.",
 		    kmem_flags);
 
 #ifdef DEBUG
@@ -4482,8 +4507,7 @@ kmem_init(void)
 	    (kmem_flags & (KMF_AUDIT | KMF_DEADBEEF)) != 0)
 		cmn_err(CE_WARN, "High-overhead kmem debugging features "
 		    "enabled (kmem_flags = 0x%x).  Performance degradation "
-		    "and large memory overhead possible. See the Solaris "
-		    "Tunable Parameters Reference Manual.", kmem_flags);
+		    "and large memory overhead possible.", kmem_flags);
 #endif /* not DEBUG */
 
 	kmem_cache_applyall(kmem_cache_magazine_enable, NULL, TQ_SLEEP);
@@ -5365,7 +5389,7 @@ kmem_cache_scan(kmem_cache_t *cp)
 	}
 
 	if (kmem_cache_is_fragmented(cp, &reap)) {
-		size_t slabs_found;
+		int slabs_found;
 
 		/*
 		 * Consolidate reclaimable slabs from the end of the partial

@@ -10,8 +10,8 @@
  */
 
 /*
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
- * Copyright 2020 RackTop Systems, Inc.
+ * Copyright 2014-2021 Tintri by DDN, Inc. All rights reserved.
+ * Copyright 2020-2024 RackTop Systems, Inc.
  */
 
 #ifndef _SMB2_KPROTO_H_
@@ -51,8 +51,6 @@ void smb2sr_append_postwork(smb_request_t *, smb_request_t *);
 
 int smb2_decode_header(smb_request_t *);
 int smb2_encode_header(smb_request_t *, boolean_t);
-int smb3_decode_tform_header(smb_request_t *);
-int smb3_encode_tform_header(smb_request_t *, struct mbuf_chain *mbc);
 
 void smb2_send_reply(smb_request_t *);
 void smb2sr_put_error(smb_request_t *, uint32_t);
@@ -72,7 +70,7 @@ int smb31_preauth_sha512_calc(smb_request_t *, struct mbuf_chain *,
     uint8_t *, uint8_t *);
 
 int smb3_encrypt_sr(smb_request_t *, struct mbuf_chain *, struct mbuf_chain *);
-int smb3_decrypt_sr(smb_request_t *);
+int smb3_decrypt_sr(smb_request_t *, struct mbuf_chain *, struct mbuf_chain *);
 int smb3_encrypt_init_mech(smb_session_t *s);
 
 uint32_t smb2_fsctl_fs(smb_request_t *, smb_fsctl_t *);
@@ -153,6 +151,7 @@ extern void smb2_dh_shutdown(smb_server_t *);
 int smb2_dh_new_ca_share(smb_server_t *, smb_kshare_t *);
 void smb2_dh_close_persistent(smb_ofile_t *);
 void smb2_dh_close_my_orphans(smb_request_t *, smb_ofile_t *);
+boolean_t smb_dh_create_allowed(smb_request_t *, smb_ofile_t *);
 int smb2_dh_make_persistent(smb_request_t *, smb_ofile_t *);
 void smb2_dh_setdoc_persistent(smb_ofile_t *);
 void smb2_dh_update_nvfile(smb_request_t *);

@@ -24,8 +24,6 @@
  * All rights reserved.
  */
 
-#pragma ident	"%Z%%M%	%I%	%E% SMI"
-
 /* This is the yacc grammar for the libfru NamingSyntax */
 #include <assert.h>
 #include <stdio.h>
@@ -41,8 +39,15 @@ extern Ancestor *gParserAnts;
 extern PathDef *gParserHead;
 extern int *gParserAbs;
 
-extern void yyerror (const char *msg);
-extern int  yylex   (void);
+#ifdef	__cplusplus
+extern "C" {
+#endif
+extern void yyerror(const char *msg);
+extern int yylex(void);
+extern int yywrap (void);
+#ifdef	__cplusplus
+}
+#endif
 
 %}
 
@@ -162,7 +167,7 @@ element    : NAME
               $$ = pathDef;
            }
            ;
- 
+
 itercount : NUMBER
             { $$ = $1; }
           | LAST

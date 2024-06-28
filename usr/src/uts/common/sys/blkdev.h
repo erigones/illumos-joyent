@@ -20,10 +20,9 @@
  */
 /*
  * Copyright 2012 DEY Storage Systems, Inc.  All rights reserved.
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2019 Western Digital Corporation.
  * Copyright 2020 Joyent, Inc.
+ * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
  */
 
 #ifndef	_SYS_BLKDEV_H
@@ -120,8 +119,10 @@ struct bd_drive {
 	char			*d_serial;
 	size_t			d_revision_len;
 	char			*d_revision;
+
 	uint8_t			d_eui64[8];
-	/* Added at the end to maintain binary compatibility */
+	uint8_t			d_guid[16];
+
 	uint32_t		d_qcount;
 
 	/*
@@ -233,13 +234,19 @@ struct bd_errstats {
  */
 bd_handle_t	bd_alloc_handle(void *, bd_ops_t *, ddi_dma_attr_t *, int);
 void		bd_free_handle(bd_handle_t);
-int		bd_attach_handle(dev_info_t *, bd_handle_t);
-int		bd_detach_handle(bd_handle_t);
-void		bd_state_change(bd_handle_t);
+const char	*bd_address(bd_handle_t);
 void		bd_xfer_done(bd_xfer_t *, int);
 void		bd_error(bd_xfer_t *, int);
 void		bd_mod_init(struct dev_ops *);
 void		bd_mod_fini(struct dev_ops *);
+
+/*
+ * The following functions will cause the various bd_ops entries that were
+ * registered to be called. Locks should not be held across any calls to these.
+ */
+int		bd_attach_handle(dev_info_t *, bd_handle_t);
+int		bd_detach_handle(bd_handle_t);
+void		bd_state_change(bd_handle_t);
 
 #ifdef __cplusplus
 }

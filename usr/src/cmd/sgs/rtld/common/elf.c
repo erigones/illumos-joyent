@@ -27,6 +27,7 @@
  */
 /*
  * Copyright (c) 2012, Joyent, Inc.  All rights reserved.
+ * Copyright 2022 Oxide Computer Company
  */
 
 /*
@@ -126,8 +127,8 @@ elf_get_sec_dirs()
 }
 
 /*
- * For a.out we have actual work to do here, on ELF we just perform path
- * expansion.
+ * For ELF objects we only need perform path expansion.  Latent support for
+ * other objects may require further work
  */
 static int
 elf_fix_name(const char *name, Rt_map *clmp, Alist **alpp, Aliste alni,
@@ -211,7 +212,7 @@ elf_verify(caddr_t addr, size_t size, Fdesc *fdp, const char *name,
 	/*
 	 * Determine if we're an elf file.  If not simply return, we don't set
 	 * any rejection information as this test allows use to scroll through
-	 * the objects we support (ELF, AOUT).
+	 * the objects we support (ELF).
 	 */
 	if (size < sizeof (Ehdr) ||
 	    caddr[EI_MAG0] != ELFMAG0 ||
@@ -1693,7 +1694,7 @@ elf_new_lmp(Lm_list *lml, Aliste lmco, Fdesc *fdp, Addr addr, size_t msize,
 	rtsz = S_DROUND(sizeof (Rt_map));
 	epsz = S_DROUND(sizeof (Rt_elfp));
 	lmsz = rtsz + epsz + dynsz;
-	if ((lmp = calloc(lmsz, 1)) == NULL)
+	if ((lmp = calloc(1, lmsz)) == NULL)
 		return (NULL);
 	ELFPRV(lmp) = (void *)((uintptr_t)lmp + rtsz);
 	DYNINFO(lmp) = (Dyninfo *)((uintptr_t)lmp + rtsz + epsz);
@@ -2289,8 +2290,8 @@ elf_new_lmp(Lm_list *lml, Aliste lmco, Fdesc *fdp, Addr addr, size_t msize,
 
 	} else if ((cap = CAP(lmp)) != NULL) {
 		/*
-		 * Processing of the a.out and ld.so.1 does not involve a file
-		 * descriptor as exec() did all the work, so capture the
+		 * Processing of the executable and ld.so.1 does not involve a
+		 * file descriptor as exec() did all the work, so capture the
 		 * capabilities for these cases.
 		 */
 		while (cap->c_tag != CA_SUNW_NULL) {
@@ -2312,6 +2313,9 @@ elf_new_lmp(Lm_list *lml, Aliste lmco, Fdesc *fdp, Addr addr, size_t msize,
 				CAPSET(lmp).sc_mach = STRTAB(lmp) +
 				    cap->c_un.c_ptr;
 				break;
+			case CA_SUNW_HW_3:
+				CAPSET(lmp).sc_hw_3 = cap->c_un.c_val;
+				break;
 			}
 			cap++;
 		}
@@ -2328,7 +2332,7 @@ elf_new_lmp(Lm_list *lml, Aliste lmco, Fdesc *fdp, Addr addr, size_t msize,
 	if (CAPCHAIN(lmp)) {
 		Capchain	*capchain;
 
-		if ((capchain = calloc(CAPCHAINSZ(lmp), 1)) == NULL)
+		if ((capchain = calloc(1, CAPCHAINSZ(lmp))) == NULL)
 			return (NULL);
 		(void) memcpy(capchain, CAPCHAIN(lmp), CAPCHAINSZ(lmp));
 		CAPCHAIN(lmp) = capchain;

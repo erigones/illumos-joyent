@@ -1,5 +1,5 @@
 /*-
- * SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+ * SPDX-License-Identifier: BSD-2-Clause
  *
  * Copyright (c) 2017-2018 John H. Baldwin <jhb@FreeBSD.org>
  *
@@ -26,7 +26,6 @@
  */
 
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD$");
 
 #include <sys/param.h>
 #ifndef WITHOUT_CAPSICUM
@@ -52,6 +51,7 @@ __FBSDID("$FreeBSD$");
 #include <err.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <netdb.h>
 #include <pthread.h>
 #include <pthread_np.h>
 #include <stdbool.h>
@@ -63,6 +63,7 @@ __FBSDID("$FreeBSD$");
 #include <vmmapi.h>
 
 #include "bhyverun.h"
+#include "config.h"
 #include "gdb.h"
 #include "mem.h"
 #include "mevent.h"
@@ -134,9 +135,11 @@ static struct vmctx *ctx;
 static int cur_fd = -1;
 static TAILQ_HEAD(, breakpoint) breakpoints;
 static struct vcpu_state *vcpu_state;
+static struct vcpu **vcpus;
 static int cur_vcpu, stopped_vcpu;
+static bool gdb_active = false;
 
-const int gdb_regset[] = {
+static const int gdb_regset[] = {
 	VM_REG_GUEST_RAX,
 	VM_REG_GUEST_RBX,
 	VM_REG_GUEST_RCX,
@@ -163,7 +166,7 @@ const int gdb_regset[] = {
 	VM_REG_GUEST_GS
 };
 
-const int gdb_regsize[] = {
+static const int gdb_regsize[] = {
 	8,
 	8,
 	8,
@@ -232,7 +235,7 @@ debug(const char *fmt, ...)
 static void	remove_all_sw_breakpoints(void);
 
 static int
-guest_paging_info(int vcpu, struct vm_guest_paging *paging)
+guest_paging_info(struct vcpu *vcpu, struct vm_guest_paging *paging)
 {
 	uint64_t regs[4];
 	const int regset[4] = {
@@ -242,7 +245,7 @@ guest_paging_info(int vcpu, struct vm_guest_paging *paging)
 		VM_REG_GUEST_EFER
 	};
 
-	if (vm_get_register_set(ctx, vcpu, nitems(regset), regset, regs) == -1)
+	if (vm_get_register_set(vcpu, nitems(regset), regset, regs) == -1)
 		return (-1);
 
 	/*
@@ -276,7 +279,7 @@ guest_paging_info(int vcpu, struct vm_guest_paging *paging)
  * return -1.
  */
 static int
-guest_vaddr2paddr(int vcpu, uint64_t vaddr, uint64_t *paddr)
+guest_vaddr2paddr(struct vcpu *vcpu, uint64_t vaddr, uint64_t *paddr)
 {
 	struct vm_guest_paging paging;
 	int fault;
@@ -288,7 +291,7 @@ guest_vaddr2paddr(int vcpu, uint64_t vaddr, uint64_t *paddr)
 	 * Always use PROT_READ.  We really care if the VA is
 	 * accessible, not if the current vCPU can write.
 	 */
-	if (vm_gla2gpa_nofault(ctx, vcpu, &paging, vaddr, PROT_READ, paddr,
+	if (vm_gla2gpa_nofault(vcpu, &paging, vaddr, PROT_READ, paddr,
 	    &fault) == -1)
 		return (-1);
 	if (fault)
@@ -750,17 +753,18 @@ gdb_finish_suspend_vcpus(void)
  * as long as the debug server keeps them suspended.
  */
 static void
-_gdb_cpu_suspend(int vcpu, bool report_stop)
+_gdb_cpu_suspend(struct vcpu *vcpu, bool report_stop)
 {
+	int vcpuid = vcpu_id(vcpu);
 
-	debug("$vCPU %d suspending\n", vcpu);
-	CPU_SET(vcpu, &vcpus_waiting);
+	debug("$vCPU %d suspending\n", vcpuid);
+	CPU_SET(vcpuid, &vcpus_waiting);
 	if (report_stop && CPU_CMP(&vcpus_waiting, &vcpus_suspended) == 0)
 		gdb_finish_suspend_vcpus();
-	while (CPU_ISSET(vcpu, &vcpus_suspended))
+	while (CPU_ISSET(vcpuid, &vcpus_suspended))
 		pthread_cond_wait(&idle_vcpus, &gdb_lock);
-	CPU_CLR(vcpu, &vcpus_waiting);
-	debug("$vCPU %d resuming\n", vcpu);
+	CPU_CLR(vcpuid, &vcpus_waiting);
+	debug("$vCPU %d resuming\n", vcpuid);
 }
 
 /*
@@ -768,15 +772,21 @@ _gdb_cpu_suspend(int vcpu, bool report_stop)
  * debug server about the new thread.
  */
 void
-gdb_cpu_add(int vcpu)
+gdb_cpu_add(struct vcpu *vcpu)
 {
+	int vcpuid;
 
-	debug("$vCPU %d starting\n", vcpu);
+	if (!gdb_active)
+		return;
+	vcpuid = vcpu_id(vcpu);
+	debug("$vCPU %d starting\n", vcpuid);
 	pthread_mutex_lock(&gdb_lock);
-	assert(vcpu < guest_ncpus);
-	CPU_SET(vcpu, &vcpus_active);
+	assert(vcpuid < guest_ncpus);
+	assert(vcpus[vcpuid] == NULL);
+	vcpus[vcpuid] = vcpu;
+	CPU_SET(vcpuid, &vcpus_active);
 	if (!TAILQ_EMPTY(&breakpoints)) {
-		vm_set_capability(ctx, vcpu, VM_CAP_BPT_EXIT, 1);
+		vm_set_capability(vcpu, VM_CAP_BPT_EXIT, 1);
 		debug("$vCPU %d enabled breakpoint exits\n", vcpu);
 	}
 
@@ -786,7 +796,7 @@ gdb_cpu_add(int vcpu)
 	 * executing the first instruction.
 	 */
 	if (!CPU_EMPTY(&vcpus_suspended)) {
-		CPU_SET(vcpu, &vcpus_suspended);
+		CPU_SET(vcpuid, &vcpus_suspended);
 		_gdb_cpu_suspend(vcpu, false);
 	}
 	pthread_mutex_unlock(&gdb_lock);
@@ -797,12 +807,12 @@ gdb_cpu_add(int vcpu)
  * if the vCPU is marked as stepping.
  */
 static void
-gdb_cpu_resume(int vcpu)
+gdb_cpu_resume(struct vcpu *vcpu)
 {
 	struct vcpu_state *vs;
 	int error;
 
-	vs = &vcpu_state[vcpu];
+	vs = &vcpu_state[vcpu_id(vcpu)];
 
 	/*
 	 * Any pending event should already be reported before
@@ -811,7 +821,7 @@ gdb_cpu_resume(int vcpu)
 	assert(vs->hit_swbreak == false);
 	assert(vs->stepped == false);
 	if (vs->stepping) {
-		error = vm_set_capability(ctx, vcpu, VM_CAP_MTRAP_EXIT, 1);
+		error = vm_set_capability(vcpu, VM_CAP_MTRAP_EXIT, 1);
 		assert(error == 0);
 	}
 }
@@ -822,9 +832,11 @@ gdb_cpu_resume(int vcpu)
  * to a guest-wide suspend such as Ctrl-C or the stop on attach.
  */
 void
-gdb_cpu_suspend(int vcpu)
+gdb_cpu_suspend(struct vcpu *vcpu)
 {
 
+	if (!gdb_active)
+		return;
 	pthread_mutex_lock(&gdb_lock);
 	_gdb_cpu_suspend(vcpu, true);
 	gdb_cpu_resume(vcpu);
@@ -838,7 +850,7 @@ gdb_suspend_vcpus(void)
 	assert(pthread_mutex_isowned_np(&gdb_lock));
 	debug("suspending all CPUs\n");
 	vcpus_suspended = vcpus_active;
-	vm_suspend_cpu(ctx, -1);
+	vm_suspend_all_cpus(ctx);
 	if (CPU_CMP(&vcpus_waiting, &vcpus_suspended) == 0)
 		gdb_finish_suspend_vcpus();
 }
@@ -848,21 +860,25 @@ gdb_suspend_vcpus(void)
  * the VT-x-specific MTRAP exit.
  */
 void
-gdb_cpu_mtrap(int vcpu)
+gdb_cpu_mtrap(struct vcpu *vcpu)
 {
 	struct vcpu_state *vs;
+	int vcpuid;
 
-	debug("$vCPU %d MTRAP\n", vcpu);
+	if (!gdb_active)
+		return;
+	vcpuid = vcpu_id(vcpu);
+	debug("$vCPU %d MTRAP\n", vcpuid);
 	pthread_mutex_lock(&gdb_lock);
-	vs = &vcpu_state[vcpu];
+	vs = &vcpu_state[vcpuid];
 	if (vs->stepping) {
 		vs->stepping = false;
 		vs->stepped = true;
-		vm_set_capability(ctx, vcpu, VM_CAP_MTRAP_EXIT, 0);
+		vm_set_capability(vcpu, VM_CAP_MTRAP_EXIT, 0);
 		while (vs->stepped) {
 			if (stopped_vcpu == -1) {
-				debug("$vCPU %d reporting step\n", vcpu);
-				stopped_vcpu = vcpu;
+				debug("$vCPU %d reporting step\n", vcpuid);
+				stopped_vcpu = vcpuid;
 				gdb_suspend_vcpus();
 			}
 			_gdb_cpu_suspend(vcpu, true);
@@ -885,29 +901,34 @@ find_breakpoint(uint64_t gpa)
 }
 
 void
-gdb_cpu_breakpoint(int vcpu, struct vm_exit *vmexit)
+gdb_cpu_breakpoint(struct vcpu *vcpu, struct vm_exit *vmexit)
 {
 	struct breakpoint *bp;
 	struct vcpu_state *vs;
 	uint64_t gpa;
-	int error;
+	int error, vcpuid;
 
+	if (!gdb_active) {
+		fprintf(stderr, "vm_loop: unexpected VMEXIT_DEBUG\n");
+		exit(4);
+	}
+	vcpuid = vcpu_id(vcpu);
 	pthread_mutex_lock(&gdb_lock);
 	error = guest_vaddr2paddr(vcpu, vmexit->rip, &gpa);
 	assert(error == 1);
 	bp = find_breakpoint(gpa);
 	if (bp != NULL) {
-		vs = &vcpu_state[vcpu];
+		vs = &vcpu_state[vcpuid];
 		assert(vs->stepping == false);
 		assert(vs->stepped == false);
 		assert(vs->hit_swbreak == false);
 		vs->hit_swbreak = true;
-		vm_set_register(ctx, vcpu, VM_REG_GUEST_RIP, vmexit->rip);
+		vm_set_register(vcpu, VM_REG_GUEST_RIP, vmexit->rip);
 		for (;;) {
 			if (stopped_vcpu == -1) {
-				debug("$vCPU %d reporting breakpoint at rip %#lx\n", vcpu,
-				    vmexit->rip);
-				stopped_vcpu = vcpu;
+				debug("$vCPU %d reporting breakpoint at rip %#lx\n",
+				    vcpuid, vmexit->rip);
+				stopped_vcpu = vcpuid;
 				gdb_suspend_vcpus();
 			}
 			_gdb_cpu_suspend(vcpu, true);
@@ -924,31 +945,32 @@ gdb_cpu_breakpoint(int vcpu, struct vm_exit *vmexit)
 		}
 		gdb_cpu_resume(vcpu);
 	} else {
-		debug("$vCPU %d injecting breakpoint at rip %#lx\n", vcpu,
+		debug("$vCPU %d injecting breakpoint at rip %#lx\n", vcpuid,
 		    vmexit->rip);
-		error = vm_set_register(ctx, vcpu,
-		    VM_REG_GUEST_ENTRY_INST_LENGTH, vmexit->u.bpt.inst_length);
+		error = vm_set_register(vcpu, VM_REG_GUEST_ENTRY_INST_LENGTH,
+		    vmexit->u.bpt.inst_length);
 		assert(error == 0);
-		error = vm_inject_exception(ctx, vcpu, IDT_BP, 0, 0, 0);
+		error = vm_inject_exception(vcpu, IDT_BP, 0, 0, 0);
 		assert(error == 0);
 	}
 	pthread_mutex_unlock(&gdb_lock);
 }
 
 static bool
-gdb_step_vcpu(int vcpu)
+gdb_step_vcpu(struct vcpu *vcpu)
 {
-	int error, val;
+	int error, val, vcpuid;
 
-	debug("$vCPU %d step\n", vcpu);
-	error = vm_get_capability(ctx, vcpu, VM_CAP_MTRAP_EXIT, &val);
+	vcpuid = vcpu_id(vcpu);
+	debug("$vCPU %d step\n", vcpuid);
+	error = vm_get_capability(vcpu, VM_CAP_MTRAP_EXIT, &val);
 	if (error < 0)
 		return (false);
 
 	discard_stop();
-	vcpu_state[vcpu].stepping = true;
-	vm_resume_cpu(ctx, vcpu);
-	CPU_CLR(vcpu, &vcpus_suspended);
+	vcpu_state[vcpuid].stepping = true;
+	vm_resume_cpu(vcpu);
+	CPU_CLR(vcpuid, &vcpus_suspended);
 	pthread_cond_broadcast(&idle_vcpus);
 	return (true);
 }
@@ -958,7 +980,7 @@ gdb_resume_vcpus(void)
 {
 
 	assert(pthread_mutex_isowned_np(&gdb_lock));
-	vm_resume_cpu(ctx, -1);
+	vm_resume_all_cpus(ctx);
 	debug("resuming all CPUs\n");
 	CPU_ZERO(&vcpus_suspended);
 	pthread_cond_broadcast(&idle_vcpus);
@@ -968,15 +990,14 @@ static void
 gdb_read_regs(void)
 {
 	uint64_t regvals[nitems(gdb_regset)];
-	int i;
 
-	if (vm_get_register_set(ctx, cur_vcpu, nitems(gdb_regset),
+	if (vm_get_register_set(vcpus[cur_vcpu], nitems(gdb_regset),
 	    gdb_regset, regvals) == -1) {
 		send_error(errno);
 		return;
 	}
 	start_packet();
-	for (i = 0; i < nitems(regvals); i++)
+	for (size_t i = 0; i < nitems(regvals); i++)
 		append_unsigned_native(regvals[i], gdb_regsize[i]);
 	finish_packet();
 }
@@ -1009,7 +1030,7 @@ gdb_read_mem(const uint8_t *data, size_t len)
 
 	started = false;
 	while (resid > 0) {
-		error = guest_vaddr2paddr(cur_vcpu, gva, &gpa);
+		error = guest_vaddr2paddr(vcpus[cur_vcpu], gva, &gpa);
 		if (error == -1) {
 			if (started)
 				finish_packet();
@@ -1061,7 +1082,7 @@ gdb_read_mem(const uint8_t *data, size_t len)
 					bytes = 2;
 				else
 					bytes = 4;
-				error = read_mem(ctx, cur_vcpu, gpa, &val,
+				error = read_mem(vcpus[cur_vcpu], gpa, &val,
 				    bytes);
 				if (error == 0) {
 					if (!started) {
@@ -1132,7 +1153,7 @@ gdb_write_mem(const uint8_t *data, size_t len)
 	}
 
 	while (resid > 0) {
-		error = guest_vaddr2paddr(cur_vcpu, gva, &gpa);
+		error = guest_vaddr2paddr(vcpus[cur_vcpu], gva, &gpa);
 		if (error == -1) {
 			send_error(errno);
 			return;
@@ -1181,7 +1202,7 @@ gdb_write_mem(const uint8_t *data, size_t len)
 					bytes = 4;
 					val = be32toh(parse_integer(data, 8));
 				}
-				error = write_mem(ctx, cur_vcpu, gpa, val,
+				error = write_mem(vcpus[cur_vcpu], gpa, val,
 				    bytes);
 				if (error == 0) {
 					gpa += bytes;
@@ -1212,7 +1233,7 @@ set_breakpoint_caps(bool enable)
 	while (!CPU_EMPTY(&mask)) {
 		vcpu = CPU_FFS(&mask) - 1;
 		CPU_CLR(vcpu, &mask);
-		if (vm_set_capability(ctx, vcpu, VM_CAP_BPT_EXIT,
+		if (vm_set_capability(vcpus[vcpu], VM_CAP_BPT_EXIT,
 		    enable ? 1 : 0) < 0)
 			return (false);
 		debug("$vCPU %d %sabled breakpoint exits\n", vcpu,
@@ -1254,7 +1275,7 @@ update_sw_breakpoint(uint64_t gva, int kind, bool insert)
 		return;
 	}
 
-	error = guest_vaddr2paddr(cur_vcpu, gva, &gpa);
+	error = guest_vaddr2paddr(vcpus[cur_vcpu], gva, &gpa);
 	if (error == -1) {
 		send_error(errno);
 		return;
@@ -1608,7 +1629,7 @@ handle_command(const uint8_t *data, size_t len)
 		}
 
 		/* Don't send a reply until a stop occurs. */
-		if (!gdb_step_vcpu(cur_vcpu)) {
+		if (!gdb_step_vcpu(vcpus[cur_vcpu])) {
 			send_error(EOPNOTSUPP);
 			break;
 		}
@@ -1725,15 +1746,18 @@ check_command(int fd)
 }
 
 static void
-gdb_readable(int fd, enum ev_type event, void *arg)
+gdb_readable(int fd, enum ev_type event __unused, void *arg __unused)
 {
+	size_t pending;
 	ssize_t nread;
-	int pending;
+	int n;
 
-	if (ioctl(fd, FIONREAD, &pending) == -1) {
+	if (ioctl(fd, FIONREAD, &n) == -1) {
 		warn("FIONREAD on GDB socket");
 		return;
 	}
+	assert(n >= 0);
+	pending = n;
 
 	/*
 	 * 'pending' might be zero due to EOF.  We need to call read
@@ -1764,14 +1788,14 @@ gdb_readable(int fd, enum ev_type event, void *arg)
 }
 
 static void
-gdb_writable(int fd, enum ev_type event, void *arg)
+gdb_writable(int fd, enum ev_type event __unused, void *arg __unused)
 {
 
 	send_pending_data(fd);
 }
 
 static void
-new_connection(int fd, enum ev_type event, void *arg)
+new_connection(int fd, enum ev_type event __unused, void *arg)
 {
 	int optval, s;
 
@@ -1825,7 +1849,7 @@ new_connection(int fd, enum ev_type event, void *arg)
 }
 
 #ifndef WITHOUT_CAPSICUM
-void
+static void
 limit_gdb_socket(int s)
 {
 	cap_rights_t rights;
@@ -1848,9 +1872,12 @@ limit_gdb_socket(int s)
  * the instance while it is running.
  */
 void
-init_mdb(struct vmctx *_ctx, bool wait)
+init_mdb(struct vmctx *_ctx)
 {
 	int error;
+	bool wait;
+
+	wait = get_config_bool_default("gdb.wait", false);
 
 	error = pthread_mutex_init(&gdb_lock, NULL);
 	if (error != 0)
@@ -1877,12 +1904,31 @@ init_mdb(struct vmctx *_ctx, bool wait)
 #endif
 
 void
-init_gdb(struct vmctx *_ctx, int sport, bool wait)
+init_gdb(struct vmctx *_ctx)
 {
-	struct sockaddr_in sin;
-	int error, flags, s;
+	int error, flags, optval, s;
+	struct addrinfo hints;
+	struct addrinfo *gdbaddr;
+	const char *saddr, *value;
+	char *sport;
+	bool wait;
 
-	debug("==> starting on %d, %swaiting\n", sport, wait ? "" : "not ");
+	value = get_config_value("gdb.port");
+	if (value == NULL)
+		return;
+	sport = strdup(value);
+	if (sport == NULL)
+		errx(4, "Failed to allocate memory");
+
+	wait = get_config_bool_default("gdb.wait", false);
+
+	saddr = get_config_value("gdb.address");
+	if (saddr == NULL) {
+		saddr = "localhost";
+	}
+
+	debug("==> starting on %s:%s, %swaiting\n",
+	    saddr, sport, wait ? "" : "not ");
 
 	error = pthread_mutex_init(&gdb_lock, NULL);
 	if (error != 0)
@@ -1891,19 +1937,24 @@ init_gdb(struct vmctx *_ctx, int sport, bool wait)
 	if (error != 0)
 		errc(1, error, "gdb cv init");
 
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_flags = AI_NUMERICSERV | AI_PASSIVE;
+
+	error = getaddrinfo(saddr, sport, &hints, &gdbaddr);
+	if (error != 0)
+		errx(1, "gdb address resolution: %s", gai_strerror(error));
+
 	ctx = _ctx;
-	s = socket(PF_INET, SOCK_STREAM, 0);
+	s = socket(gdbaddr->ai_family, gdbaddr->ai_socktype, 0);
 	if (s < 0)
 		err(1, "gdb socket create");
 
-#ifdef __FreeBSD__
-	sin.sin_len = sizeof(sin);
-#endif
-	sin.sin_family = AF_INET;
-	sin.sin_addr.s_addr = htonl(INADDR_ANY);
-	sin.sin_port = htons(sport);
+	optval = 1;
+	(void)setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval));
 
-	if (bind(s, (struct sockaddr *)&sin, sizeof(sin)) < 0)
+	if (bind(s, gdbaddr->ai_addr, gdbaddr->ai_addrlen) < 0)
 		err(1, "gdb socket bind");
 
 	if (listen(s, 1) < 0)
@@ -1911,6 +1962,7 @@ init_gdb(struct vmctx *_ctx, int sport, bool wait)
 
 	stopped_vcpu = -1;
 	TAILQ_INIT(&breakpoints);
+	vcpus = calloc(guest_ncpus, sizeof(*vcpus));
 	vcpu_state = calloc(guest_ncpus, sizeof(*vcpu_state));
 	if (wait) {
 		/*
@@ -1931,4 +1983,7 @@ init_gdb(struct vmctx *_ctx, int sport, bool wait)
 	limit_gdb_socket(s);
 #endif
 	mevent_add(s, EVF_READ, new_connection, NULL);
+	gdb_active = true;
+	freeaddrinfo(gdbaddr);
+	free(sport);
 }

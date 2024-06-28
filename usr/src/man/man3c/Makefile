@@ -14,9 +14,9 @@
 # Copyright 2018 Nexenta Systems, Inc.
 # Copyright 2013, OmniTI Computer Consulting, Inc. All rights reserved.
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
-# Copyright 2018 Joyent, Inc.
+# Copyright 2020 Joyent, Inc.
 # Copyright 2018 Jason King
-# Copyright 2019 OmniOS Community Edition (OmniOSce) Association.
+# Copyright 2022 OmniOS Community Edition (OmniOSce) Association.
 #
 
 include		$(SRC)/Makefile.master
@@ -172,6 +172,7 @@ MANFILES=	__fbufsize.3c					\
 		getenv.3c					\
 		getexecname.3c					\
 		getgrnam.3c					\
+		getgrouplist.3c					\
 		gethostid.3c					\
 		gethostname.3c					\
 		gethrtime.3c					\
@@ -527,6 +528,7 @@ MANFILES=	__fbufsize.3c					\
 		u8_validate.3c					\
 		ualarm.3c					\
 		uconv_u16tou32.3c				\
+		ucontext_alloc.3c				\
 		ucred.3c					\
 		ungetc.3c					\
 		ungetwc.3c					\
@@ -792,11 +794,14 @@ MANLINKS=	FD_CLR.3c				\
 		epoll_create1.3c			\
 		epoll_pwait.3c				\
 		erand48.3c				\
+		errc.3c					\
 		errno.3c				\
 		errx.3c					\
 		etext.3c				\
 		euccol.3c				\
 		eucscol.3c				\
+		eventfd_read.3c				\
+		eventfd_write.3c			\
 		explicit_bzero.3c			\
 		extended_to_decimal.3c			\
 		fconvert.3c				\
@@ -952,6 +957,7 @@ MANLINKS=	FD_CLR.3c				\
 		iswalnum_l.3c				\
 		iswalpha_l.3c				\
 		iswascii.3c				\
+		iswascii_l.3c				\
 		iswblank.3c				\
 		iswblank_l.3c				\
 		iswcntrl.3c				\
@@ -1027,6 +1033,7 @@ MANLINKS=	FD_CLR.3c				\
 		memcpy.3c				\
 		memmem.3c				\
 		memmove.3c				\
+		memrchr.3c				\
 		memset.3c				\
 		minor.3c				\
 		mkdtemp.3c				\
@@ -1270,6 +1277,8 @@ MANLINKS=	FD_CLR.3c				\
 		strdupa.3c				\
 		strerror_l.3c				\
 		strerror_r.3c				\
+		strerrordesc_np.3c			\
+		strerrorname_np.3c			\
 		strfmon_l.3c				\
 		strftime_l.3c				\
 		strlcat.3c				\
@@ -1295,10 +1304,12 @@ MANLINKS=	FD_CLR.3c				\
 		strtok_r.3c				\
 		strtold.3c				\
 		strtoll.3c				\
+		strtonumx.3c				\
 		strtoull.3c				\
 		strtoumax.3c				\
 		strxfrm_l.3c				\
 		swapcontext.3c				\
+		swapcontext_extd.3c			\
 		swprintf.3c				\
 		swscanf.3c				\
 		tdelete.3c				\
@@ -1341,6 +1352,7 @@ MANLINKS=	FD_CLR.3c				\
 		uconv_u32tou8.3c			\
 		uconv_u8tou16.3c			\
 		uconv_u8tou32.3c			\
+		ucontext_free.3c			\
 		ucred_free.3c				\
 		ucred_get.3c				\
 		ucred_getegid.3c			\
@@ -1367,6 +1379,7 @@ MANLINKS=	FD_CLR.3c				\
 		valloc.3c				\
 		vasprintf.3c				\
 		verr.3c					\
+		verrc.3c				\
 		verrx.3c				\
 		vfprintf.3c				\
 		vfscanf.3c				\
@@ -1378,11 +1391,13 @@ MANLINKS=	FD_CLR.3c				\
 		vswprintf.3c				\
 		vswscanf.3c				\
 		vwarn.3c				\
+		vwarnc.3c				\
 		vwarnx.3c				\
 		vwprintf.3c				\
 		vwscanf.3c				\
 		wait4.3c				\
 		warn.3c					\
+		warnc.3c				\
 		warnx.3c				\
 		watof.3c				\
 		watoi.3c				\
@@ -1744,16 +1759,23 @@ letoh64.3c				:= LINKSRC = endian.3c
 epoll_create1.3c			:= LINKSRC = epoll_create.3c
 epoll_pwait.3c				:= LINKSRC = epoll_wait.3c
 
+errc.3c					:= LINKSRC = err.3c
 errx.3c					:= LINKSRC = err.3c
 verr.3c					:= LINKSRC = err.3c
+verrc.3c				:= LINKSRC = err.3c
 verrx.3c				:= LINKSRC = err.3c
 vwarn.3c				:= LINKSRC = err.3c
+vwarnc.3c				:= LINKSRC = err.3c
 vwarnx.3c				:= LINKSRC = err.3c
 warn.3c					:= LINKSRC = err.3c
+warnc.3c				:= LINKSRC = err.3c
 warnx.3c				:= LINKSRC = err.3c
 
 euccol.3c				:= LINKSRC = euclen.3c
 eucscol.3c				:= LINKSRC = euclen.3c
+
+eventfd_read.3c				:= LINKSRC = eventfd.3c
+eventfd_write.3c			:= LINKSRC = eventfd.3c
 
 _exithandle.3c				:= LINKSRC = exit.3c
 
@@ -1964,6 +1986,7 @@ iswalnum.3c				:= LINKSRC = iswalpha.3c
 iswalnum_l.3c				:= LINKSRC = iswalpha.3c
 iswalpha_l.3c				:= LINKSRC = iswalpha.3c
 iswascii.3c				:= LINKSRC = iswalpha.3c
+iswascii_l.3c				:= LINKSRC = iswalpha.3c
 iswblank.3c				:= LINKSRC = iswalpha.3c
 iswblank_l.3c				:= LINKSRC = iswalpha.3c
 iswcntrl.3c				:= LINKSRC = iswalpha.3c
@@ -2002,6 +2025,7 @@ ulckpwdf.3c				:= LINKSRC = lckpwdf.3c
 lfind.3c				:= LINKSRC = lsearch.3c
 
 swapcontext.3c				:= LINKSRC = makecontext.3c
+swapcontext_extd.3c			:= LINKSRC = makecontext.3c
 
 major.3c				:= LINKSRC = makedev.3c
 minor.3c				:= LINKSRC = makedev.3c
@@ -2046,6 +2070,7 @@ memcmp.3c				:= LINKSRC = memory.3c
 memcpy.3c				:= LINKSRC = memory.3c
 memmem.3c				:= LINKSRC = memory.3c
 memmove.3c				:= LINKSRC = memory.3c
+memrchr.3c				:= LINKSRC = memory.3c
 memset.3c				:= LINKSRC = memory.3c
 
 mkfifoat.3c				:= LINKSRC = mkfifo.3c
@@ -2363,6 +2388,8 @@ strcoll_l.3c				:= LINKSRC = strcoll.3c
 
 strerror_l.3c				:= LINKSRC = strerror.3c
 strerror_r.3c				:= LINKSRC = strerror.3c
+strerrordesc_np.3c			:= LINKSRC = strerror.3c
+strerrorname_np.3c			:= LINKSRC = strerror.3c
 
 strfmon_l.3c				:= LINKSRC = strfmon.3c
 
@@ -2422,6 +2449,8 @@ lltostr.3c				:= LINKSRC = strtol.3c
 strtoll.3c				:= LINKSRC = strtol.3c
 ulltostr.3c				:= LINKSRC = strtol.3c
 
+strtonumx.3c				:= LINKSRC = strtonum.3c
+
 strtoull.3c				:= LINKSRC = strtoul.3c
 
 wstostr.3c				:= LINKSRC = strtows.3c
@@ -2480,6 +2509,8 @@ tss_get.3c				:= LINKSRC = tss.3c
 tss_set.3c				:= LINKSRC = tss.3c
 
 ttyname_r.3c				:= LINKSRC = ttyname.3c
+
+ucontext_free.3c			:= LINKSRC = ucontext_alloc.3c
 
 uconv_u16tou8.3c			:= LINKSRC = uconv_u16tou32.3c
 uconv_u32tou16.3c			:= LINKSRC = uconv_u16tou32.3c

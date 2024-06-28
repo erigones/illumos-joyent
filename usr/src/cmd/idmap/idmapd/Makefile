@@ -23,6 +23,7 @@
 # Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
 #
 # Copyright (c) 2018, Joyent, Inc.
+# Copyright 2022-2023 RackTop Systems, Inc.
 
 PROG =		idmapd
 MANIFEST =	idmap.xml
@@ -59,6 +60,7 @@ clean :=	TARGET = clean
 clobber :=	TARGET = clobber
 
 include ../../Makefile.cmd
+include ../../Makefile.ctf
 
 CERRWARN +=	-_gcc=-Wno-type-limits
 CERRWARN +=	-_gcc=-Wno-switch
@@ -96,6 +98,8 @@ $(OBJS) := CPPFLAGS += $(INCS) -D_REENTRANT
 $(POFILE) := CPPFLAGS += $(INCS)
 
 CFLAGS += $(CCVERBOSE)
+$(NOT_RELEASE_BUILD)CPPFLAGS += -DIDMAPD_DEBUG
+
 LDLIBS += \
 	-lsqlite-sys \
 	-lsecdb \
@@ -116,9 +120,7 @@ LDLIBS += \
 
 rpc_svc.o := CFLAGS += $(RPC_MSGOUT_OPT)
 
-$(PROG) := MAPFILES = $(MAPFILE.INT) $(MAPFILE.NGB)
-$(PROG) := LDFLAGS += $(MAPFILES:%=-Wl,-M%) \
-	-R /usr/lib/smbsrv
+LDFLAGS += -R /usr/lib/smbsrv
 
 DIRMODE = 0755
 FILEMODE = 0555
@@ -129,7 +131,7 @@ FILEMODE = 0555
 
 all: $(PROG)
 
-$(PROG): $(OBJS) $$(MAPFILES)
+$(PROG): $(OBJS)
 	$(LINK.c) -o $@ $(OBJS) $(LDLIBS)
 	$(POST_PROCESS)
 

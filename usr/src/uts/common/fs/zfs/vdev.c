@@ -203,7 +203,7 @@ vdev_getops(const char *type)
 
 /*
  * Derive the enumerated alloction bias from string input.
- * String origin is either the per-vdev zap or zpool(1M).
+ * String origin is either the per-vdev zap or zpool(8).
  */
 static vdev_alloc_bias_t
 vdev_derive_alloc_bias(const char *bias)
@@ -339,7 +339,13 @@ vdev_count_leaves_impl(vdev_t *vd)
 int
 vdev_count_leaves(spa_t *spa)
 {
-	return (vdev_count_leaves_impl(spa->spa_root_vdev));
+	int rc;
+
+	spa_config_enter(spa, SCL_VDEV, FTAG, RW_READER);
+	rc = vdev_count_leaves_impl(spa->spa_root_vdev);
+	spa_config_exit(spa, SCL_VDEV, FTAG);
+
+	return (rc);
 }
 
 void
@@ -443,6 +449,18 @@ vdev_compact_children(vdev_t *pvd)
 	for (int c = newc = 0; c < oldc; c++)
 		if (pvd->vdev_child[c])
 			newc++;
+
+	/*
+	 * If there are no remaining children (possible if this is an indirect
+	 * vdev) just free the old child array and return to avoid a pointless
+	 * zero-byte alloc.
+	 */
+	if (newc == 0) {
+		kmem_free(pvd->vdev_child, oldc * sizeof (vdev_t *));
+		pvd->vdev_child = NULL;
+		pvd->vdev_children = newc;
+		return;
+	}
 
 	newchild = kmem_alloc(newc * sizeof (vdev_t *), KM_SLEEP);
 
@@ -1469,7 +1487,7 @@ vdev_probe(vdev_t *vd, zio_t *zio)
 	for (int l = 1; l < VDEV_LABELS; l++) {
 		zio_nowait(zio_read_phys(pio, vd,
 		    vdev_label_offset(vd->vdev_psize, l,
-		    offsetof(vdev_label_t, vl_pad2)), VDEV_PAD_SIZE,
+		    offsetof(vdev_label_t, vl_be)), VDEV_PAD_SIZE,
 		    abd_alloc_for_io(VDEV_PAD_SIZE, B_TRUE),
 		    ZIO_CHECKSUM_OFF, vdev_probe_done, vps,
 		    ZIO_PRIORITY_SYNC_READ, vps->vps_flags, B_TRUE));

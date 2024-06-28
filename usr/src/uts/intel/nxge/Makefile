@@ -44,13 +44,6 @@ CONF_SRCDIR	= $(UTSBASE)/common/io/nxge
 include $(UTSBASE)/intel/Makefile.intel
 
 #
-#	Override defaults to build a unique, local modstubs.o.
-#
-MODSTUBS_DIR	= $(OBJS_DIR)
-
-CLEANFILES	+= $(MODSTUBS_O)
-
-#
 #	Define targets
 #
 ALL_TARGET	= $(BINARY)
@@ -62,7 +55,7 @@ INSTALL_TARGET	= $(BINARY) $(ROOTMODULE) $(ROOT_CONFFILE)
 INC_PATH	+= -I$(UTSBASE)/common
 INC_PATH	+= -I$(UTSBASE)/common/io/nxge/npi
 INC_PATH	+= -I$(UTSBASE)/common/sys/nxge
-INC_PATH	+= -I$(UTSBASE)/sun4v
+
 #
 CFLAGS += -DSOLARIS
 #
@@ -79,7 +72,7 @@ $(OBJS_DIR)/npi_txc.o := SMOFF += shift_to_zero
 #
 #	Driver depends on mac & IP
 #
-LDFLAGS		+= -dy -N misc/mac -N drv/ip
+LDFLAGS		+= -N misc/mac -N drv/ip
 
 #
 #	Default build targets.

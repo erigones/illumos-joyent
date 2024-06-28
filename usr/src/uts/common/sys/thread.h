@@ -158,7 +158,6 @@ typedef struct _kthread {
 	struct _kthread	*t_intr; /* interrupted (pinned) thread */
 	uint64_t	t_intr_start;	/* timestamp when time slice began */
 	kt_did_t	t_did;	/* thread id for kernel debuggers */
-	caddr_t t_tnf_tpdp;	/* Trace facility data pointer */
 	struct _kcpc_ctx *t_cpc_ctx;	/* performance counter context */
 	struct _kcpc_set *t_cpc_set;	/* set this thread has bound */
 
@@ -385,6 +384,7 @@ typedef struct _kthread {
 #define	T_VFPARENT	0x4000	/* thread is vfork parent, must call vfwait */
 #define	T_DONTDTRACE	0x8000  /* disable DTrace probes */
 #define	T_KFPU		0x10000	/* kernel FPU active */
+#define	T_PUSHPAGE	0x20000	/* this thread may be assisting pageout */
 
 /*
  * Flags in t_proc_flag.

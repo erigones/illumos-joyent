@@ -7,6 +7,9 @@
 #
 # Copyright (c) 2019, Joyent, Inc.
 # Copyright (c) 2019, Erigones, s. r. o.
+# Copyright 2019 Joyent, Inc.
+# Copyright 2024 MNX Cloud, Inc.
+# Copyright 2024 Danube Cloud
 #
 
 ERIGONES_HOME="/opt/erigones"
@@ -17,9 +20,12 @@ PYTHONPATH="$ERIGONES_HOME:$PYTHONPATH"
 PAGER=less
 export PATH MANPATH PAGER ERIGONES_HOME PYTHONPATH VIRTUAL_ENV
 
-# If pkgsrc-tools is set up and the mozilla-rootcerts package is installed
-# configure the platform curl to use it.
+# If pkgsrc-tools is set up and either the mozilla-rootcerts-openssl or
+# mozilla-rootcerts packages are installed, configure the platform curl to
+# use the provided CA bundle.
 if [[ -f /opt/tools/share/mozilla-rootcerts/cacert.pem ]]; then
 	CURL_CA_BUNDLE=/opt/tools/share/mozilla-rootcerts/cacert.pem
+elif [[ -f /opt/tools/etc/openssl/certs/ca-certificates.crt ]]; then
+	CURL_CA_BUNDLE=/opt/tools/etc/openssl/certs/ca-certificates.crt
 fi
 export CURL_CA_BUNDLE

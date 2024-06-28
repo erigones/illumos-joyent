@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2011, 2018 by Delphix. All rights reserved.
+ * Copyright (c) 2011, 2020 by Delphix. All rights reserved.
  * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
  * Copyright 2020 Joyent, Inc.
@@ -125,6 +125,7 @@ typedef enum {
 	ZFS_PROP_SNAPDIR,
 	ZFS_PROP_ACLMODE,
 	ZFS_PROP_ACLINHERIT,
+	ZFS_PROP_ACLIMPLICIT,	/* ACL Implicit Owner Rights (RackTop) */
 	ZFS_PROP_CREATETXG,
 	ZFS_PROP_NAME,			/* not exposed to the user */
 	ZFS_PROP_CANMOUNT,
@@ -247,7 +248,7 @@ typedef enum {
 	ZPOOL_NUM_PROPS
 } zpool_prop_t;
 
-/* Small enough to not hog a whole line of printout in zpool(1M). */
+/* Small enough to not hog a whole line of printout in zpool(8). */
 #define	ZPROP_MAX_COMMENT	32
 
 #define	ZPROP_VALUE		"value"
@@ -313,7 +314,7 @@ boolean_t zfs_prop_written(const char *);
 int zfs_prop_index_to_string(zfs_prop_t, uint64_t, const char **);
 int zfs_prop_string_to_index(zfs_prop_t, const char *, uint64_t *);
 uint64_t zfs_prop_random_value(zfs_prop_t, uint64_t seed);
-boolean_t zfs_prop_valid_for_type(int, zfs_type_t);
+boolean_t zfs_prop_valid_for_type(int, zfs_type_t, boolean_t);
 
 /*
  * Pool property functions shared between libzfs and kernel.
@@ -1173,7 +1174,14 @@ typedef struct ddt_histogram {
  * /dev/zfs ioctl numbers.
  */
 typedef enum zfs_ioc {
+	/*
+	 * Core features - 81/128 numbers reserved.
+	 */
+#ifdef __FreeBSD__
+	ZFS_IOC_FIRST = 0,
+#else
 	ZFS_IOC_FIRST =	('Z' << 8),
+#endif
 	ZFS_IOC = ZFS_IOC_FIRST,
 	ZFS_IOC_POOL_CREATE = ZFS_IOC_FIRST,	/* 0x5a00 */
 	ZFS_IOC_POOL_DESTROY,			/* 0x5a01 */
@@ -1257,6 +1265,19 @@ typedef enum zfs_ioc {
 	ZFS_IOC_POOL_TRIM,			/* 0x5a50 */
 	ZFS_IOC_REDACT,				/* 0x5a51 */
 	ZFS_IOC_GET_BOOKMARK_PROPS,		/* 0x5a52 */
+
+	/*
+	 * Per-platform (Optional) - 8/128 numbers reserved.
+	 */
+	ZFS_IOC_PLATFORM = ZFS_IOC_FIRST + 0x80,
+	ZFS_IOC_EVENTS_NEXT,			/* 0x81 (Linux) */
+	ZFS_IOC_EVENTS_CLEAR,			/* 0x82 (Linux) */
+	ZFS_IOC_EVENTS_SEEK,			/* 0x83 (Linux) */
+	ZFS_IOC_NEXTBOOT,			/* 0x84 (FreeBSD) */
+	ZFS_IOC_JAIL,				/* 0x85 (FreeBSD) */
+	ZFS_IOC_UNJAIL,				/* 0x86 (FreeBSD) */
+	ZFS_IOC_SET_BOOTENV,			/* 0x87 */
+	ZFS_IOC_GET_BOOTENV,			/* 0x88 */
 	ZFS_IOC_LAST
 } zfs_ioc_t;
 

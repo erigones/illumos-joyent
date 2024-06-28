@@ -28,6 +28,7 @@
  * Copyright (c) 2013 by Delphix. All rights reserved.
  * Copyright 2015, Joyent, Inc.
  * Copyright 2020 OmniOS Community Edition (OmniOSce) Association.
+ * Copyright 2023 Oxide Computer Company
  */
 
 #include <assert.h>
@@ -406,7 +407,7 @@ dupfd(int fd, int dfd)
 	/*
 	 * Make fd be greater than 255 (the 32-bit stdio limit),
 	 * or at least make it greater than 2 so that the
-	 * program will work when spawned by init(1m).
+	 * program will work when spawned by init(8).
 	 * Also, if dfd is non-zero, dup the fd to be dfd.
 	 */
 	if ((mfd = minfd) == 0)
@@ -507,6 +508,7 @@ Pxcreate(const char *file,	/* executable file name */
 	P->agentstatfd = -1;
 	Pinit_ops(&P->ops, &P_live_ops);
 	Pinitsym(P);
+	Pinitfd(P);
 
 	/*
 	 * Open the /proc/pid files.
@@ -810,6 +812,7 @@ again:	/* Come back here if we lose it in the Window of Vulnerability */
 	P->agentstatfd = -1;
 	Pinit_ops(&P->ops, &P_live_ops);
 	Pinitsym(P);
+	Pinitfd(P);
 
 	/*
 	 * Open the /proc/pid files
@@ -1188,6 +1191,7 @@ void
 Pfree(struct ps_prochandle *P)
 {
 	uint_t i;
+	fd_info_t *fip;
 
 	if (P->ucaddrs != NULL) {
 		free(P->ucaddrs);
@@ -1205,15 +1209,14 @@ Pfree(struct ps_prochandle *P)
 		free(P->hashtab);
 	}
 
-	while (P->num_fd > 0) {
-		fd_info_t *fip = list_next(&P->fd_head);
-		list_unlink(fip);
+	while ((fip = list_remove_head(&P->fd_head)) != NULL) {
 		proc_fdinfo_free(fip->fd_info);
 		free(fip);
-		P->num_fd--;
 	}
 	(void) mutex_unlock(&P->proc_lock);
 	(void) mutex_destroy(&P->proc_lock);
+
+	free(P->zoneroot);
 
 	if (P->agentctlfd >= 0)
 		(void) close(P->agentctlfd);
@@ -1318,6 +1321,8 @@ Psecflags(struct ps_prochandle *P, prsecflags_t **psf)
 
 	if ((ret = P->ops.pop_secflags(P, psf, P->data)) == 0) {
 		if ((*psf)->pr_version != PRSECFLAGS_VERSION_1) {
+			free(*psf);
+			*psf = NULL;
 			errno = EINVAL;
 			return (-1);
 		}
@@ -1677,7 +1682,7 @@ Prelease(struct ps_prochandle *P, int flags)
 	}
 
 	if (P->state == PS_IDLE) {
-		file_info_t *fptr = list_next(&P->file_head);
+		file_info_t *fptr = list_head(&P->file_head);
 		dprintf("Prelease: releasing handle %p PS_IDLE of file %s\n",
 		    (void *)P, fptr->file_pname);
 		Pfree(P);
@@ -2972,10 +2977,10 @@ Plwp_iter(struct ps_prochandle *P, proc_lwp_f *func, void *cd)
 	 */
 	if (P->state == PS_DEAD) {
 		core_info_t *core = P->data;
-		lwp_info_t *lwp = list_prev(&core->core_lwp_head);
-		uint_t i;
+		lwp_info_t *lwp;
 
-		for (i = 0; i < core->core_nlwp; i++, lwp = list_prev(lwp)) {
+		for (lwp = list_tail(&core->core_lwp_head); lwp != NULL;
+		    lwp = list_prev(&core->core_lwp_head, lwp)) {
 			if (lwp->lwp_psinfo.pr_sname != 'Z' &&
 			    (rv = func(cd, &lwp->lwp_status)) != 0)
 				break;
@@ -3044,10 +3049,10 @@ retry:
 	 */
 	if (P->state == PS_DEAD) {
 		core_info_t *core = P->data;
-		lwp_info_t *lwp = list_prev(&core->core_lwp_head);
-		uint_t i;
+		lwp_info_t *lwp;
 
-		for (i = 0; i < core->core_nlwp; i++, lwp = list_prev(lwp)) {
+		for (lwp = list_tail(&core->core_lwp_head); lwp != NULL;
+		    lwp = list_prev(&core->core_lwp_head, lwp)) {
 			sp = (lwp->lwp_psinfo.pr_sname == 'Z')? NULL :
 			    &lwp->lwp_status;
 			if ((rv = func(cd, sp, &lwp->lwp_psinfo)) != 0)
@@ -3150,7 +3155,7 @@ Pcontent(struct ps_prochandle *P)
  * or it will point to an empty slot for a new struct ps_lwphandle.
  */
 static struct ps_lwphandle **
-Lfind(struct ps_prochandle *P, lwpid_t lwpid)
+Lfind_slot(struct ps_prochandle *P, lwpid_t lwpid)
 {
 	struct ps_lwphandle **Lp;
 	struct ps_lwphandle *L;
@@ -3160,6 +3165,20 @@ Lfind(struct ps_prochandle *P, lwpid_t lwpid)
 		if (L->lwp_id == lwpid)
 			break;
 	return (Lp);
+}
+
+/*
+ * A wrapper around Lfind_slot() that is suitable for the rest of the internal
+ * consumers who don't care about a slot, merely existence.
+ */
+struct ps_lwphandle *
+Lfind(struct ps_prochandle *P, lwpid_t lwpid)
+{
+	if (P->hashtab == NULL) {
+		return (NULL);
+	}
+
+	return (*Lfind_slot(P, lwpid));
 }
 
 /*
@@ -3185,7 +3204,7 @@ Lgrab(struct ps_prochandle *P, lwpid_t lwpid, int *perr)
 	    (P->hashtab = calloc(HASHSIZE, sizeof (struct ps_lwphandle *)))
 	    == NULL)
 		rc = G_STRANGE;
-	else if (*(Lp = Lfind(P, lwpid)) != NULL)
+	else if (*(Lp = Lfind_slot(P, lwpid)) != NULL)
 		rc = G_BUSY;
 	else if ((L = malloc(sizeof (struct ps_lwphandle))) == NULL)
 		rc = G_STRANGE;
@@ -3327,7 +3346,7 @@ Lfree(struct ps_lwphandle *L)
 static void
 Lfree_internal(struct ps_prochandle *P, struct ps_lwphandle *L)
 {
-	*Lfind(P, L->lwp_id) = L->lwp_hash;	/* delete from hash table */
+	*Lfind_slot(P, L->lwp_id) = L->lwp_hash; /* delete from hash table */
 	if (L->lwp_ctlfd >= 0)
 		(void) close(L->lwp_ctlfd);
 	if (L->lwp_statfd >= 0)
@@ -3433,7 +3452,7 @@ Lsync(struct ps_lwphandle *L)
  * Or, just get the current status (PCNULL).
  * Or, direct it to stop and get the current status (PCDSTOP).
  */
-static int
+int
 Lstopstatus(struct ps_lwphandle *L,
     long request,		/* PCNULL, PCDSTOP, PCSTOP, PCWSTOP */
     uint_t msec)		/* if non-zero, timeout in milliseconds */
@@ -3958,6 +3977,7 @@ Pgrab_ops(pid_t pid, void *data, const ps_ops_t *ops, int flags)
 	P->agentctlfd = -1;
 	P->agentstatfd = -1;
 	Pinitsym(P);
+	Pinitfd(P);
 	P->data = data;
 	Pread_status(P);
 

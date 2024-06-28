@@ -188,8 +188,8 @@ topo_sensor_create_scalar_sensor(topo_mod_t *mod, tnode_t *pnode,
 		topo_type = TOPO_SENSOR_TYPE_CURRENT;
 		break;
 	default:
-		topo_mod_dprintf(mod, "unknown sensor kind for %s, found 0x%x",
-		    path, sik.sik_kind);
+		topo_mod_dprintf(mod, "unknown sensor kind for %s, found 0x%"
+		    PRIx64, path, sik.sik_kind);
 		ret = topo_mod_seterrno(mod, EMOD_UNKNOWN);
 		goto out;
 
@@ -260,7 +260,7 @@ topo_sensor_create_scalar_sensor(topo_mod_t *mod, tnode_t *pnode,
 	    reader_arg, &err) != 0) {
 		topo_mod_dprintf(mod, "failed to set argument for sensor %s: "
 		    "%s", path, topo_strerror(err));
-		err = topo_mod_seterrno(mod, err);
+		ret = topo_mod_seterrno(mod, err);
 		goto out;
 	}
 

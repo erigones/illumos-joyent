@@ -26,6 +26,9 @@
  * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2016 Argo Technologies SA
  * Copyright 2019 Joyent, Inc.
+ * Copyright 2024 RackTop Systems, Inc.
+ * Copyright 2023 Oxide Computer Company
+ * Copyright 2023 Jason King
  */
 
 /*
@@ -115,8 +118,9 @@ sata_atapi_cmd_t sata_atapi_trace[64];
 uint32_t sata_atapi_trace_index = 0;
 int sata_atapi_trace_save = 1;
 static	void sata_save_atapi_trace(sata_pkt_txlate_t *, int);
-#define	SATAATAPITRACE(spx, count)	if (sata_atapi_trace_save) \
-    sata_save_atapi_trace(spx, count);
+#define	SATAATAPITRACE(spx, count)	\
+	if (sata_atapi_trace_save)	\
+	    sata_save_atapi_trace(spx, count)
 
 #else
 #define	SATA_LOG_D(args)	sata_trace_log args
@@ -145,8 +149,6 @@ static	void sata_inject_pkt_fault(sata_pkt_t *, int *, int);
 #endif
 
 #define	LEGACY_HWID_LEN	64	/* Model (40) + Serial (20) + pad */
-
-static char sata_rev_tag[] = {"1.46"};
 
 /*
  * SATA cb_ops functions
@@ -237,12 +239,9 @@ static	void sata_txlt_rw_completion(sata_pkt_t *);
 static	void sata_txlt_nodata_cmd_completion(sata_pkt_t *);
 static	void sata_txlt_apt_completion(sata_pkt_t *sata_pkt);
 static	void sata_txlt_unmap_completion(sata_pkt_t *sata_pkt);
-static	void sata_txlt_download_mcode_cmd_completion(sata_pkt_t *);
 static	int sata_emul_rw_completion(sata_pkt_txlate_t *);
 static	void sata_fill_ata_return_desc(sata_pkt_t *, uint8_t, uint8_t,
     uint8_t);
-static	struct scsi_extended_sense *sata_immediate_error_response(
-    sata_pkt_txlate_t *, int);
 static	struct scsi_extended_sense *sata_arq_sense(sata_pkt_txlate_t *);
 
 static	int sata_txlt_atapi(sata_pkt_txlate_t *);
@@ -319,7 +318,6 @@ static	int sata_fetch_device_identify_data(sata_hba_inst_t *,
     sata_drive_info_t *);
 static	void sata_update_port_info(sata_hba_inst_t *, sata_device_t *);
 static	void sata_update_pmport_info(sata_hba_inst_t *, sata_device_t *);
-static	void sata_update_port_scr(sata_port_scr_t *, sata_device_t *);
 static	int sata_set_dma_mode(sata_hba_inst_t *, sata_drive_info_t *);
 static	int sata_set_cache_mode(sata_hba_inst_t *, sata_drive_info_t *, int);
 static	int sata_set_rmsn(sata_hba_inst_t *, sata_drive_info_t *, int);
@@ -364,7 +362,9 @@ static	void sata_save_drive_settings(sata_drive_info_t *);
 static	void sata_show_drive_info(sata_hba_inst_t *, sata_drive_info_t *);
 static	void sata_show_pmult_info(sata_hba_inst_t *, sata_device_t *);
 static	void sata_log(sata_hba_inst_t *, uint_t, char *fmt, ...);
+#ifndef SATA_DEBUG
 static	void sata_trace_log(sata_hba_inst_t *, uint_t, const char *fmt, ...);
+#endif
 static	int sata_fetch_smart_return_status(sata_hba_inst_t *,
     sata_drive_info_t *);
 static	int sata_fetch_smart_data(sata_hba_inst_t *, sata_drive_info_t *,
@@ -1349,9 +1349,11 @@ sata_hba_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
 		return (ndi_devctl_ioctl(dip, cmd, arg, mode, 0));
 	}
 
+	cport = pmport = qual = 0;
+	cportinfo = NULL;
+
 	/* read devctl ioctl data */
-	if (cmd != DEVCTL_AP_CONTROL && cmd >= DEVCTL_IOC &&
-	    cmd <= DEVCTL_IOC_MAX) {
+	if (cmd != DEVCTL_AP_CONTROL && IS_DEVCTL(cmd)) {
 		if (ndi_dc_allochdl((void *)arg, &dcp) != NDI_SUCCESS)
 			return (EFAULT);
 
@@ -1680,7 +1682,7 @@ sata_hba_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
 		ndi_dc_freehdl(dcp);
 	}
 
-	if (cmd >= DEVCTL_IOC && cmd <= DEVCTL_IOC_MAX) {
+	if (IS_DEVCTL(cmd)) {
 		mutex_enter(&SATA_CPORT_INFO(sata_hba_inst,
 		    cport)->cport_mutex);
 		cportinfo->cport_event_flags &= ~SATA_APCTL_LOCK_PORT_BUSY;
@@ -1809,7 +1811,7 @@ sata_free_error_retrieval_pkt(sata_pkt_t *sata_pkt)
  */
 sata_pkt_t *
 sata_get_rdwr_pmult_pkt(dev_info_t *dip, sata_device_t *sd,
-    uint8_t regn, uint32_t regv, uint32_t type)
+    uint16_t regn, uint32_t regv, uint32_t type)
 {
 	sata_hba_inst_t	*sata_hba_inst;
 	sata_pkt_txlate_t *spx;
@@ -2220,7 +2222,7 @@ sata_scsi_tgt_free(dev_info_t *hba_dip, dev_info_t *tgt_dip,
 
 	/*
 	 * If devid was previously created but not freed up from
-	 * sd(7D) driver (i.e during detach(9F)) then do it here.
+	 * sd(4D) driver (i.e during detach(9F)) then do it here.
 	 */
 	if ((sdinfo->satadrv_type == SATA_DTYPE_ATADISK) &&
 	    (ddi_getprop(DDI_DEV_T_ANY, hba_dip, DDI_PROP_DONTPASS,
@@ -2387,7 +2389,6 @@ sata_scsi_init_pkt(struct scsi_address *ap, struct scsi_pkt *pkt,
 		goto fail;
 	}
 
-success:
 	/* Set number of bytes that are not yet accounted for */
 	pkt->pkt_resid = spx->txlt_total_residue;
 	ASSERT(pkt->pkt_resid >= 0);
@@ -2469,7 +2470,7 @@ sata_scsi_start(struct scsi_address *ap, struct scsi_pkt *pkt)
 	    (sata_hba_inst_t *)(ap->a_hba_tran->tran_hba_private);
 	sata_pkt_txlate_t *spx = (sata_pkt_txlate_t *)pkt->pkt_ha_private;
 	sata_device_t *sdevice = &spx->txlt_sata_pkt->satapkt_device;
-	sata_drive_info_t *sdinfo;
+	sata_drive_info_t *sdinfo = NULL;
 	struct buf *bp;
 	uint8_t cport, pmport;
 	boolean_t dev_gone = B_FALSE;
@@ -3128,44 +3129,42 @@ sata_scsi_dmafree(struct scsi_address *ap, struct scsi_pkt *pkt)
  * into/from the real buffer.
  */
 static void
-sata_scsi_sync_pkt(struct scsi_address *ap, struct scsi_pkt *pkt)
+sata_scsi_sync_pkt(struct scsi_address *ap __unused, struct scsi_pkt *pkt)
 {
-#ifndef __lock_lint
-	_NOTE(ARGUNUSED(ap))
-#endif
-	int rval;
 	sata_pkt_txlate_t *spx = (sata_pkt_txlate_t *)pkt->pkt_ha_private;
 	struct buf *bp;
 	int direction;
+	int rval;
 
 	ASSERT(spx != NULL);
-	if (spx->txlt_buf_dma_handle != NULL) {
-		direction = spx->txlt_sata_pkt->
-		    satapkt_cmd.satacmd_flags.sata_data_direction;
-		if (spx->txlt_sata_pkt != NULL &&
-		    direction != SATA_DIR_NODATA_XFER) {
-			if (spx->txlt_tmp_buf != NULL) {
-				/* Intermediate DMA buffer used */
-				bp = spx->txlt_sata_pkt->satapkt_cmd.satacmd_bp;
+	if (spx->txlt_buf_dma_handle == NULL)
+		return;
 
-				if (direction & SATA_DIR_WRITE) {
-					bcopy(bp->b_un.b_addr,
-					    spx->txlt_tmp_buf, bp->b_bcount);
-				}
-			}
-			/* Sync the buffer for device or for CPU */
-			rval = ddi_dma_sync(spx->txlt_buf_dma_handle,   0, 0,
-			    (direction & SATA_DIR_WRITE) ?
-			    DDI_DMA_SYNC_FORDEV :  DDI_DMA_SYNC_FORCPU);
-			ASSERT(rval == DDI_SUCCESS);
-			if (spx->txlt_tmp_buf != NULL &&
-			    !(direction & SATA_DIR_WRITE)) {
-				/* Intermediate DMA buffer used for read */
-				bcopy(spx->txlt_tmp_buf,
-				    bp->b_un.b_addr, bp->b_bcount);
-			}
+	if (spx->txlt_sata_pkt == NULL)
+		return;
 
-		}
+	direction = spx->txlt_sata_pkt->
+	    satapkt_cmd.satacmd_flags.sata_data_direction;
+
+	if (direction == SATA_DIR_NODATA_XFER)
+		return;
+
+	bp = spx->txlt_sata_pkt->satapkt_cmd.satacmd_bp;
+
+	if (spx->txlt_tmp_buf != NULL && (direction & SATA_DIR_WRITE) != 0) {
+		/* Intermediate DMA buffer used */
+		bcopy(bp->b_un.b_addr, spx->txlt_tmp_buf, bp->b_bcount);
+	}
+
+	/* Sync the buffer for device or for CPU */
+	rval = ddi_dma_sync(spx->txlt_buf_dma_handle, 0, 0,
+	    (direction & SATA_DIR_WRITE) ?
+	    DDI_DMA_SYNC_FORDEV : DDI_DMA_SYNC_FORCPU);
+	ASSERT3S(rval, ==, DDI_SUCCESS);
+
+	if (spx->txlt_tmp_buf != NULL && !(direction & SATA_DIR_WRITE)) {
+		/* Intermediate DMA buffer used for read */
+		bcopy(spx->txlt_tmp_buf, bp->b_un.b_addr, bp->b_bcount);
 	}
 }
 
@@ -3623,7 +3622,7 @@ sata_txlt_nodata_cmd_immediate(sata_pkt_txlate_t *spx)
 #define	INQUIRY_BDC_PAGE	0xB1	/* Block Device Characteristics Page */
 					/* Code */
 #define	INQUIRY_ATA_INFO_PAGE	0x89	/* ATA Information Page Code */
-#define	INQUIRY_DEV_IDENTIFICATION_PAGE 0x83 /* Not needed yet */
+#define	INQUIRY_DEV_IDENTIFICATION_PAGE 0x83 /* Device identifiers */
 
 static int
 sata_txlt_inquiry(sata_pkt_txlate_t *spx)
@@ -3640,6 +3639,12 @@ sata_txlt_inquiry(sata_pkt_txlate_t *spx)
 	ushort_t rate;
 	kmutex_t *cport_mutex = &(SATA_TXLT_CPORT_MUTEX(spx));
 
+	/*
+	 * sata_txlt_generic_pkt_info() and sata_get_device_info() require
+	 * cport_mutex to be held while they are called. sdinfo is also
+	 * protected by cport_mutex, so we hold cport_mutex until after we've
+	 * finished using sdinfo.
+	 */
 	mutex_enter(cport_mutex);
 
 	if (((rval = sata_txlt_generic_pkt_info(spx, &reason, 0)) !=
@@ -3669,238 +3674,281 @@ sata_txlt_inquiry(sata_pkt_txlate_t *spx)
 	/* Valid Inquiry request */
 	*scsipkt->pkt_scbp = STATUS_GOOD;
 
-	if (bp != NULL && bp->b_un.b_addr && bp->b_bcount) {
+	if (bp == NULL || bp->b_un.b_addr == NULL || bp->b_bcount == 0)
+		goto done;
 
-		/*
-		 * Because it is fully emulated command storing data
-		 * programatically in the specified buffer, release
-		 * preallocated DMA resources before storing data in the buffer,
-		 * so no unwanted DMA sync would take place.
-		 */
-		sata_scsi_dmafree(NULL, scsipkt);
+	/*
+	 * Because it is fully emulated command storing data
+	 * programatically in the specified buffer, release
+	 * preallocated DMA resources before storing data in the buffer,
+	 * so no unwanted DMA sync would take place.
+	 */
+	sata_scsi_dmafree(NULL, scsipkt);
 
-		if (!(scsipkt->pkt_cdbp[1] & EVPD)) {
-			/* Standard Inquiry Data request */
-			struct scsi_inquiry inq;
-			unsigned int bufsize;
+	if (!(scsipkt->pkt_cdbp[1] & EVPD)) {
+		/* Standard Inquiry Data request */
+		struct scsi_inquiry inq;
+		unsigned int bufsize;
 
-			sata_identdev_to_inquiry(spx->txlt_sata_hba_inst,
-			    sdinfo, (uint8_t *)&inq);
-			/* Copy no more than requested */
-			count = MIN(bp->b_bcount,
-			    sizeof (struct scsi_inquiry));
-			bufsize = scsipkt->pkt_cdbp[4];
-			bufsize |= scsipkt->pkt_cdbp[3] << 8;
-			count = MIN(count, bufsize);
-			bcopy(&inq, bp->b_un.b_addr, count);
+		sata_identdev_to_inquiry(spx->txlt_sata_hba_inst,
+		    sdinfo, (uint8_t *)&inq);
+		/* Copy no more than requested */
+		count = MIN(bp->b_bcount, sizeof (struct scsi_inquiry));
+		bufsize = scsipkt->pkt_cdbp[4];
+		bufsize |= scsipkt->pkt_cdbp[3] << 8;
+		count = MIN(count, bufsize);
+		bcopy(&inq, bp->b_un.b_addr, count);
 
-			scsipkt->pkt_state |= STATE_XFERRED_DATA;
-			scsipkt->pkt_resid = scsipkt->pkt_cdbp[4] > count ?
-			    bufsize - count : 0;
-		} else {
-			/*
-			 * peripheral_qualifier = 0;
-			 *
-			 * We are dealing only with HD and will be
-			 * dealing with CD/DVD devices soon
-			 */
-			uint8_t peripheral_device_type =
-			    sdinfo->satadrv_type == SATA_DTYPE_ATADISK ?
-			    DTYPE_DIRECT : DTYPE_RODIRECT;
-
-			bzero(page_buf, sizeof (page_buf));
-
-			switch ((uint_t)scsipkt->pkt_cdbp[2]) {
-			case INQUIRY_SUP_VPD_PAGE:
-				/*
-				 * Request for supported Vital Product Data
-				 * pages.
-				 */
-				page_buf[0] = peripheral_device_type;
-				page_buf[1] = INQUIRY_SUP_VPD_PAGE;
-				page_buf[2] = 0;
-				page_buf[3] = 4; /* page length */
-				page_buf[4] = INQUIRY_SUP_VPD_PAGE;
-				page_buf[5] = INQUIRY_USN_PAGE;
-				page_buf[6] = INQUIRY_BDC_PAGE;
-				page_buf[7] = INQUIRY_ATA_INFO_PAGE;
-				/* Copy no more than requested */
-				count = MIN(bp->b_bcount, 8);
-				bcopy(page_buf, bp->b_un.b_addr, count);
-				break;
-
-			case INQUIRY_USN_PAGE:
-				/*
-				 * Request for Unit Serial Number page.
-				 * Set-up the page.
-				 */
-				page_buf[0] = peripheral_device_type;
-				page_buf[1] = INQUIRY_USN_PAGE;
-				page_buf[2] = 0;
-				/* remaining page length */
-				page_buf[3] = SATA_ID_SERIAL_LEN;
-
-				/*
-				 * Copy serial number from Identify Device data
-				 * words into the inquiry page and swap bytes
-				 * when necessary.
-				 */
-				p = (uint8_t *)(sdinfo->satadrv_id.ai_drvser);
-#ifdef	_LITTLE_ENDIAN
-				swab(p, &page_buf[4], SATA_ID_SERIAL_LEN);
-#else
-				bcopy(p, &page_buf[4], SATA_ID_SERIAL_LEN);
-#endif
-				/*
-				 * Least significant character of the serial
-				 * number shall appear as the last byte,
-				 * according to SBC-3 spec.
-				 * Count trailing spaces to determine the
-				 * necessary shift length.
-				 */
-				p = &page_buf[SATA_ID_SERIAL_LEN + 4 - 1];
-				for (j = 0; j < SATA_ID_SERIAL_LEN; j++) {
-					if (*(p - j) != '\0' &&
-					    *(p - j) != '\040')
-						break;
-				}
-
-				/*
-				 * Shift SN string right, so that the last
-				 * non-blank character would appear in last
-				 * byte of SN field in the page.
-				 * 'j' is the shift length.
-				 */
-				for (i = 0;
-				    i < (SATA_ID_SERIAL_LEN - j) && j != 0;
-				    i++, p--)
-					*p = *(p - j);
-
-				/*
-				 * Add leading spaces - same number as the
-				 * shift size
-				 */
-				for (; j > 0; j--)
-					page_buf[4 + j - 1] = '\040';
-
-				count = MIN(bp->b_bcount,
-				    SATA_ID_SERIAL_LEN + 4);
-				bcopy(page_buf, bp->b_un.b_addr, count);
-				break;
-
-			case INQUIRY_BDC_PAGE:
-				/*
-				 * Request for Block Device Characteristics
-				 * page.  Set-up the page.
-				 */
-				page_buf[0] = peripheral_device_type;
-				page_buf[1] = INQUIRY_BDC_PAGE;
-				page_buf[2] = 0;
-				/* remaining page length */
-				page_buf[3] = SATA_ID_BDC_LEN;
-
-				rate = sdinfo->satadrv_id.ai_medrotrate;
-				page_buf[4] = (rate >> 8) & 0xff;
-				page_buf[5] = rate & 0xff;
-				page_buf[6] = 0;
-				page_buf[7] = sdinfo->satadrv_id.
-				    ai_nomformfactor & 0xf;
-
-				count = MIN(bp->b_bcount,
-				    SATA_ID_BDC_LEN + 4);
-				bcopy(page_buf, bp->b_un.b_addr, count);
-				break;
-
-			case INQUIRY_ATA_INFO_PAGE:
-				/*
-				 * Request for ATA Information page.
-				 */
-				page_buf[0] = peripheral_device_type;
-				page_buf[1] = INQUIRY_ATA_INFO_PAGE;
-				page_buf[2] = (SATA_ID_ATA_INFO_LEN >> 8) &
-				    0xff;
-				page_buf[3] = SATA_ID_ATA_INFO_LEN & 0xff;
-				/* page_buf[4-7] reserved */
-#ifdef  _LITTLE_ENDIAN
-				bcopy("ATA     ", &page_buf[8], 8);
-				swab(sdinfo->satadrv_id.ai_model,
-				    &page_buf[16], 16);
-				if (strncmp(&sdinfo->satadrv_id.ai_fw[4],
-				    "    ", 4) == 0) {
-					swab(sdinfo->satadrv_id.ai_fw,
-					    &page_buf[32], 4);
-				} else {
-					swab(&sdinfo->satadrv_id.ai_fw[4],
-					    &page_buf[32], 4);
-				}
-#else   /* _LITTLE_ENDIAN */
-				bcopy("ATA     ", &page_buf[8], 8);
-				bcopy(sdinfo->satadrv_id.ai_model,
-				    &page_buf[16], 16);
-				if (strncmp(&sdinfo->satadrv_id.ai_fw[4],
-				    "    ", 4) == 0) {
-					bcopy(sdinfo->satadrv_id.ai_fw,
-					    &page_buf[32], 4);
-				} else {
-					bcopy(&sdinfo->satadrv_id.ai_fw[4],
-					    &page_buf[32], 4);
-				}
-#endif  /* _LITTLE_ENDIAN */
-				/*
-				 * page_buf[36-55] which defines the device
-				 * signature is not defined at this
-				 * time.
-				 */
-
-				/* Set the command code */
-				if (sdinfo->satadrv_type ==
-				    SATA_DTYPE_ATADISK) {
-					page_buf[56] = SATAC_ID_DEVICE;
-				} else if (sdinfo->satadrv_type ==
-				    SATA_DTYPE_ATAPI) {
-					page_buf[56] = SATAC_ID_PACKET_DEVICE;
-				}
-				/*
-				 * If the command code, page_buf[56], is not
-				 * zero and if one of the identify commands
-				 * succeeds, return the identify data.
-				 */
-				if ((page_buf[56] != 0) &&
-				    (sata_fetch_device_identify_data(
-				    spx->txlt_sata_hba_inst, sdinfo) ==
-				    SATA_SUCCESS)) {
-					bcopy(&sdinfo->satadrv_id,
-					    &page_buf[60], sizeof (sata_id_t));
-				}
-
-				/* Need to copy out the page_buf to bp */
-				count = MIN(bp->b_bcount,
-				    SATA_ID_ATA_INFO_LEN + 4);
-				bcopy(page_buf, bp->b_un.b_addr, count);
-				break;
-
-			case INQUIRY_DEV_IDENTIFICATION_PAGE:
-				/*
-				 * We may want to implement this page, when
-				 * identifiers are common for SATA devices
-				 * But not now.
-				 */
-				/*FALLTHROUGH*/
-
-			default:
-				/* Request for unsupported VPD page */
-				*scsipkt->pkt_scbp = STATUS_CHECK;
-				sense = sata_arq_sense(spx);
-				sense->es_key = KEY_ILLEGAL_REQUEST;
-				sense->es_add_code =
-				    SD_SCSI_ASC_INVALID_FIELD_IN_CDB;
-				goto done;
-			}
-		}
 		scsipkt->pkt_state |= STATE_XFERRED_DATA;
 		scsipkt->pkt_resid = scsipkt->pkt_cdbp[4] > count ?
-		    scsipkt->pkt_cdbp[4] - count : 0;
+		    bufsize - count : 0;
+		goto done;
 	}
+
+	/*
+	 * peripheral_qualifier = 0;
+	 *
+	 * We are dealing only with HD and will be
+	 * dealing with CD/DVD devices soon
+	 */
+	uint8_t peripheral_device_type =
+	    sdinfo->satadrv_type == SATA_DTYPE_ATADISK ?
+	    DTYPE_DIRECT : DTYPE_RODIRECT;
+
+	bzero(page_buf, sizeof (page_buf));
+
+	switch ((uint_t)scsipkt->pkt_cdbp[2]) {
+	case INQUIRY_SUP_VPD_PAGE:
+		/*
+		 * Request for supported Vital Product Data pages.
+		 */
+		page_buf[0] = peripheral_device_type;
+		page_buf[1] = INQUIRY_SUP_VPD_PAGE;
+		page_buf[2] = 0;
+		page_buf[4] = INQUIRY_SUP_VPD_PAGE;
+		page_buf[5] = INQUIRY_USN_PAGE;
+		page_buf[6] = INQUIRY_BDC_PAGE;
+		/*
+		 * If WWN info is present, provide a page for it.
+		 * Modern drives always have, but some legacy ones do not.
+		 */
+		if (sdinfo->satadrv_id.ai_naa_ieee_oui != 0) {
+			page_buf[3] = 5; /* page length */
+			page_buf[7] = INQUIRY_DEV_IDENTIFICATION_PAGE;
+			page_buf[8] = INQUIRY_ATA_INFO_PAGE;
+			count = 9;
+		} else {
+			page_buf[3] = 4; /* page length */
+			page_buf[7] = INQUIRY_ATA_INFO_PAGE;
+			count = 8;
+		}
+		/* Copy no more than requested */
+		count = MIN(bp->b_bcount, count);
+		bcopy(page_buf, bp->b_un.b_addr, count);
+		break;
+
+	case INQUIRY_USN_PAGE:
+		/*
+		 * Request for Unit Serial Number page.
+		 * Set-up the page.
+		 */
+		page_buf[0] = peripheral_device_type;
+		page_buf[1] = INQUIRY_USN_PAGE;
+		page_buf[2] = 0;
+		/* remaining page length */
+		page_buf[3] = SATA_ID_SERIAL_LEN;
+
+		/*
+		 * Copy serial number from Identify Device data
+		 * words into the inquiry page and swap bytes
+		 * when necessary.
+		 */
+		p = (uint8_t *)(sdinfo->satadrv_id.ai_drvser);
+#ifdef	_LITTLE_ENDIAN
+		swab(p, &page_buf[4], SATA_ID_SERIAL_LEN);
+#else
+		bcopy(p, &page_buf[4], SATA_ID_SERIAL_LEN);
+#endif
+		/*
+		 * Least significant character of the serial
+		 * number shall appear as the last byte,
+		 * according to SBC-3 spec.
+		 * Count trailing spaces to determine the
+		 * necessary shift length.
+		 */
+		p = &page_buf[SATA_ID_SERIAL_LEN + 4 - 1];
+		for (j = 0; j < SATA_ID_SERIAL_LEN; j++) {
+			if (*(p - j) != '\0' && *(p - j) != '\040')
+				break;
+		}
+
+		/*
+		 * Shift SN string right, so that the last
+		 * non-blank character would appear in last
+		 * byte of SN field in the page.
+		 * 'j' is the shift length.
+		 */
+		for (i = 0; i < (SATA_ID_SERIAL_LEN - j) && j != 0; i++, p--)
+			*p = *(p - j);
+
+		/*
+		 * Add leading spaces - same number as the
+		 * shift size
+		 */
+		for (; j > 0; j--)
+			page_buf[4 + j - 1] = '\040';
+
+		count = MIN(bp->b_bcount, SATA_ID_SERIAL_LEN + 4);
+		bcopy(page_buf, bp->b_un.b_addr, count);
+		break;
+
+	case INQUIRY_BDC_PAGE:
+		/*
+		 * Request for Block Device Characteristics
+		 * page.  Set-up the page.
+		 */
+		page_buf[0] = peripheral_device_type;
+		page_buf[1] = INQUIRY_BDC_PAGE;
+		page_buf[2] = 0;
+		/* remaining page length */
+		page_buf[3] = SATA_ID_BDC_LEN;
+
+		rate = sdinfo->satadrv_id.ai_medrotrate;
+		page_buf[4] = (rate >> 8) & 0xff;
+		page_buf[5] = rate & 0xff;
+		page_buf[6] = 0;
+		page_buf[7] = sdinfo->satadrv_id.ai_nomformfactor & 0xf;
+
+		count = MIN(bp->b_bcount, SATA_ID_BDC_LEN + 4);
+		bcopy(page_buf, bp->b_un.b_addr, count);
+		break;
+
+	case INQUIRY_ATA_INFO_PAGE:
+		/*
+		 * Request for ATA Information page.
+		 */
+		page_buf[0] = peripheral_device_type;
+		page_buf[1] = INQUIRY_ATA_INFO_PAGE;
+		page_buf[2] = (SATA_ID_ATA_INFO_LEN >> 8) & 0xff;
+		page_buf[3] = SATA_ID_ATA_INFO_LEN & 0xff;
+		/* page_buf[4-7] reserved */
+#ifdef  _LITTLE_ENDIAN
+		bcopy("ATA     ", &page_buf[8], 8);
+		swab(sdinfo->satadrv_id.ai_model, &page_buf[16], 16);
+		if (strncmp(&sdinfo->satadrv_id.ai_fw[4], "    ", 4) == 0) {
+			swab(sdinfo->satadrv_id.ai_fw, &page_buf[32], 4);
+		} else {
+			swab(&sdinfo->satadrv_id.ai_fw[4], &page_buf[32], 4);
+		}
+#else   /* _LITTLE_ENDIAN */
+		bcopy("ATA     ", &page_buf[8], 8);
+		bcopy(sdinfo->satadrv_id.ai_model, &page_buf[16], 16);
+		if (strncmp(&sdinfo->satadrv_id.ai_fw[4], "    ", 4) == 0) {
+			bcopy(sdinfo->satadrv_id.ai_fw, &page_buf[32], 4);
+		} else {
+			bcopy(&sdinfo->satadrv_id.ai_fw[4], &page_buf[32], 4);
+		}
+#endif  /* _LITTLE_ENDIAN */
+		/*
+		 * page_buf[36-55] which defines the device
+		 * signature is not defined at this
+		 * time.
+		 */
+
+		/* Set the command code */
+		if (sdinfo->satadrv_type == SATA_DTYPE_ATADISK) {
+			page_buf[56] = SATAC_ID_DEVICE;
+		} else if (sdinfo->satadrv_type == SATA_DTYPE_ATAPI) {
+			page_buf[56] = SATAC_ID_PACKET_DEVICE;
+		}
+		/*
+		 * If the command code, page_buf[56], is not
+		 * zero and if one of the identify commands
+		 * succeeds, return the identify data.
+		 */
+		if (page_buf[56] != 0) {
+			sata_drive_info_t temp_info = {
+				.satadrv_addr = sdinfo->satadrv_addr,
+				.satadrv_type = sdinfo->satadrv_type,
+			};
+
+			/*
+			 * It appears calls to an HBA's start (sata_hba_start)
+			 * method (which sata_fetch_device_identify_data_retry()
+			 * calls) must not be done while holding cport_mutex.
+			 *
+			 * A packet's completion routine may call back into
+			 * the sata framework and deadlock (and all extant
+			 * calls to the HBA's start method either drop and
+			 * re-acquire cport_mutex, or never held cport_mutex).
+			 *
+			 * sdinfo is protected by cport_mutex, so we need to
+			 * obtain the SATA address and type from sdinfo
+			 * before releasing cport_mutex and submitting the
+			 * request. We reacquire cport_mutex to simplfy
+			 * cleanup after the done label.
+			 */
+			mutex_exit(cport_mutex);
+			(void) sata_fetch_device_identify_data(
+			    spx->txlt_sata_hba_inst, &temp_info);
+			mutex_enter(cport_mutex);
+
+			/*
+			 * If sata_fetch_device_identify_data()
+			 * fails, the bcopy() is harmless since we're copying
+			 * zeros back over zeros. If it succeeds, we're
+			 * copying over the portion of the response we need.
+			 */
+			bcopy(&temp_info.satadrv_id, &page_buf[60],
+			    sizeof (sata_id_t));
+		}
+
+		/* Need to copy out the page_buf to bp */
+		count = MIN(bp->b_bcount, SATA_ID_ATA_INFO_LEN + 4);
+		bcopy(page_buf, bp->b_un.b_addr, count);
+		break;
+
+	case INQUIRY_DEV_IDENTIFICATION_PAGE:
+		if (sdinfo->satadrv_id.ai_naa_ieee_oui != 0) {
+			/*
+			 * Page 83; SAT-5 requires this, and modern
+			 * SATA devices all support a WWN.
+			 */
+			page_buf[0] = peripheral_device_type;
+			page_buf[1] = INQUIRY_DEV_IDENTIFICATION_PAGE;
+			page_buf[2] = 0;
+			page_buf[3] = 12; /* remaining length */
+			page_buf[4] = 0x01; /* protocol 0, code set 1 */
+			page_buf[5] = 0x03; /* LUN, NAA type */
+			page_buf[6] = 0;
+			page_buf[7] = 0x08; /* length (64-bit WWN) */
+#ifdef	_LITTLE_ENDIAN
+			swab(&sdinfo->satadrv_id.ai_naa_ieee_oui, &page_buf[8],
+			    8);
+#else
+			bcopy(&sdinfo->satadrv_id.ai_naa_ieee_oui,
+			    &page_buf[8], 8);
+#endif
+			/* header + designator */
+			count = MIN(bp->b_bcount, 12 + 4);
+			bcopy(page_buf, bp->b_un.b_addr, count);
+			break;
+		}
+		/* FALLTHROUGH */
+
+	default:
+		/* Request for unsupported VPD page */
+		*scsipkt->pkt_scbp = STATUS_CHECK;
+		sense = sata_arq_sense(spx);
+		sense->es_key = KEY_ILLEGAL_REQUEST;
+		sense->es_add_code = SD_SCSI_ASC_INVALID_FIELD_IN_CDB;
+		goto done;
+	}
+
+	scsipkt->pkt_state |= STATE_XFERRED_DATA;
+	scsipkt->pkt_resid = scsipkt->pkt_cdbp[4] > count ?
+	    scsipkt->pkt_cdbp[4] - count : 0;
+
 done:
 	mutex_exit(cport_mutex);
 
@@ -5222,7 +5270,7 @@ sata_txlt_mode_sense(sata_pkt_txlate_t *spx)
 			alc_len = scsipkt->pkt_cdbp[4];
 		} else {
 			alc_len = scsipkt->pkt_cdbp[7];
-			alc_len = (len << 8) | scsipkt->pkt_cdbp[8];
+			alc_len = (alc_len << 8) | scsipkt->pkt_cdbp[8];
 		}
 		/*
 		 * We do not check for possible parameters truncation
@@ -5610,12 +5658,10 @@ sata_txlt_ata_pass_thru(sata_pkt_txlate_t *spx)
 	struct scsi_pkt *scsipkt = spx->txlt_scsi_pkt;
 	sata_cmd_t *scmd = &spx->txlt_sata_pkt->satapkt_cmd;
 	struct buf *bp = spx->txlt_sata_pkt->satapkt_cmd.satacmd_bp;
-	int extend;
-	uint64_t lba;
-	uint16_t feature, sec_count;
-	int t_len, synch;
-	int rval, reason;
 	kmutex_t *cport_mutex = &(SATA_TXLT_CPORT_MUTEX(spx));
+	uint32_t xfer_len;
+	int extend = 0;
+	int synch, rval, reason;
 
 	mutex_enter(cport_mutex);
 
@@ -5701,58 +5747,57 @@ sata_txlt_ata_pass_thru(sata_pkt_txlate_t *spx)
 		break;
 	}
 
+	/* Assume LBA28 by default */
+	scmd->satacmd_addr_type = ATA_ADDR_LBA28;
+	scmd->satacmd_lba_low_msb = 0;
+	scmd->satacmd_lba_mid_msb = 0;
+	scmd->satacmd_lba_high_msb = 0;
+
+	scmd->satacmd_features_reg_ext = 0;
+	scmd->satacmd_sec_count_msb = 0;
+
 	/* Parse the ATA cmd fields, transfer some straight to the satacmd */
 	switch ((uint_t)scsipkt->pkt_cdbp[0]) {
 	case SPC3_CMD_ATA_COMMAND_PASS_THROUGH12:
-		feature = scsipkt->pkt_cdbp[3];
+		scmd->satacmd_lba_low_lsb = scsipkt->pkt_cdbp[5];
+		scmd->satacmd_lba_mid_lsb = scsipkt->pkt_cdbp[6];
+		scmd->satacmd_lba_high_lsb = scsipkt->pkt_cdbp[7];
 
-		sec_count = scsipkt->pkt_cdbp[4];
+		scmd->satacmd_features_reg = scsipkt->pkt_cdbp[3];
+		scmd->satacmd_sec_count_lsb = scsipkt->pkt_cdbp[4];
 
-		lba = scsipkt->pkt_cdbp[8] & 0xf;
-		lba = (lba << 8) | scsipkt->pkt_cdbp[7];
-		lba = (lba << 8) | scsipkt->pkt_cdbp[6];
-		lba = (lba << 8) | scsipkt->pkt_cdbp[5];
-
-		scmd->satacmd_device_reg = scsipkt->pkt_cdbp[13] & 0xf0;
+		scmd->satacmd_device_reg = scsipkt->pkt_cdbp[8];
 		scmd->satacmd_cmd_reg = scsipkt->pkt_cdbp[9];
-
 		break;
 
 	case SPC3_CMD_ATA_COMMAND_PASS_THROUGH16:
+		scmd->satacmd_device_reg = scsipkt->pkt_cdbp[13];
+		scmd->satacmd_cmd_reg = scsipkt->pkt_cdbp[14];
+
+		scmd->satacmd_lba_low_lsb = scsipkt->pkt_cdbp[8];
+		scmd->satacmd_lba_mid_lsb = scsipkt->pkt_cdbp[10];
+		scmd->satacmd_lba_high_lsb = scsipkt->pkt_cdbp[12];
+
+		scmd->satacmd_features_reg = scsipkt->pkt_cdbp[4];
+		scmd->satacmd_sec_count_lsb = scsipkt->pkt_cdbp[6];
+
 		if (scsipkt->pkt_cdbp[1] & SATL_APT_BM_EXTEND) {
 			extend = 1;
 
-			feature = scsipkt->pkt_cdbp[3];
-			feature = (feature << 8) | scsipkt->pkt_cdbp[4];
+			scmd->satacmd_addr_type = ATA_ADDR_LBA48;
+			scmd->satacmd_lba_low_msb = scsipkt->pkt_cdbp[7];
+			scmd->satacmd_lba_mid_msb = scsipkt->pkt_cdbp[9];
+			scmd->satacmd_lba_high_msb = scsipkt->pkt_cdbp[11];
 
-			sec_count = scsipkt->pkt_cdbp[5];
-			sec_count = (sec_count << 8) | scsipkt->pkt_cdbp[6];
-
-			lba = scsipkt->pkt_cdbp[11];
-			lba = (lba << 8) | scsipkt->pkt_cdbp[12];
-			lba = (lba << 8) | scsipkt->pkt_cdbp[9];
-			lba = (lba << 8) | scsipkt->pkt_cdbp[10];
-			lba = (lba << 8) | scsipkt->pkt_cdbp[7];
-			lba = (lba << 8) | scsipkt->pkt_cdbp[8];
-
-			scmd->satacmd_device_reg = scsipkt->pkt_cdbp[13];
-			scmd->satacmd_cmd_reg = scsipkt->pkt_cdbp[14];
-		} else {
-			feature = scsipkt->pkt_cdbp[3];
-
-			sec_count = scsipkt->pkt_cdbp[5];
-
-			lba = scsipkt->pkt_cdbp[13] & 0xf;
-			lba = (lba << 8) | scsipkt->pkt_cdbp[12];
-			lba = (lba << 8) | scsipkt->pkt_cdbp[10];
-			lba = (lba << 8) | scsipkt->pkt_cdbp[8];
-
-			scmd->satacmd_device_reg = scsipkt->pkt_cdbp[13] &
-			    0xf0;
-			scmd->satacmd_cmd_reg = scsipkt->pkt_cdbp[14];
+			scmd->satacmd_features_reg_ext = scsipkt->pkt_cdbp[3];
+			scmd->satacmd_sec_count_msb = scsipkt->pkt_cdbp[5];
 		}
-
 		break;
+
+	default:
+		/* No other SCSI ops should ever reach this function */
+		cmn_err(CE_PANIC, "unexpected ATA pass-thru cmd %x",
+		    scsipkt->pkt_cdbp[0]);
 	}
 
 	/* CK_COND bit */
@@ -5772,47 +5817,44 @@ sata_txlt_ata_pass_thru(sata_pkt_txlate_t *spx)
 		scmd->satacmd_flags.sata_copy_out_error_reg = 1;
 	}
 
-	/* Transfer remaining parsed ATA cmd values to the satacmd */
-	if (extend) {
-		scmd->satacmd_addr_type = ATA_ADDR_LBA48;
-
-		scmd->satacmd_features_reg_ext = (feature >> 8) & 0xff;
-		scmd->satacmd_sec_count_msb = (sec_count >> 8) & 0xff;
-		scmd->satacmd_lba_low_msb = (lba >> 8) & 0xff;
-		scmd->satacmd_lba_mid_msb = (lba >> 8) & 0xff;
-		scmd->satacmd_lba_high_msb = lba >> 40;
-	} else {
-		scmd->satacmd_addr_type = ATA_ADDR_LBA28;
-
-		scmd->satacmd_features_reg_ext = 0;
-		scmd->satacmd_sec_count_msb = 0;
-		scmd->satacmd_lba_low_msb = 0;
-		scmd->satacmd_lba_mid_msb = 0;
-		scmd->satacmd_lba_high_msb = 0;
-	}
-
-	scmd->satacmd_features_reg = feature & 0xff;
-	scmd->satacmd_sec_count_lsb = sec_count & 0xff;
-	scmd->satacmd_lba_low_lsb = lba & 0xff;
-	scmd->satacmd_lba_mid_lsb = (lba >> 8) & 0xff;
-	scmd->satacmd_lba_high_lsb = (lba >> 16) & 0xff;
-
 	/* Determine transfer length */
-	switch (scsipkt->pkt_cdbp[2] & 0x3) {		/* T_LENGTH field */
+	switch (scsipkt->pkt_cdbp[2] & 0x03) {		/* T_LENGTH field */
 	case 1:
-		t_len = feature;
+		/* Length is in the FEATURE field */
+		xfer_len = (uint32_t)scmd->satacmd_features_reg_ext << 8 |
+		    scmd->satacmd_features_reg;
+
+		/* If BYTE_BLOCK is set, above value is in units of blocks */
+		if (((scsipkt->pkt_cdbp[2] >> 2) & 1) == 0)
+			xfer_len *= SATA_DISK_SECTOR_SIZE;
 		break;
 	case 2:
-		t_len = sec_count;
+		/* Length is in the COUNT field */
+		xfer_len = (uint32_t)scmd->satacmd_sec_count_msb << 8 |
+		    scmd->satacmd_sec_count_lsb;
+
+		/* If BYTE_BLOCK is set, above value is in units of blocks */
+		if (((scsipkt->pkt_cdbp[2] >> 2) & 1) == 0)
+			xfer_len *= SATA_DISK_SECTOR_SIZE;
+		break;
+	case 3:
+		/*
+		 * Length is transport specific. The spec is a bit vague on
+		 * this, but it seems like using buf->b_bcount is the most
+		 * reasonable analogue in our situation. b_bcount is in
+		 * units of bytes.
+		 */
+		xfer_len = bp->b_bcount;
 		break;
 	default:
-		t_len = 0;
-		break;
+		xfer_len = 0;
 	}
 
-	/* Adjust transfer length for the Byte Block bit */
-	if ((scsipkt->pkt_cdbp[2] >> 2) & 1)
-		t_len *= SATA_DISK_SECTOR_SIZE;
+	/* Don't allow a transfer larger than what the struct buf supports */
+	if (xfer_len > bp->b_bcount) {
+		mutex_exit(cport_mutex);
+		return (sata_txlt_ata_pass_thru_illegal_cmd(spx));
+	}
 
 	/* Start processing command */
 	if (!(spx->txlt_sata_pkt->satapkt_op_mode & SATA_OPMODE_SYNCH)) {
@@ -6055,7 +6097,7 @@ sata_txlt_log_sense(sata_pkt_txlate_t *spx)
 no_header:
 		/* Check allocation length */
 		alc_len = scsipkt->pkt_cdbp[7];
-		alc_len = (len << 8) | scsipkt->pkt_cdbp[8];
+		alc_len = (alc_len << 8) | scsipkt->pkt_cdbp[8];
 
 		/*
 		 * We do not check for possible parameters truncation
@@ -6998,7 +7040,7 @@ sata_hba_start(sata_pkt_txlate_t *spx, int *rval)
 	uint8_t pmport = SATA_TXLT_PMPORT(spx);
 	sata_hba_inst_t *sata_hba_inst = spx->txlt_sata_hba_inst;
 	sata_drive_info_t *sdinfo;
-	sata_pmult_info_t *pminfo;
+	sata_pmult_info_t *pminfo = NULL;
 	sata_pmport_info_t *pmportinfo = NULL;
 	sata_device_t *sata_device = NULL;
 	uint8_t cmd;
@@ -8669,33 +8711,22 @@ out:
 static	int
 sata_build_lsense_page_0(sata_drive_info_t *sdinfo, uint8_t *buf)
 {
-	struct log_parameter *lpp = (struct log_parameter *)buf;
-	uint8_t *page_ptr = (uint8_t *)lpp->param_values;
-	int num_pages_supported = 1; /* Always have GET_SUPPORTED_LOG_PAGES */
+	uint8_t *ptr = buf;
 	sata_id_t *sata_id = &sdinfo->satadrv_id;
 
-	lpp->param_code[0] = 0;
-	lpp->param_code[1] = 0;
-	lpp->param_ctrl_flags = LOG_CTRL_LP | LOG_CTRL_LBIN;
-	*page_ptr++ = PAGE_CODE_GET_SUPPORTED_LOG_PAGES;
+	/* The supported log pages should be in ascending order */
+	*ptr++ = PAGE_CODE_GET_SUPPORTED_LOG_PAGES;
 
 	if (sata_id->ai_cmdset82 & SATA_SMART_SUPPORTED) {
+		*ptr++ = PAGE_CODE_START_STOP_CYCLE_COUNTER;
 		if (sata_id->ai_cmdset84 & SATA_SMART_SELF_TEST_SUPPORTED) {
-			*page_ptr++ = PAGE_CODE_SELF_TEST_RESULTS;
-			++num_pages_supported;
+			*ptr++ = PAGE_CODE_SELF_TEST_RESULTS;
 		}
-		*page_ptr++ = PAGE_CODE_INFORMATION_EXCEPTIONS;
-		++num_pages_supported;
-		*page_ptr++ = PAGE_CODE_SMART_READ_DATA;
-		++num_pages_supported;
-		*page_ptr++ = PAGE_CODE_START_STOP_CYCLE_COUNTER;
-		++num_pages_supported;
+		*ptr++ = PAGE_CODE_INFORMATION_EXCEPTIONS;
+		*ptr++ = PAGE_CODE_SMART_READ_DATA;
 	}
 
-	lpp->param_len = num_pages_supported;
-
-	return ((&lpp->param_values[0] - (uint8_t *)lpp) +
-	    num_pages_supported);
+	return ((int)((uintptr_t)ptr - (uintptr_t)buf));
 }
 
 /*
@@ -8989,7 +9020,7 @@ out:
 				uint8_t code;
 				uint8_t sense_key;
 				uint8_t add_sense_code;
-				uint8_t add_sense_code_qual;
+				uint8_t add_sense_code_qual = 0;
 
 				if (bcmp(entry, &empty, sizeof (empty)) == 0)
 					goto done;
@@ -9329,7 +9360,7 @@ sata_build_read_verify_cmd(sata_cmd_t *scmd, uint16_t sec, uint64_t lba)
 	scmd->satacmd_lba_low_lsb = lba & 0xff;
 	scmd->satacmd_lba_mid_lsb = (lba >> 8) & 0xff;
 	scmd->satacmd_lba_high_lsb = (lba >> 16) & 0xff;
-	scmd->satacmd_device_reg = (SATA_ADH_LBA | (lba >> 24) & 0xf);
+	scmd->satacmd_device_reg = (SATA_ADH_LBA | ((lba >> 24) & 0xf));
 	scmd->satacmd_features_reg = 0;
 	scmd->satacmd_status_reg = 0;
 	scmd->satacmd_error_reg = 0;
@@ -9862,9 +9893,10 @@ sata_atapi_packet_cmd_setup(sata_cmd_t *scmd, sata_drive_info_t *sdinfo)
 		if ((sdinfo->satadrv_id.ai_dirdma &
 		    SATA_ATAPI_ID_DMADIR_REQ) != 0) {
 			if (scmd->satacmd_flags.sata_data_direction ==
-			    SATA_DIR_READ)
-			scmd->satacmd_features_reg |=
-			    SATA_ATAPI_F_DATA_DIR_READ;
+			    SATA_DIR_READ) {
+				scmd->satacmd_features_reg |=
+				    SATA_ATAPI_F_DATA_DIR_READ;
+			}
 		}
 	}
 }
@@ -11221,7 +11253,7 @@ sata_reprobe_port(sata_hba_inst_t *sata_hba_inst, sata_device_t *sata_device,
 	int prev_device_type = SATA_DTYPE_NONE;
 	int prev_device_settings = 0;
 	int prev_device_state = 0;
-	clock_t start_time;
+	clock_t start_time = 0;
 	int retry = B_FALSE;
 	uint8_t cport = sata_device->satadev_addr.cport;
 	int rval_probe, rval_init;
@@ -11570,7 +11602,7 @@ sata_reprobe_pmult(sata_hba_inst_t *sata_hba_inst, sata_device_t *sata_device,
 	 * after which the port multiplier is not correct initialized and
 	 * recognized. In that case the new device will be marked as unknown
 	 * and will not be automatically probed in this routine. Instead
-	 * system administrator could manually restart it via cfgadm(1M).
+	 * system administrator could manually restart it via cfgadm(8).
 	 */
 	if (sata_device->satadev_type != SATA_DTYPE_PMULT) {
 		cportinfo->cport_dev_type = SATA_DTYPE_UNKNOWN;
@@ -12455,7 +12487,7 @@ sata_devt_to_devinfo(dev_t dev)
 static int
 sata_probe_device(sata_hba_inst_t *sata_hba_inst, sata_device_t *sata_device)
 {
-	sata_pmport_info_t *pmportinfo;
+	sata_pmport_info_t *pmportinfo = NULL;
 	sata_drive_info_t *sdinfo;
 	sata_drive_info_t new_sdinfo;	/* local drive info struct */
 	int rval;
@@ -12774,7 +12806,7 @@ static void
 sata_show_drive_info(sata_hba_inst_t *sata_hba_inst,
     sata_drive_info_t *sdinfo)
 {
-	int valid_version;
+	int valid_version = 0;
 	char msg_buf[MAXPATHLEN];
 	int i;
 
@@ -12920,13 +12952,8 @@ sata_show_drive_info(sata_hba_inst_t *sata_hba_inst,
 	}
 
 	if (sdinfo->satadrv_type == SATA_DTYPE_ATADISK) {
-#ifdef __i386
-		(void) sprintf(msg_buf, "\tcapacity = %llu sectors\n",
-		    sdinfo->satadrv_capacity);
-#else
 		(void) sprintf(msg_buf, "\tcapacity = %lu sectors\n",
 		    sdinfo->satadrv_capacity);
-#endif
 		cmn_err(CE_CONT, "?%s", msg_buf);
 	}
 }
@@ -13049,7 +13076,7 @@ sata_check_capacity(sata_drive_info_t *sdinfo)
 	int i;
 
 	if (sdinfo->satadrv_type != SATA_DTYPE_ATADISK ||
-	    !sdinfo->satadrv_id.ai_cap & SATA_LBA_SUPPORT)
+	    (sdinfo->satadrv_id.ai_cap & SATA_LBA_SUPPORT) == 0)
 		/* Capacity valid only for LBA-addressable disk devices */
 		return (0);
 
@@ -14098,7 +14125,7 @@ sata_set_cache_mode(sata_hba_inst_t *sata_hba_inst, sata_drive_info_t *sdinfo,
 	sata_pkt_txlate_t *spx;
 	int rval = SATA_SUCCESS;
 	int hba_rval;
-	char *infop;
+	char *infop = NULL;
 
 	ASSERT(sdinfo != NULL);
 	ASSERT(sata_hba_inst != NULL);
@@ -14356,7 +14383,6 @@ sata_get_target_dip(dev_info_t *dip, uint8_t cport, uint8_t pmport)
 {
 	dev_info_t	*cdip = NULL;
 	int		target, tgt;
-	int		circ;
 	uint8_t		qual;
 
 	sata_hba_inst_t	*sata_hba_inst;
@@ -14381,7 +14407,7 @@ sata_get_target_dip(dev_info_t *dip, uint8_t cport, uint8_t pmport)
 	target = SATA_TO_SCSI_TARGET(cport, pmport, qual);
 
 	/* Retrieve target dip */
-	ndi_devi_enter(dip, &circ);
+	ndi_devi_enter(dip);
 	for (cdip = ddi_get_child(dip); cdip != NULL; ) {
 		dev_info_t *next = ddi_get_next_sibling(cdip);
 
@@ -14401,7 +14427,7 @@ sata_get_target_dip(dev_info_t *dip, uint8_t cport, uint8_t pmport)
 
 		cdip = next;
 	}
-	ndi_devi_exit(dip, circ);
+	ndi_devi_exit(dip);
 
 	return (cdip);
 }
@@ -14421,11 +14447,10 @@ sata_get_scsi_target_dip(dev_info_t *dip, sata_address_t *saddr)
 {
 	dev_info_t	*cdip = NULL;
 	int		target, tgt;
-	int		circ;
 
 	target = SATA_TO_SCSI_TARGET(saddr->cport, saddr->pmport, saddr->qual);
 
-	ndi_devi_enter(dip, &circ);
+	ndi_devi_enter(dip);
 	for (cdip = ddi_get_child(dip); cdip != NULL; ) {
 		dev_info_t *next = ddi_get_next_sibling(cdip);
 
@@ -14445,7 +14470,7 @@ sata_get_scsi_target_dip(dev_info_t *dip, sata_address_t *saddr)
 
 		cdip = next;
 	}
-	ndi_devi_exit(dip, circ);
+	ndi_devi_exit(dip);
 
 	return (cdip);
 }
@@ -16040,13 +16065,12 @@ sata_cfgadm_state(sata_hba_inst_t *sata_hba_inst, int32_t port,
 	{
 		dev_info_t *tdip = NULL;
 		dev_info_t *dip = NULL;
-		int circ;
 
 		dip = SATA_DIP(sata_hba_inst);
 		tdip = sata_get_target_dip(dip, cport, pmport);
 		ap_state->ap_rstate = AP_RSTATE_CONNECTED;
 		if (tdip != NULL) {
-			ndi_devi_enter(dip, &circ);
+			ndi_devi_enter(dip);
 			mutex_enter(&(DEVI(tdip)->devi_lock));
 			if (DEVI_IS_DEVICE_REMOVED(tdip)) {
 				/*
@@ -16088,7 +16112,7 @@ sata_cfgadm_state(sata_hba_inst_t *sata_hba_inst, int32_t port,
 				    AP_OSTATE_CONFIGURED;
 			}
 			mutex_exit(&(DEVI(tdip)->devi_lock));
-			ndi_devi_exit(dip, circ);
+			ndi_devi_exit(dip);
 		} else {
 			ap_state->ap_ostate = AP_OSTATE_UNCONFIGURED;
 			ap_state->ap_condition = AP_COND_UNKNOWN;
@@ -16831,15 +16855,13 @@ fail:
  *
  */
 static int
-sata_fetch_smart_data(
-	sata_hba_inst_t *sata_hba_inst,
-	sata_drive_info_t *sdinfo,
-	struct smart_data *smart_data)
+sata_fetch_smart_data(sata_hba_inst_t *sata_hba_inst, sata_drive_info_t *sdinfo,
+    struct smart_data *smart_data)
 {
 	sata_pkt_t *spkt;
 	sata_cmd_t *scmd;
 	sata_pkt_txlate_t *spx;
-	int rval;
+	int rval = 0;
 	dev_info_t *dip = SATA_DIP(sata_hba_inst);
 
 #if ! defined(lint)
@@ -17657,8 +17679,8 @@ sata_hba_event_notify(dev_info_t *dip, sata_device_t *sata_device, int event)
 	sata_pmult_info_t *pmultinfo;
 	sata_drive_info_t *sdinfo;
 	sata_port_stats_t *pstats;
-	sata_cport_info_t *cportinfo;
-	sata_pmport_info_t *pmportinfo;
+	sata_cport_info_t *cportinfo = NULL;
+	sata_pmport_info_t *pmportinfo = NULL;
 	int cport, pmport;
 	char buf1[SATA_EVENT_MAX_MSG_LENGTH + 1];
 	char buf2[SATA_EVENT_MAX_MSG_LENGTH + 1];
@@ -20666,15 +20688,13 @@ sata_gen_sysevent(sata_hba_inst_t *sata_hba_inst, sata_address_t *saddr,
 static void
 sata_set_device_removed(dev_info_t *tdip)
 {
-	int circ;
-
 	ASSERT(tdip != NULL);
 
-	ndi_devi_enter(tdip, &circ);
+	ndi_devi_enter(tdip);
 	mutex_enter(&DEVI(tdip)->devi_lock);
 	DEVI_SET_DEVICE_REMOVED(tdip);
 	mutex_exit(&DEVI(tdip)->devi_lock);
-	ndi_devi_exit(tdip, circ);
+	ndi_devi_exit(tdip);
 }
 
 
@@ -21136,18 +21156,15 @@ sata_trace_rbuf_free(void)
 	kmem_free(sata_debug_rbuf, sizeof (sata_trace_rbuf_t));
 }
 
+#ifndef SATA_DEBUG
 /*
  * If SATA_DEBUG is not defined then this routine is called instead
  * of sata_log() via the SATA_LOG_D macro.
  */
 static void
-sata_trace_log(sata_hba_inst_t *sata_hba_inst, uint_t level,
+sata_trace_log(sata_hba_inst_t *sata_hba_inst, uint_t level __unused,
     const char *fmt, ...)
 {
-#ifndef __lock_lint
-	_NOTE(ARGUNUSED(level))
-#endif
-
 	dev_info_t *dip = NULL;
 	va_list ap;
 
@@ -21159,3 +21176,4 @@ sata_trace_log(sata_hba_inst_t *sata_hba_inst, uint_t level,
 	sata_vtrace_debug(dip, fmt, ap);
 	va_end(ap);
 }
+#endif /* SATA_DEBUG */

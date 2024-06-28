@@ -24,11 +24,9 @@
  * Use is subject to license terms.
  */
 
-#pragma ident	"%Z%%M%	%I%	%E% SMI"
-
 #include <stdio.h>
 #include <libintl.h>
-#include <limits.h>	
+#include <limits.h>
 #include "genmsg.h"
 extern int is_cat_found;		/* from main.c */
 extern int lineno;			/* genmsg.l */
@@ -53,14 +51,14 @@ static char *add_qstring(char *, char *);
 %token CATGETS
 %token CONST
 %token CATD
-%token INT, CHAR, INC
+%token INT CHAR INC
 %token <str> STR
-%token <id> SETID, MSGID, DIGIT
+%token <id> SETID MSGID DIGIT
 %token <str> QSTR
 
-%type <id> cast_setid, setid, cast_msgid, msgid, cast_digit, digit
-%type <str> catd, arg_list, arg_def, arg_func, arg_exp, str,
-	cast_qstr, paren_qstr, qstr_list
+%type <id> cast_setid setid cast_msgid msgid cast_digit digit
+%type <str> catd arg_list arg_def arg_func arg_exp str
+%type <str> cast_qstr paren_qstr qstr_list
 
 %left '-' '+'
 %left '*' '/'

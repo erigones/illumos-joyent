@@ -25,6 +25,7 @@
 
 /*
  * Copyright 2020, Joyent, Inc. All rights reserved.
+ * Copyright 2023 Oxide Computer Company
  */
 
 /*
@@ -167,7 +168,7 @@ usage()
 	"\t%1$s clear [<service> ...]\t\t- clear maintenance state\n"
 	"\t%1$s milestone [-d] <milestone>\t- advance to a service milestone\n"
 	"\n\t"
-	"Services can be specified using an FMRI, abbreviation, or fnmatch(5)\n"
+	"Services can be specified using an FMRI, abbreviation, or fnmatch(7)\n"
 	"\tpattern, as shown in these examples for svc:/network/smtp:sendmail\n"
 	"\n"
 	"\t%1$s <cmd> svc:/network/smtp:sendmail\n"
@@ -2385,7 +2386,8 @@ again:
 
 		if (scf_handle_decorate(h, "zone", zone) != SCF_SUCCESS) {
 			if (do_a_zone) {
-				uu_die(gettext("invalid zone '%s'\n"), optarg);
+				uu_die(gettext("zone '%s': %s\n"),
+				    zonename, scf_strerror(scf_error()));
 			} else {
 				scf_value_destroy(zone);
 				goto nextzone;

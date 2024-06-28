@@ -23,8 +23,8 @@
  * Copyright (c) 1990, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2012 Garrett D'Amore <garrett@damore.org>.  All rights reserved.
  * Copyright (c) 2012 by Delphix. All rights reserved.
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2019 Joyent, Inc.
+ * Copyright 2022 Tintri by DDN, Inc. All rights reserved.
  */
 
 #ifndef	_SYS_SUNDDI_H
@@ -479,6 +479,7 @@ extern size_t strlcpy(char *, const char *, size_t);
 extern size_t strspn(const char *, const char *);
 extern size_t strcspn(const char *, const char *);
 extern char *strsep(char **, const char *);
+extern char *strtok_r(char *, const char *, char **);
 extern int bcmp(const void *, const void *, size_t) __PURE;
 extern int stoi(char **);
 extern void numtos(ulong_t, char *);
@@ -1709,7 +1710,7 @@ int
 ddi_uninitchild(dev_info_t *dip);
 
 major_t
-ddi_name_to_major(char *name);
+ddi_name_to_major(const char *name);
 
 char *
 ddi_major_to_name(major_t major);
@@ -2120,8 +2121,8 @@ int
 ddi_lyr_get_minor_name(dev_t dev, int spec_type, char **minor_name);
 
 int
-ddi_lyr_devid_to_devlist(ddi_devid_t devid, char *minor_name, int *retndevs,
-    dev_t **retdevs);
+ddi_lyr_devid_to_devlist(ddi_devid_t devid, const char *minor_name,
+    int *retndevs, dev_t **retdevs);
 
 void
 ddi_lyr_free_devlist(dev_t *devlist, int ndevs);
@@ -2238,6 +2239,8 @@ boolean_t ddi_taskq_suspended(ddi_taskq_t *tq);
  * <numeric> is maximal.
  */
 int ddi_parse(const char *, char *, uint_t *);
+/* Version with caller-specified destination buffer length. */
+int ddi_parse_dlen(const char *, char *, size_t, uint_t *);
 
 /*
  * DDI interrupt priority level
